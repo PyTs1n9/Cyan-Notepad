@@ -6,6 +6,13 @@ on:
       - 'v*'           # 推送 v1.0.0 这类 tag 时触发
   workflow_dispatch:    # 也支持手动触发
 
+# 授予 GITHUB_TOKEN 写入权限，否则无法创建 Release
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 修复 Node.js 20 弃用警告
+
 jobs:
   build:
     runs-on: windows-latest
