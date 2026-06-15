@@ -1,0 +1,37 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'           # 推送 v1.0.0 这类 tag 时触发
+  workflow_dispatch:    # 也支持手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建 Tauri 应用
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'BaiQingTodo v__VERSION__'
+          releaseBody: '详见 CHANGELOG 或提交记录'
+          releaseDraft: false
+          prerelease: false
