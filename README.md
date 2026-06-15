@@ -113,32 +113,98 @@ Todolist-vibe/
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 安装 Rust 工具链
+
+项目基于 Tauri v2，底层依赖 Rust 编译。通过 [rustup](https://rustup.rs/) 一键安装：
+
+```powershell
+# 下载并安装 rustup（默认安装 stable 工具链，包含 rustc 和 cargo）
+winget install --id Rustlang.Rustup
+```
+
+或访问 [https://rustup.rs/](https://rustup.rs/) 下载 `rustup-init.exe` 手动安装。
+
+安装完成后，**关闭并重新打开 PowerShell**，验证安装：
+
+```powershell
+rustc --version   # 应显示 rustc 1.xx.x
+cargo --version   # 应显示 cargo 1.xx.x
+```
+
+> **常见问题**：如果提示 `cargo : 无法将"cargo"项识别为 cmdlet`，说明 Rust 未加入 PATH。运行以下命令临时修复，或参考下方「永久配置」：
+> ```powershell
+> $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+> ```
+
+### 2. 安装 MSVC 编译工具（Windows 必需）
+
+下载并安装 [Microsoft Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)，安装时勾选 **"使用 C++ 的桌面开发"** 工作负载。
+
+### 3. 安装前端依赖
 
 ```bash
 npm install
 ```
 
-### 2. 配置 MSVC 环境（Windows 必需）
+### 4. 配置编译环境变量
 
-在 PowerShell 中执行以下命令设置编译环境变量：
+每次打开新的 PowerShell 窗口，在运行 Tauri 命令前需设置以下环境变量：
 
 ```powershell
-$env:Path = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64;$env:USERPROFILE\.cargo\bin;$env:Path"
+# 添加 Rust 到 PATH（如未永久配置）
+$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+
+# 添加 MSVC 链接器到 PATH
+$env:Path = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64;$env:Path"
 $env:LIB = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
 $env:INCLUDE = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt"
 $env:WindowsSdkDir = "C:\Program Files (x86)\Windows Kits\10\"
 ```
 
-> 路径中的版本号需根据本机实际安装的 Build Tools 版本调整。
+> 路径中的 MSVC / Windows SDK 版本号（如 `14.44.35207`、`10.0.26100.0`）需与本机实际安装的版本一致。可在 `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\` 下查看已安装版本。
 
-### 3. 启动开发模式
+### 5. 启动开发模式
 
 ```bash
 npm run tauri dev
 ```
 
 前端开发服务器运行在端口 `8787`，支持热更新。
+
+---
+
+## 永久环境配置（推荐）
+
+为避免每次打开终端都要手动设置环境变量，可将以下路径添加到系统 PATH：
+
+### Rust 工具链
+
+将 `%USERPROFILE%\.cargo\bin` 添加到系统环境变量 `Path` 中：
+
+1. 按 `Win + R`，输入 `sysdm.cpl`，点击「高级」→「环境变量」
+2. 在「用户变量」中找到 `Path`，双击编辑
+3. 新建一条：`%USERPROFILE%\.cargo\bin`
+4. 确定保存，重新打开终端即可生效
+
+### MSVC 编译工具
+
+可在项目根目录创建脚本文件 `env.ps1`，每次开发前执行一次即可：
+
+```powershell
+# env.ps1 — 一键配置 Tauri 编译环境
+$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+$env:Path = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64;$env:Path"
+$env:LIB = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+$env:INCLUDE = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt"
+$env:WindowsSdkDir = "C:\Program Files (x86)\Windows Kits\10\"
+```
+
+使用方式：
+
+```powershell
+. .\env.ps1          # 加载环境变量
+npm run tauri dev    # 启动开发
+```
 
 ---
 
