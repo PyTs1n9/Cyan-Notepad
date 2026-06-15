@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* Default theme = Blue */
+@theme {
+  --color-bg-primary: #f0f4f8;
+  --color-bg-secondary: #e2e8f0;
+  --color-bg-sidebar: #dbe4ef;
+  --color-bg-hover: #cbd5e1;
+  --color-bg-active: #b0c4de;
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-border: #cbd5e1;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-light: #dbeafe;
+  --color-danger: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+}
+
+/* Dark Theme */
+.theme-dark {
+  --color-bg-primary: #1a1b1e;
+  --color-bg-secondary: #25262b;
+  --color-bg-sidebar: #1e1f23;
+  --color-bg-hover: #2c2e33;
+  --color-bg-active: #373a40;
+  --color-text-primary: #e9ecef;
+  --color-text-secondary: #adb5bd;
+  --color-text-muted: #6c757d;
+  --color-border: #373a40;
+  --color-accent: #5c7cfa;
+  --color-accent-hover: #4c6ef5;
+  --color-accent-light: #1b2559;
+  --color-danger: #ff6b6b;
+  --color-success: #51cf66;
+  --color-warning: #fcc419;
+}
+
+/* Blue Theme (default) - applied via .theme-blue or no class */
+.theme-blue {
+  --color-bg-primary: #f0f4f8;
+  --color-bg-secondary: #e2e8f0;
+  --color-bg-sidebar: #dbe4ef;
+  --color-bg-hover: #cbd5e1;
+  --color-bg-active: #b0c4de;
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-border: #cbd5e1;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-light: #dbeafe;
+  --color-danger: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+}
+
+/* Moody Yellow Theme - soft pastel */
+.theme-yellow {
+  --color-bg-primary: #faf6ec;
+  --color-bg-secondary: #f2ecdc;
+  --color-bg-sidebar: #ebe5d2;
+  --color-bg-hover: #e3dcc8;
+  --color-bg-active: #dbd4bc;
+  --color-text-primary: #4a4030;
+  --color-text-secondary: #7a6e55;
+  --color-text-muted: #a09478;
+  --color-border: #ddd5c0;
+  --color-accent: #c4a24a;
+  --color-accent-hover: #b08e38;
+  --color-accent-light: #f5edda;
+  --color-danger: #d98a7a;
+  --color-success: #8ab88a;
+  --color-warning: #d4b86a;
+}
+
+/* Fresh Green Theme - soft pastel */
+.theme-green {
+  --color-bg-primary: #f4faf6;
+  --color-bg-secondary: #e8f2ec;
+  --color-bg-sidebar: #deeadf;
+  --color-bg-hover: #d2e2d4;
+  --color-bg-active: #c6dac8;
+  --color-text-primary: #2a4a38;
+  --color-text-secondary: #5a7a66;
+  --color-text-muted: #88a694;
+  --color-border: #d0e2d2;
+  --color-accent: #4aaa6a;
+  --color-accent-hover: #3a9a5a;
+  --color-accent-light: #e4f4e8;
+  --color-danger: #d88a8a;
+  --color-success: #6aba6a;
+  --color-warning: #caba6a;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    overflow: hidden;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-bg-active);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
+}
