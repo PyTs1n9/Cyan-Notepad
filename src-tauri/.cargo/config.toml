@@ -1,0 +1,5 @@
+[build]
+# Redirect build output to a path without Unicode characters.
+# RC.EXE (Windows Resource Compiler) cannot handle paths with
+# Chinese characters, so we use an ASCII-only target directory.
+target-dir = "C:\\pytsing-todo-target"

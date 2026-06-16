@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
-import { X, Palette, Globe, Save, Trash2, ChevronDown, Droplets } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { X, Palette, Globe, Save, Trash2, ChevronDown, Droplets, Keyboard, RotateCcw } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { ThemeType, LangType, CustomColors } from "@/stores/settingsStore";
-import { THEME_COLORS } from "@/stores/settingsStore";
+import type { ThemeType, LangType, CustomColors, AppShortcuts } from "@/stores/settingsStore";
+import { THEME_COLORS, DEFAULT_SHORTCUTS } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 
 interface SettingsModalProps {
@@ -11,8 +11,9 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
-  const { theme, lang, customColors, savedPresets, setTheme, setLang, setCustomColors, savePreset, loadPreset, deletePreset } = useSettingsStore();
+  const { theme, lang, customColors, savedPresets, shortcuts, setTheme, setLang, setCustomColors, savePreset, loadPreset, deletePreset, setShortcuts } = useSettingsStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [recordingField, setRecordingField] = useState<keyof AppShortcuts | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -26,6 +27,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [dropdownOpen]);
+
+  // Record shortcut keydown handler
+  const handleShortcutKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, field: keyof AppShortcuts) => {
+    e.preventDefault();
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.metaKey) parts.push("Meta");
+
+    const key = e.key;
+    // Only accept non-modifier keys
+    if (!["Control", "Alt", "Shift", "Meta"].includes(key)) {
+      // Normalize key name
+      const normalizedKey = key.length === 1 ? key.toUpperCase() : key;
+      parts.push(normalizedKey);
+      const shortcut = parts.join("+");
+      setShortcuts({ ...shortcuts, [field]: shortcut });
+      setRecordingField(null);
+    }
+  }, [shortcuts, setShortcuts]);
 
   if (!open) return null;
 
@@ -229,6 +251,43 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Keyboard Shortcuts */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Keyboard size={16} className="text-accent" />
+              <span className="text-sm font-medium text-text-primary">{t(lang, "shortcutsSection")}</span>
+            </div>
+            <div className="space-y-2">
+              {([
+                { field: "toggleWindow" as keyof AppShortcuts, labelKey: "shortcutToggleWindow" as const },
+              ]).map(({ field, labelKey }) => (
+                <div key={field} className="flex items-center gap-3">
+                  <span className="text-xs text-text-secondary w-28 flex-shrink-0">{t(lang, labelKey)}</span>
+                  <input
+                    type="text"
+                    readOnly
+                    value={recordingField === field ? t(lang, "pressShortcut") : shortcuts[field]}
+                    onFocus={() => setRecordingField(field)}
+                    onBlur={() => setRecordingField(null)}
+                    onKeyDown={(e) => handleShortcutKeyDown(e, field)}
+                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-mono text-center outline-none transition-colors cursor-pointer
+                      border ${recordingField === field
+                        ? "border-accent bg-accent-light text-accent"
+                        : "border-border bg-bg-secondary text-text-primary hover:border-text-muted"}`}
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setShortcuts(DEFAULT_SHORTCUTS)}
+              className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                border border-border text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
+            >
+              <RotateCcw size={11} />
+              <span>{t(lang, "resetShortcuts")}</span>
+            </button>
           </div>
         </div>
 

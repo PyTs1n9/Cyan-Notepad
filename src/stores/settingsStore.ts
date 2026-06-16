@@ -16,6 +16,14 @@ export interface SavedPreset {
   colors: CustomColors;
 }
 
+export interface AppShortcuts {
+  toggleWindow: string;
+}
+
+export const DEFAULT_SHORTCUTS: AppShortcuts = {
+  toggleWindow: "Ctrl+Space",
+};
+
 // Preset theme colors for syncing to custom palette
 export const THEME_COLORS: Record<Exclude<ThemeType, "custom">, CustomColors> = {
   dark: { bgPrimary: "#1a1b1e", bgSecondary: "#25262b", bgSidebar: "#1e1f23", textPrimary: "#e9ecef", accent: "#5c7cfa" },
@@ -29,17 +37,20 @@ interface SettingsState {
   lang: LangType;
   customColors: CustomColors | null;
   savedPresets: SavedPreset[];
+  shortcuts: AppShortcuts;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
   savePreset: (name: string) => void;
   loadPreset: (index: number) => void;
   deletePreset: (index: number) => void;
+  setShortcuts: (shortcuts: AppShortcuts) => void;
   loadSettings: (settings: {
     theme?: ThemeType;
     lang?: LangType;
     customColors?: CustomColors | null;
     savedPresets?: SavedPreset[];
+    shortcuts?: AppShortcuts;
   }) => void;
 }
 
@@ -48,6 +59,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lang: "zh",
   customColors: null,
   savedPresets: [],
+  shortcuts: DEFAULT_SHORTCUTS,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -79,11 +91,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ savedPresets: savedPresets.filter((_, i) => i !== index) });
   },
 
+  setShortcuts: (shortcuts) => set({ shortcuts }),
+
   loadSettings: (settings) =>
     set({
       theme: settings.theme || "blue",
       lang: settings.lang || "zh",
       customColors: settings.customColors || null,
       savedPresets: settings.savedPresets || [],
+      shortcuts: settings.shortcuts || DEFAULT_SHORTCUTS,
     }),
 }));

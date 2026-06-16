@@ -16,15 +16,11 @@ import {
   AlignRight,
   Highlighter,
   ImagePlus,
-  Type,
   Minus,
   Tag,
   Palette,
   Code,
 } from "lucide-react";
-import { useFontStore } from "@/stores/fontStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { t } from "@/utils/i18n";
 
 type EditorMode = "wysiwyg" | "markdown";
 
@@ -33,12 +29,9 @@ interface ToolbarProps {
   editorMode: EditorMode;
   onInsertImage: () => void;
   onInsertTag: () => void;
-  onImportFont: () => void;
   onMdWrap: (before: string, after: string) => void;
   onMdInsert: (text: string) => void;
 }
-
-const FONT_SIZES = ["12", "14", "16", "18", "20", "24", "28", "32", "36", "48"];
 
 const COLORS = [
   "#212529", "#495057", "#868e96",
@@ -53,12 +46,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
   editorMode,
   onInsertImage,
   onInsertTag,
-  onImportFont,
   onMdWrap,
   onMdInsert,
 }) => {
-  const { fonts } = useFontStore();
-  const lang = useSettingsStore((s) => s.lang);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const isMd = editorMode === "markdown";
 
@@ -195,26 +185,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
     }
   };
 
-  // Font family (HTML fallback in MD mode)
-  const handleFontFamily = (family: string) => {
-    if (isMd) {
-      onMdWrap(`<span style="font-family:${family}">`, "</span>");
-    } else if (family) {
-      editor?.chain().focus().setFontFamily(family).run();
-    } else {
-      editor?.chain().focus().unsetFontFamily().run();
-    }
-  };
-
-  // Font size (HTML fallback in MD mode)
-  const handleFontSize = (size: string) => {
-    if (isMd) {
-      onMdWrap(`<span style="font-size:${size}px">`, "</span>");
-    } else {
-      editor?.chain().focus().setMark("textStyle", { fontSize: `${size}px` }).run();
-    }
-  };
-
   // Inline code: `code`
   const handleCode = () => {
     if (isMd) {
@@ -226,46 +196,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
   return (
     <div className="flex items-center gap-0.5 px-4 py-2 border-b border-border bg-bg-primary flex-wrap">
-      {/* Font Family */}
-      <select
-        value={isMd ? "" : (editor?.getAttributes("textStyle").fontFamily || "")}
-        onChange={(e) => handleFontFamily(e.target.value)}
-        title={t(lang, "defaultFont")}
-        className="h-7 px-1.5 rounded border border-border text-xs bg-bg-primary text-text-secondary cursor-pointer max-w-24"
-      >
-        <option value="">{t(lang, "defaultFont")}</option>
-        {fonts.map((f) => (
-          <option key={f.family} value={f.family} style={{ fontFamily: f.family }}>
-            {f.name}
-          </option>
-        ))}
-      </select>
-
-      {/* Import Font Button */}
-      <button
-        onClick={onImportFont}
-        title={t(lang, "importFont")}
-        className="p-1.5 rounded cursor-pointer text-text-muted hover:text-accent hover:bg-bg-hover transition-colors"
-      >
-        <Type size={13} />
-      </button>
-
-      <Divider />
-
-      {/* Font Size */}
-      <select
-        value={isMd ? "16" : (editor?.getAttributes("textStyle").fontSize || "16")}
-        onChange={(e) => handleFontSize(e.target.value)}
-        title="Font Size"
-        className="h-7 px-1.5 rounded border border-border text-xs bg-bg-primary text-text-secondary cursor-pointer w-14"
-      >
-        {FONT_SIZES.map((s) => (
-          <option key={s} value={s}>{s}px</option>
-        ))}
-      </select>
-
-      <Divider />
-
       {/* Bold */}
       <ToolbarBtn active={!isMd && editor?.isActive("bold")} onClick={handleBold} title="Bold">
         <Bold size={14} />

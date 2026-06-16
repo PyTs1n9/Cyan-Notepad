@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "@/components/Layout/Sidebar";
+import TitleBar from "@/components/Layout/TitleBar";
 import TodoView from "@/components/Todo/TodoView";
 import NoteEditor from "@/components/Editor/NoteEditor";
 import SettingsModal from "@/components/Settings/SettingsModal";
+import AboutModal from "@/components/Settings/AboutModal";
 import { useTodoStore } from "@/stores/todoStore";
 import { useNoteStore } from "@/stores/noteStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { CustomColors } from "@/stores/settingsStore";
+import type { CustomColors, AppShortcuts } from "@/stores/settingsStore";
 import {
   loadTodos,
   saveTodos,
@@ -20,9 +22,13 @@ import {
   saveSettings,
   loadIconData,
 } from "@/utils/storage";
+import { applyTheme } from "@/utils/theme";
+import { openTileWindow } from "@/utils/tile";
+import { applyShortcuts } from "@/utils/shortcutManager";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen, emit } from "@tauri-apps/api/event";
 import { marked } from "marked";
 import type { Todo, Note, ViewType } from "@/types";
 
@@ -33,6 +39,7 @@ const COLLAPSED_WIDTH = 52;
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("todo");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -52,6 +59,7 @@ export default function App() {
   const lang = useSettingsStore((s) => s.lang);
   const customColors = useSettingsStore((s) => s.customColors);
   const savedPresets = useSettingsStore((s) => s.savedPresets);
+  const shortcuts = useSettingsStore((s) => s.shortcuts);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
 
   // Load data on mount
@@ -72,13 +80,21 @@ export default function App() {
           lang?: "zh" | "en";
           customColors?: CustomColors | null;
           savedPresets?: { name: string; colors: CustomColors }[];
+          shortcuts?: AppShortcuts;
         });
 
-        // Load custom app icon
+        // Load custom app icon, fallback to default icon
         const iconData = await loadIconData();
-        if (iconData) {
+        const iconToSet = iconData ?? await (async () => {
           try {
-            await getCurrentWindow().setIcon(iconData);
+            const res = await fetch('/default-icon.png');
+            if (res.ok) return new Uint8Array(await res.arrayBuffer());
+          } catch { /* ignore */ }
+          return null;
+        })();
+        if (iconToSet) {
+          try {
+            await getCurrentWindow().setIcon(iconToSet);
           } catch { /* ignore setIcon errors on unsupported platforms */ }
         }
 
@@ -99,42 +115,15 @@ export default function App() {
 
   // Apply theme class to document
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove("theme-dark", "theme-blue", "theme-yellow", "theme-green", "theme-custom");
-    if (theme === "custom" && customColors) {
-      root.classList.add("theme-custom");
-      root.style.setProperty("--color-bg-primary", customColors.bgPrimary);
-      root.style.setProperty("--color-bg-secondary", customColors.bgSecondary);
-      root.style.setProperty("--color-bg-sidebar", customColors.bgSidebar);
-      root.style.setProperty("--color-text-primary", customColors.textPrimary);
-      root.style.setProperty("--color-accent", customColors.accent);
-      // Derive hover/light variants
-      root.style.setProperty("--color-bg-hover", customColors.bgSecondary);
-      root.style.setProperty("--color-bg-active", customColors.bgSecondary);
-      root.style.setProperty("--color-accent-light", customColors.bgSecondary);
-      root.style.setProperty("--color-accent-hover", customColors.accent);
-    } else {
-      root.style.removeProperty("--color-bg-primary");
-      root.style.removeProperty("--color-bg-secondary");
-      root.style.removeProperty("--color-bg-sidebar");
-      root.style.removeProperty("--color-text-primary");
-      root.style.removeProperty("--color-accent");
-      root.style.removeProperty("--color-bg-hover");
-      root.style.removeProperty("--color-bg-active");
-      root.style.removeProperty("--color-accent-light");
-      root.style.removeProperty("--color-accent-hover");
-      if (theme !== "blue") {
-        root.classList.add(`theme-${theme}`);
-      }
-    }
+    applyTheme(theme, customColors);
   }, [theme, customColors]);
 
   // Auto-save settings
   useEffect(() => {
     if (initialized) {
-      saveSettings({ theme, lang, customColors, savedPresets });
+      saveSettings({ theme, lang, customColors, savedPresets, shortcuts });
     }
-  }, [theme, lang, customColors, savedPresets, initialized]);
+  }, [theme, lang, customColors, savedPresets, shortcuts, initialized]);
 
   // Auto-save todos
   useEffect(() => {
@@ -159,7 +148,37 @@ export default function App() {
     }
   }, [fonts, initialized]);
 
+  // Listen for pin-current-note shortcut from Rust backend
+  useEffect(() => {
+    const unlisten = listen("pin-current-note", () => {
+      const currentNoteId = useNoteStore.getState().activeNoteId;
+      if (currentNoteId) {
+        openTileWindow(currentNoteId);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Apply global shortcuts (re-register when shortcuts change)
+  useEffect(() => {
+    if (initialized) {
+      applyShortcuts(shortcuts);
+    }
+  }, [shortcuts, initialized]);
+
+  // Sync theme to tile windows when it changes
+  useEffect(() => {
+    if (initialized) {
+      emit("tile-theme-sync", { theme, customColors });
+    }
+  }, [theme, customColors, initialized]);
+
   // Sidebar resize drag
+  const rafId = useRef<number | null>(null);
+  const latestX = useRef(0);
+
   const handleMouseDown = useCallback(() => {
     isDragging.current = true;
     document.body.style.cursor = "col-resize";
@@ -167,19 +186,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
-      const newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, e.clientX));
+    const applyWidth = () => {
+      rafId.current = null;
+      const newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, latestX.current));
       setSidebarWidth(newWidth);
     };
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      latestX.current = e.clientX;
+      if (rafId.current === null) {
+        rafId.current = requestAnimationFrame(applyWidth);
+      }
+    };
     const handleMouseUp = () => {
+      if (!isDragging.current) return;
       isDragging.current = false;
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
     return () => {
+      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -276,31 +308,41 @@ export default function App() {
   }, [addNote]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">
-      <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 transition-[width] duration-200 ease-in-out">
-        <Sidebar
-          currentView={currentView}
-          onViewChange={setCurrentView}
-          onNewNote={handleNewNote}
-          onImportMd={handleImportMd}
-          onImportTxt={handleImportTxt}
-          onOpenSettings={() => setSettingsOpen(true)}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg-primary">
+      {/* Custom Title Bar */}
+      <TitleBar
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenAbout={() => setAboutOpen(true)}
+      />
+
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 transition-[width] duration-200 ease-in-out">
+          <Sidebar
+            currentView={currentView}
+            onViewChange={setCurrentView}
+            onNewNote={handleNewNote}
+            onImportMd={handleImportMd}
+            onImportTxt={handleImportTxt}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          />
+        </div>
+        {/* Resize Handle */}
+        {!sidebarCollapsed && (
+          <div
+            onMouseDown={handleMouseDown}
+            className="w-1 h-full cursor-col-resize hover:bg-blue-200 active:bg-blue-300
+              transition-colors flex-shrink-0 bg-accent"
+          />
+        )}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {currentView === "todo" ? <TodoView /> : <NoteEditor />}
+        </main>
       </div>
-      {/* Resize Handle */}
-      {!sidebarCollapsed && (
-        <div
-          onMouseDown={handleMouseDown}
-          className="w-1 h-full cursor-col-resize hover:bg-accent/30 active:bg-accent/50
-            transition-colors flex-shrink-0 bg-border"
-        />
-      )}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {currentView === "todo" ? <TodoView /> : <NoteEditor />}
-      </main>
+
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </div>
   );
 }

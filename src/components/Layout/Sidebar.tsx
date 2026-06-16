@@ -4,7 +4,6 @@ import {
   FileText,
   Plus,
   Tag,
-  Settings,
   Trash2,
   Upload,
   FileUp,
@@ -23,12 +22,11 @@ interface SidebarProps {
   onNewNote: () => void;
   onImportMd: () => void;
   onImportTxt: () => void;
-  onOpenSettings: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNewNote, onImportMd, onImportTxt, onOpenSettings, collapsed, onToggleCollapse }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNewNote, onImportMd, onImportTxt, collapsed, onToggleCollapse }) => {
   const { notes, filterTag, setFilterTag, activeNoteId, setActiveNoteId, deleteNote } = useNoteStore();
   const lang = useSettingsStore((s) => s.lang);
 
@@ -187,19 +185,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNewNote,
           </div>
         </div>
       )}
-
-      {/* Footer */}
-      <div className="mt-auto border-t border-border">
-        <button
-          onClick={onOpenSettings}
-          className={`flex items-center rounded-lg text-sm text-text-muted hover:bg-bg-hover transition-colors cursor-pointer
-            ${collapsed ? "justify-center w-full px-0 py-3" : "gap-3 px-3 py-2 w-full"}`}
-          title={collapsed ? t(lang, "settings") : undefined}
-        >
-          <Settings size={collapsed ? 16 : 14} />
-          {!collapsed && <span>{t(lang, "settings")}</span>}
-        </button>
-      </div>
     </aside>
   );
 };

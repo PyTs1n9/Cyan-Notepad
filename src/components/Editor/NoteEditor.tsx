@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TextStyle } from "@tiptap/extension-text-style";
+import { FontSize } from "@tiptap/extension-text-style/font-size";
 import Color from "@tiptap/extension-color";
 import Underline from "@tiptap/extension-underline";
 import Image from "@tiptap/extension-image";
@@ -14,14 +15,19 @@ import { readFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { marked } from "marked";
 import TurndownService from "turndown";
 import { useNoteStore } from "@/stores/noteStore";
-import { useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { t } from "@/utils/i18n";
+import { t, tWithParams } from "@/utils/i18n";
 import { saveNoteContent, loadNoteContent } from "@/utils/storage";
-import { Wrench, FileDown, FileText } from "lucide-react";
+import { Wrench, FileDown, FileText, Save, Pin } from "lucide-react";
+import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import Toolbar from "./Toolbar";
 
 type EditorMode = "wysiwyg" | "markdown";
+
+// Detect whether stored content is HTML (from WYSIWYG) or raw Markdown
+function isHtmlContent(content: string): boolean {
+  return /<[a-zA-Z][\s\S]*>/.test(content);
+}
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true });
@@ -45,23 +51,71 @@ turndownService.addRule("img", {
 
 const NoteEditor: React.FC = () => {
   const { notes, activeNoteId, updateNote } = useNoteStore();
-  const { addFont } = useFontStore();
   const lang = useSettingsStore((s) => s.lang);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef(false);
 
+  // Refs to avoid stale closures in editor callbacks
+  const activeNoteIdRef = useRef<string | null>(null);
+  const mdContentRef = useRef("");
+  const editorRef = useRef<ReturnType<typeof useEditor> | null>(null);
+
   const [editorMode, setEditorMode] = useState<EditorMode>("wysiwyg");
   const [mdContent, setMdContent] = useState("");
   const [toolbarVisible, setToolbarVisible] = useState(true);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showSaveStatus, setShowSaveStatus] = useState(false);
+  const [editorFontSize, setEditorFontSize] = useState(16);
+  const [stickyOpen, setStickyOpen] = useState(false);
+
+  const EDITOR_FONT_SIZE_MIN = 12;
+  const EDITOR_FONT_SIZE_MAX = 32;
+  const EDITOR_FONT_SIZE_STEP = 1;
+
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
+
+  // Track sticky window open state via polling (lightweight check)
+  useEffect(() => {
+    if (!activeNoteId) { setStickyOpen(false); return; }
+    setStickyOpen(isStickyOpen(activeNoteId));
+    const timer = setInterval(() => {
+      setStickyOpen(isStickyOpen(activeNoteId));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [activeNoteId]);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    activeNoteIdRef.current = activeNoteId;
+  }, [activeNoteId]);
+
+  useEffect(() => {
+    mdContentRef.current = mdContent;
+  }, [mdContent]);
+
+  // Save function: persists current content to disk
+  const doSave = useCallback(async () => {
+    const noteId = activeNoteIdRef.current;
+    if (!noteId) return;
+    // Get current content based on mode
+    const currentMdContent = mdContentRef.current;
+    const ed = editorRef.current;
+    const contentToSave = currentMdContent || (ed ? ed.getHTML() : "");
+    await saveNoteContent(noteId, contentToSave);
+    setIsDirty(false);
+    // Brief flash of "saved" status
+    setShowSaveStatus(true);
+    setTimeout(() => setShowSaveStatus(false), 2000);
+  }, []);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
       TextStyle,
+      FontSize.configure({ types: [TextStyle.name] }),
       Color.configure({ types: [TextStyle.name] }),
       Underline,
       Image.configure({ inline: true, allowBase64: true }),
@@ -71,35 +125,75 @@ const NoteEditor: React.FC = () => {
       Highlight.configure({ multicolor: true }),
     ],
     content: "",
-    onUpdate: ({ editor }) => {
-      if (!activeNoteId) return;
-      const html = editor.getHTML();
-      updateNote(activeNoteId, { content: html });
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        saveNoteContent(activeNoteId, html);
-      }, 800);
+    onUpdate: ({ editor: ed }) => {
+      const noteId = activeNoteIdRef.current;
+      if (!noteId) return;
+      const html = ed.getHTML();
+      updateNote(noteId, { content: html });
+      setIsDirty(true);
     },
   });
 
-  // Load note content when active note changes
+  // Keep editor ref in sync
   useEffect(() => {
-    if (!activeNoteId || !editor) {
-      console.log("[load] skip - activeNoteId:", activeNoteId, "editor:", !!editor);
+    editorRef.current = editor;
+  }, [editor]);
+
+  // Track previous activeNoteId to detect switches
+  const prevNoteIdRef = useRef<string | null>(null);
+
+  // When activeNoteId changes: save old note, clear editor, load new note
+  useEffect(() => {
+    if (!editor) return;
+    const prevId = prevNoteIdRef.current;
+    const currentId = activeNoteId;
+
+    // Save previous note's content to disk before switching
+    if (prevId && prevId !== currentId) {
+      const prevMdContent = mdContentRef.current;
+      const ed = editorRef.current;
+      const contentToSave = prevMdContent || (ed ? ed.getHTML() : "");
+      saveNoteContent(prevId, contentToSave).catch((e) =>
+        console.error("Failed to save previous note:", e)
+      );
+    }
+
+    // Update ref for next comparison
+    prevNoteIdRef.current = currentId;
+
+    if (!currentId) {
+      editor.commands.setContent("");
+      setMdContent("");
+      setIsDirty(false);
       return;
     }
-    console.log("[load] loading content for:", activeNoteId);
-    loadNoteContent(activeNoteId).then((content) => {
-      console.log("[load] loaded, length:", content.length, "first 100:", content.slice(0, 100));
+
+    // Clear editor immediately before loading
+    editor.commands.setContent("");
+    setMdContent("");
+    setIsDirty(false);
+
+    // Load new note content
+    loadNoteContent(currentId).then((content) => {
       if (editorMode === "wysiwyg") {
         if (content) {
-          editor.commands.setContent(content);
+          // If content is raw Markdown (not HTML), convert to HTML first for TipTap
+          if (!isHtmlContent(content)) {
+            const html = marked(content) as string;
+            editor.commands.setContent(html);
+          } else {
+            editor.commands.setContent(content);
+          }
         }
       } else {
-        // Convert stored HTML to markdown for display
+        // MD mode: only turndown if content is HTML; use raw Markdown as-is
         if (content) {
-          const md = turndownService.turndown(content);
-          setMdContent(md);
+          if (isHtmlContent(content)) {
+            const md = turndownService.turndown(content);
+            setMdContent(md);
+          } else {
+            setMdContent(content);
+          }
         } else {
           setMdContent("");
         }
@@ -107,20 +201,52 @@ const NoteEditor: React.FC = () => {
     });
   }, [activeNoteId, editor]); // eslint-disable-line
 
-  // Save markdown content on change (store as markdown)
+  // Ctrl+S / Cmd+S save handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        doSave();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [doSave]);
+
+  // Ctrl+Wheel 缩放编辑器字体
+  // Use capture phase on window to intercept before WebView2 native zoom
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        const container = editorContainerRef.current;
+        if (container && container.contains(e.target as Node)) {
+          e.preventDefault();
+          setEditorFontSize((prev) => {
+            if (e.deltaY < 0) {
+              return Math.min(prev + EDITOR_FONT_SIZE_STEP, EDITOR_FONT_SIZE_MAX);
+            } else {
+              return Math.max(prev - EDITOR_FONT_SIZE_STEP, EDITOR_FONT_SIZE_MIN);
+            }
+          });
+        }
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+    return () => window.removeEventListener("wheel", handleWheel, true);
+  }, []);
+
+  // Save markdown content on change (update store only, no disk write)
   const handleMdChange = useCallback(
     (value: string) => {
       setMdContent(value);
-      if (!activeNoteId) return;
-      // Store as HTML for WYSIWYG compatibility
+      const noteId = activeNoteIdRef.current;
+      if (!noteId) return;
       const html = marked(value) as string;
-      updateNote(activeNoteId, { content: html });
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        saveNoteContent(activeNoteId, value);
-      }, 800);
+      updateNote(noteId, { content: html });
+      setIsDirty(true);
     },
-    [activeNoteId, updateNote],
+    [updateNote],
   );
 
   // Switch modes
@@ -133,12 +259,10 @@ const NoteEditor: React.FC = () => {
       }
 
       if (mode === "markdown") {
-        // WYSIWYG → MD: convert HTML to Markdown
         const html = editor ? editor.getHTML() : "";
         const md = turndownService.turndown(html);
         setMdContent(md);
       } else {
-        // MD → WYSIWYG: convert Markdown to HTML
         const html = marked(mdContent) as string;
         if (editor) {
           editor.commands.setContent(html);
@@ -154,19 +278,14 @@ const NoteEditor: React.FC = () => {
     if (!activeNote) return;
     try {
       const html = editorMode === "wysiwyg" && editor ? editor.getHTML() : activeNote.content || "";
-      console.log("[export-md] html length:", html.length);
       const md = turndownService.turndown(html);
-      console.log("[export-md] md length:", md.length);
       const defaultPath = `${activeNote.title || t(lang, "untitled")}.md`;
-      console.log("[export-md] calling save dialog, defaultPath:", defaultPath);
       const savePath = await save({
         filters: [{ name: "Markdown", extensions: ["md"] }],
         defaultPath,
       });
-      console.log("[export-md] save dialog returned:", savePath);
       if (savePath) {
         await writeTextFile(savePath, md);
-        console.log("[export-md] wrote file successfully");
       }
     } catch (e) {
       console.error("Export MD failed:", e);
@@ -181,17 +300,13 @@ const NoteEditor: React.FC = () => {
       const div = document.createElement("div");
       div.innerHTML = html;
       const txt = div.textContent || div.innerText || "";
-      console.log("[export-txt] txt length:", txt.length);
       const defaultPath = `${activeNote.title || t(lang, "untitled")}.txt`;
-      console.log("[export-txt] calling save dialog");
       const savePath = await save({
         filters: [{ name: "Text", extensions: ["txt"] }],
         defaultPath,
       });
-      console.log("[export-txt] save dialog returned:", savePath);
       if (savePath) {
         await writeTextFile(savePath, txt);
-        console.log("[export-txt] wrote file successfully");
       }
     } catch (e) {
       console.error("Export TXT failed:", e);
@@ -248,42 +363,6 @@ const NoteEditor: React.FC = () => {
     }
   }, [editor, editorMode, lang]); // eslint-disable-line
 
-  const handleImportFont = useCallback(async () => {
-    try {
-      const selected = await open({
-        filters: [{ name: "Fonts", extensions: ["ttf", "otf", "woff", "woff2"] }],
-        multiple: false,
-      });
-      if (selected) {
-        const filePath = selected as string;
-        const fileName = filePath.split(/[\\/]/).pop() || "font";
-        const fontName = fileName.replace(/\.(ttf|otf|woff2?)$/i, "");
-        const family = `custom-${fontName}-${Date.now()}`;
-
-        const data = await readFile(filePath);
-        const base64 = toBase64(new Uint8Array(data));
-        const ext = filePath.split(".").pop()?.toLowerCase() || "ttf";
-        const mime =
-          ext === "otf"
-            ? "font/otf"
-            : ext === "woff2"
-              ? "font/woff2"
-              : ext === "woff"
-                ? "font/woff"
-                : "font/ttf";
-        const dataUrl = `data:${mime};base64,${base64}`;
-
-        const style = document.createElement("style");
-        style.textContent = `@font-face { font-family: '${family}'; src: url('${dataUrl}'); }`;
-        document.head.appendChild(style);
-
-        addFont({ name: fontName, family, path: dataUrl });
-      }
-    } catch (e) {
-      console.error("Failed to import font:", e);
-    }
-  }, [addFont]);
-
   // Insert text at cursor in textarea
   const insertAtCursor = useCallback(
     (text: string) => {
@@ -297,13 +376,11 @@ const NoteEditor: React.FC = () => {
       const newContent = before + text + after;
 
       setMdContent(newContent);
-      if (activeNoteId) {
+      const noteId = activeNoteIdRef.current;
+      if (noteId) {
         const html = marked(newContent) as string;
-        updateNote(activeNoteId, { content: html });
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => {
-          saveNoteContent(activeNoteId, newContent);
-        }, 800);
+        updateNote(noteId, { content: html });
+        setIsDirty(true);
       }
 
       setTimeout(() => {
@@ -312,7 +389,7 @@ const NoteEditor: React.FC = () => {
         textarea.selectionEnd = start + text.length;
       }, 0);
     },
-    [mdContent, activeNoteId, updateNote],
+    [mdContent, updateNote],
   );
 
   // Wrap selected text in textarea
@@ -328,13 +405,11 @@ const NoteEditor: React.FC = () => {
         mdContent.substring(0, start) + before + selected + after + mdContent.substring(end);
 
       setMdContent(newContent);
-      if (activeNoteId) {
+      const noteId = activeNoteIdRef.current;
+      if (noteId) {
         const html = marked(newContent) as string;
-        updateNote(activeNoteId, { content: html });
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => {
-          saveNoteContent(activeNoteId, newContent);
-        }, 800);
+        updateNote(noteId, { content: html });
+        setIsDirty(true);
       }
 
       setTimeout(() => {
@@ -348,7 +423,7 @@ const NoteEditor: React.FC = () => {
         }
       }, 0);
     },
-    [mdContent, activeNoteId, updateNote],
+    [mdContent, updateNote],
   );
 
   // Sync scroll: textarea → preview
@@ -391,12 +466,6 @@ const NoteEditor: React.FC = () => {
     });
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, []);
-
   if (!activeNote) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-text-muted">
@@ -421,8 +490,16 @@ const NoteEditor: React.FC = () => {
   // Render markdown preview HTML
   const previewHtml = typeof marked(mdContent) === "string" ? (marked(mdContent) as string) : "";
 
+  // Word count: Chinese characters + English words
+  const currentText = editorMode === "wysiwyg" && editor
+    ? editor.state.doc.textBetween(0, editor.state.doc.content.size, " ")
+    : mdContent;
+  const chineseChars = (currentText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+  const englishWords = (currentText.replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, " ").match(/[a-zA-Z0-9]+/g) || []).length;
+  const wordCountNum = chineseChars + englishWords;
+
   return (
-    <div className="flex-1 flex flex-col h-full">
+    <div ref={editorContainerRef} className="flex-1 flex flex-col h-full">
       {/* Mode Toggle Bar */}
       <div className="flex items-center gap-2 px-8 pt-4 pb-1">
         <button
@@ -440,6 +517,19 @@ const NoteEditor: React.FC = () => {
           {t(lang, "mdMode")}
         </button>
         <div className="flex-1" />
+        {/* Save Button */}
+        <button
+          onClick={doSave}
+          disabled={!isDirty}
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors
+            ${isDirty
+              ? "bg-accent text-white hover:bg-accent-hover"
+              : "bg-bg-secondary text-text-muted cursor-not-allowed opacity-60"}`}
+          title={t(lang, "save")}
+        >
+          <Save size={12} />
+          <span>{t(lang, "save")}</span>
+        </button>
         <button
           onClick={handleExportMd}
           className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer
@@ -457,6 +547,24 @@ const NoteEditor: React.FC = () => {
         >
           <FileText size={12} />
           <span>{t(lang, "exportTxt")}</span>
+        </button>
+        <button
+          onClick={() => {
+            if (!activeNoteId) return;
+            if (stickyOpen) {
+              closeStickyNote(activeNoteId);
+            } else {
+              createStickyNote(activeNoteId);
+            }
+          }}
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors
+            ${stickyOpen
+              ? "bg-accent text-white"
+              : "bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
+          title={t(lang, "pinSticky")}
+        >
+          <Pin size={12} />
+          <span>{t(lang, "pinSticky")}</span>
         </button>
         <button
           onClick={() => setToolbarVisible(!toolbarVisible)}
@@ -483,6 +591,13 @@ const NoteEditor: React.FC = () => {
           <span>{t(lang, "createdAt")} {new Date(activeNote.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
           <span>·</span>
           <span>{t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
+          {/* Save Status Indicator */}
+          <span>·</span>
+          <span className={isDirty ? "text-amber-500" : showSaveStatus ? "text-green-500" : "text-text-muted"}>
+            {isDirty ? t(lang, "unsaved") : t(lang, "saved")}
+          </span>
+          <span>·</span>
+          <span>{tWithParams(lang, "wordCount", { count: wordCountNum })}</span>
           {activeNote.tags.length > 0 && (
             <>
               <span>·</span>
@@ -505,7 +620,6 @@ const NoteEditor: React.FC = () => {
           editorMode={editorMode}
           onInsertImage={handleInsertImage}
           onInsertTag={handleInsertTag}
-          onImportFont={handleImportFont}
           onMdWrap={wrapSelection}
           onMdInsert={insertAtCursor}
         />
@@ -513,7 +627,7 @@ const NoteEditor: React.FC = () => {
 
       {/* Editor Content */}
       {editorMode === "wysiwyg" ? (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" style={{ fontSize: editorFontSize }}>
           <EditorContent
             editor={editor}
             className="px-8 py-4 min-h-full
@@ -537,7 +651,7 @@ const NoteEditor: React.FC = () => {
           />
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden" style={{ fontSize: editorFontSize }}>
           {/* Left: Markdown Source Editor */}
           <div className="w-1/2 flex flex-col border-r border-border">
             <div className="px-3 py-1.5 text-xs text-text-muted bg-bg-secondary border-b border-border font-medium">
@@ -548,7 +662,7 @@ const NoteEditor: React.FC = () => {
               value={mdContent}
               onChange={(e) => handleMdChange(e.target.value)}
               onScroll={handleTextareaScroll}
-              className="flex-1 px-6 py-4 bg-bg-primary text-text-primary text-sm font-mono leading-relaxed
+              className="flex-1 px-6 py-4 bg-bg-primary text-text-primary font-mono leading-relaxed
                 resize-none outline-none overflow-y-auto
                 placeholder:text-text-muted/40"
               placeholder={t(lang, "mdPlaceholder")}
@@ -563,7 +677,7 @@ const NoteEditor: React.FC = () => {
             <div
               ref={previewRef}
               onScroll={handlePreviewScroll}
-              className="flex-1 px-6 py-4 overflow-y-auto prose prose-sm max-w-none text-text-primary
+              className="flex-1 px-6 py-4 overflow-y-auto prose max-w-none text-text-primary
                 [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-4
                 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3
                 [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mb-2 [&_h3]:mt-2

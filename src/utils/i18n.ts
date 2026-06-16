@@ -24,6 +24,7 @@ type TranslationKeys = {
   filterAll: string;
   filterActive: string;
   filterCompleted: string;
+  filterPriority: string;
   noCompleted: string;
   allDone: string;
   noTodos: string;
@@ -71,6 +72,34 @@ type TranslationKeys = {
   exportTxt: string;
   collapseSidebar: string;
   expandSidebar: string;
+  saved: string;
+  unsaved: string;
+  save: string;
+  file: string;
+  help: string;
+  exit: string;
+  about: string;
+  aboutTitle: string;
+  version: string;
+  author: string;
+  sourceCode: string;
+  minimize: string;
+  maximize: string;
+  restore: string;
+  wordCount: string;
+  showWindow: string;
+  quitApp: string;
+  hideToTray: string;
+  shortcutsSection: string;
+  shortcutToggleWindow: string;
+  shortcutPinSticky: string;
+  resetShortcuts: string;
+  pressShortcut: string;
+  pinSticky: string;
+  unpinSticky: string;
+  stickyNote: string;
+  pinNote: string;
+  tileNoNote: string;
 };
 
 const zh: TranslationKeys = {
@@ -97,6 +126,7 @@ const zh: TranslationKeys = {
   filterAll: "全部",
   filterActive: "进行中",
   filterCompleted: "已完成",
+  filterPriority: "全部优先级",
   noCompleted: "还没有已完成的任务",
   allDone: "所有任务都已完成！",
   noTodos: "暂无待办事项，添加一个吧",
@@ -144,6 +174,34 @@ const zh: TranslationKeys = {
   exportTxt: "导出 TXT",
   collapseSidebar: "收起边栏",
   expandSidebar: "展开边栏",
+  saved: "已保存",
+  unsaved: "未保存",
+  save: "保存",
+  file: "文件",
+  help: "帮助",
+  exit: "退出",
+  about: "关于",
+  aboutTitle: "关于 BaiQingTodo",
+  version: "版本",
+  author: "作者",
+  sourceCode: "源代码",
+  minimize: "最小化",
+  maximize: "最大化",
+  restore: "还原",
+  wordCount: "{count} 字",
+  showWindow: "显示窗口",
+  quitApp: "退出",
+  hideToTray: "最小化到托盘",
+  shortcutsSection: "快捷键设置",
+  shortcutToggleWindow: "显示/隐藏窗口",
+  shortcutPinSticky: "钉住磁贴",
+  resetShortcuts: "恢复默认",
+  pressShortcut: "按下快捷键...",
+  pinSticky: "钉住磁贴",
+  unpinSticky: "取消钉住",
+  stickyNote: "磁贴笔记",
+  pinNote: "置顶笔记",
+  tileNoNote: "没有选中的笔记",
 };
 
 const en: TranslationKeys = {
@@ -170,6 +228,7 @@ const en: TranslationKeys = {
   filterAll: "All",
   filterActive: "Active",
   filterCompleted: "Completed",
+  filterPriority: "All Priorities",
   noCompleted: "No completed tasks yet",
   allDone: "All tasks are done!",
   noTodos: "No todos yet, add one",
@@ -217,6 +276,34 @@ const en: TranslationKeys = {
   exportTxt: "Export TXT",
   collapseSidebar: "Collapse",
   expandSidebar: "Expand",
+  saved: "Saved",
+  unsaved: "Unsaved",
+  save: "Save",
+  file: "File",
+  help: "Help",
+  exit: "Exit",
+  about: "About",
+  aboutTitle: "About BaiQingTodo",
+  version: "Version",
+  author: "Author",
+  sourceCode: "Source Code",
+  minimize: "Minimize",
+  maximize: "Maximize",
+  restore: "Restore",
+  wordCount: "{count} words",
+  showWindow: "Show Window",
+  quitApp: "Quit",
+  hideToTray: "Minimize to Tray",
+  shortcutsSection: "Keyboard Shortcuts",
+  shortcutToggleWindow: "Show/Hide Window",
+  shortcutPinSticky: "Pin Sticky Note",
+  resetShortcuts: "Reset to Default",
+  pressShortcut: "Press shortcut...",
+  pinSticky: "Pin as Sticky",
+  unpinSticky: "Unpin",
+  stickyNote: "Sticky Note",
+  pinNote: "Pin Note",
+  tileNoNote: "No note selected",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

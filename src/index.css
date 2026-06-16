@@ -128,3 +128,72 @@
     background: var(--color-text-muted);
   }
 }
+
+/* Sticky Note Mode — transparent semi-compact layout */
+body.sticky-body {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.sticky-mode {
+  padding: 6px;
+}
+
+.sticky-mode .sticky-container {
+  background-color: color-mix(in srgb, var(--color-bg-primary) 85%, transparent);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.sticky-mode .sticky-header {
+  background-color: color-mix(in srgb, var(--color-bg-sidebar) 90%, transparent);
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 10px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.sticky-mode .sticky-header button {
+  -webkit-app-region: no-drag;
+}
+
+.sticky-mode .sticky-content {
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Compact typography in sticky mode */
+.sticky-mode .sticky-content h1 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.sticky-mode .sticky-content h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.sticky-mode .sticky-content h3 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.sticky-mode .sticky-content p { margin-bottom: 4px; }
+.sticky-mode .sticky-content ul,
+.sticky-mode .sticky-content ol { padding-left: 18px; margin-bottom: 4px; }
+.sticky-mode .sticky-content li { margin-bottom: 2px; }
+.sticky-mode .sticky-content blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 10px;
+  font-style: italic;
+  opacity: 0.85;
+  margin: 4px 0;
+}
+.sticky-mode .sticky-content code {
+  background: var(--color-bg-secondary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.sticky-mode .sticky-content pre {
+  background: var(--color-bg-secondary);
+  padding: 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  overflow-x: auto;
+}
+.sticky-mode .sticky-content img {
+  max-width: 100%;
+  border-radius: 6px;
+}
