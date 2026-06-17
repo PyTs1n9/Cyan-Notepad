@@ -1,9 +1,14 @@
+import { useState, useCallback } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { t } from "@/utils/i18n";
-import { X, ExternalLink } from "lucide-react";
+import { t, tWithParams } from "@/utils/i18n";
+import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
-const GITHUB_URL = "https://github.com/Pytsing/BaiQingTodo";
-const APP_VERSION = "0.1.0";
+const GITHUB_URL = "https://github.com/PyTs1n9/BaiQingTodo";
+const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/BaiQingTodo/releases/latest";
+const APP_VERSION = "0.1.2";
+
+type UpdateStatus = "idle" | "checking" | "upToDate" | "newVersion" | "error";
 
 interface AboutModalProps {
   open: boolean;
@@ -12,6 +17,29 @@ interface AboutModalProps {
 
 export default function AboutModal({ open, onClose }: AboutModalProps) {
   const lang = useSettingsStore((s) => s.lang);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [latestVersion, setLatestVersion] = useState("");
+  const [releaseUrl, setReleaseUrl] = useState(GITHUB_URL + "/releases");
+
+  const checkUpdate = useCallback(async () => {
+    setUpdateStatus("checking");
+    try {
+      const res = await fetch(GITHUB_API_LATEST);
+      if (!res.ok) throw new Error("API error");
+      const data = await res.json();
+      const tag = (data.tag_name || "").replace(/^v/, "");
+      if (!tag) throw new Error("No version");
+      setLatestVersion(tag);
+      if (data.html_url) setReleaseUrl(data.html_url);
+      setUpdateStatus(tag === APP_VERSION ? "upToDate" : "newVersion");
+    } catch {
+      setUpdateStatus("error");
+    }
+  }, []);
+
+  const openReleasePage = useCallback(() => {
+    openUrl(releaseUrl);
+  }, [releaseUrl]);
 
   if (!open) return null;
 
@@ -53,8 +81,59 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           </p>
         </div>
 
+        {/* Update check area */}
+        <div className="mt-4 px-3 py-2.5 rounded-lg bg-bg-primary">
+          {updateStatus === "idle" && (
+            <button
+              onClick={checkUpdate}
+              className="w-full flex items-center justify-between text-sm hover:text-accent transition-colors"
+            >
+              <span className="text-text-muted">{t(lang, "checkUpdate")}</span>
+              <RefreshCw size={14} className="text-text-muted" />
+            </button>
+          )}
+          {updateStatus === "checking" && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">{t(lang, "checkingUpdate")}</span>
+              <Loader2 size={14} className="text-accent animate-spin" />
+            </div>
+          )}
+          {updateStatus === "upToDate" && (
+            <div className="flex items-center gap-2 text-sm text-green-500">
+              <CheckCircle size={14} />
+              <span>{t(lang, "upToDate")}</span>
+            </div>
+          )}
+          {updateStatus === "newVersion" && (
+            <button
+              onClick={openReleasePage}
+              className="w-full flex items-center justify-between text-sm hover:opacity-80 transition-opacity"
+            >
+              <span className="text-blue-500">
+                {tWithParams(lang, "newVersion", { version: latestVersion })}
+              </span>
+              <span className="text-blue-500 flex items-center gap-1 text-xs">
+                <Download size={12} />
+                {t(lang, "downloadUpdate")}
+              </span>
+            </button>
+          )}
+          {updateStatus === "error" && (
+            <button
+              onClick={checkUpdate}
+              className="w-full flex items-center justify-between text-sm hover:opacity-80 transition-opacity"
+            >
+              <span className="text-red-500 flex items-center gap-1.5">
+                <AlertCircle size={14} />
+                {t(lang, "checkUpdateFailed")}
+              </span>
+              <RefreshCw size={14} className="text-red-500" />
+            </button>
+          )}
+        </div>
+
         {/* Info rows */}
-        <div className="mt-5 space-y-2.5">
+        <div className="mt-3 space-y-2.5">
           <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary">
             <span className="text-text-muted">{t(lang, "author")}</span>
             <span className="font-medium">Pytsing</span>

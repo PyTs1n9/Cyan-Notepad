@@ -100,6 +100,12 @@ type TranslationKeys = {
   stickyNote: string;
   pinNote: string;
   tileNoNote: string;
+  checkUpdate: string;
+  checkingUpdate: string;
+  upToDate: string;
+  newVersion: string;
+  downloadUpdate: string;
+  checkUpdateFailed: string;
 };
 
 const zh: TranslationKeys = {
@@ -202,6 +208,12 @@ const zh: TranslationKeys = {
   stickyNote: "磁贴笔记",
   pinNote: "置顶笔记",
   tileNoNote: "没有选中的笔记",
+  checkUpdate: "检查更新",
+  checkingUpdate: "检查中...",
+  upToDate: "已是最新版本",
+  newVersion: "发现新版本 v{version}",
+  downloadUpdate: "下载更新",
+  checkUpdateFailed: "检查更新失败",
 };
 
 const en: TranslationKeys = {
@@ -304,6 +316,12 @@ const en: TranslationKeys = {
   stickyNote: "Sticky Note",
   pinNote: "Pin Note",
   tileNoNote: "No note selected",
+  checkUpdate: "Check for Updates",
+  checkingUpdate: "Checking...",
+  upToDate: "Up to date",
+  newVersion: "New version v{version}",
+  downloadUpdate: "Download Update",
+  checkUpdateFailed: "Update check failed",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

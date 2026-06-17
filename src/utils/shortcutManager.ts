@@ -23,9 +23,15 @@ export async function applyShortcuts(
         const win = getCurrentWindow();
         try {
           const visible = await win.isVisible();
-          if (visible) {
+          const minimized = await win.isMinimized();
+          // Only hide when window is truly visible AND not minimized
+          if (visible && !minimized) {
             await win.hide();
           } else {
+            // Window is hidden or minimized → restore and focus
+            if (minimized) {
+              await win.unminimize();
+            }
             await win.show();
             await win.setFocus();
           }
@@ -39,4 +45,18 @@ export async function applyShortcuts(
   }
 
   currentShortcuts = { ...shortcuts };
+}
+
+export async function pauseShortcuts(): Promise<void> {
+  try {
+    await unregisterAll();
+  } catch (e) {
+    console.warn("Failed to pause shortcuts:", e);
+  }
+}
+
+export async function resumeShortcuts(): Promise<void> {
+  if (currentShortcuts) {
+    await applyShortcuts(currentShortcuts);
+  }
 }

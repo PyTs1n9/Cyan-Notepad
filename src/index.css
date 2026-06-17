@@ -163,6 +163,23 @@ body.sticky-body {
   padding: 8px 12px;
   font-size: 13px;
   line-height: 1.5;
+  cursor: text;
+  caret-color: var(--color-accent);
+  word-break: break-word;
+}
+
+.sticky-mode .sticky-content:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: 4px;
+}
+
+/* Placeholder when empty */
+.sticky-mode .sticky-content:empty::before {
+  content: "双击此处开始编辑…";
+  color: var(--color-text-muted);
+  pointer-events: none;
+  opacity: 0.6;
 }
 
 /* Compact typography in sticky mode */
