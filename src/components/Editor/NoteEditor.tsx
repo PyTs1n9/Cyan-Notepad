@@ -14,6 +14,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { readFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { marked } from "marked";
 import TurndownService from "turndown";
+import { emit, listen } from "@tauri-apps/api/event";
 import { useNoteStore } from "@/stores/noteStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
@@ -96,7 +97,7 @@ const NoteEditor: React.FC = () => {
     mdContentRef.current = mdContent;
   }, [mdContent]);
 
-  // Save function: persists current content to disk
+  // Save function: persists current content to disk and notifies sticky windows
   const doSave = useCallback(async () => {
     const noteId = activeNoteIdRef.current;
     if (!noteId) return;
@@ -106,6 +107,8 @@ const NoteEditor: React.FC = () => {
     const contentToSave = currentMdContent || (ed ? ed.getHTML() : "");
     await saveNoteContent(noteId, contentToSave);
     setIsDirty(false);
+    // Notify open sticky windows to update
+    emit("sticky:note-updated", { noteId, content: contentToSave });
     // Brief flash of "saved" status
     setShowSaveStatus(true);
     setTimeout(() => setShowSaveStatus(false), 2000);
@@ -126,6 +129,8 @@ const NoteEditor: React.FC = () => {
     ],
     content: "",
     onUpdate: ({ editor: ed }) => {
+      // Skip dirty marking when content is set programmatically (e.g. loading a note)
+      if (isLoadingContentRef.current) return;
       const noteId = activeNoteIdRef.current;
       if (!noteId) return;
       const html = ed.getHTML();
@@ -141,6 +146,10 @@ const NoteEditor: React.FC = () => {
 
   // Track previous activeNoteId to detect switches
   const prevNoteIdRef = useRef<string | null>(null);
+  // Guard against stale async loadNoteContent callbacks (race condition)
+  const loadingNoteIdRef = useRef<string | null>(null);
+  // Flag to suppress dirty marking during programmatic content loading
+  const isLoadingContentRef = useRef(false);
 
   // When activeNoteId changes: save old note, clear editor, load new note
   useEffect(() => {
@@ -162,6 +171,7 @@ const NoteEditor: React.FC = () => {
     prevNoteIdRef.current = currentId;
 
     if (!currentId) {
+      loadingNoteIdRef.current = null;
       editor.commands.setContent("");
       setMdContent("");
       setIsDirty(false);
@@ -174,7 +184,11 @@ const NoteEditor: React.FC = () => {
     setIsDirty(false);
 
     // Load new note content
+    loadingNoteIdRef.current = currentId;
     loadNoteContent(currentId).then((content) => {
+      // Discard stale result if user already switched to another note
+      if (loadingNoteIdRef.current !== currentId) return;
+      isLoadingContentRef.current = true;
       if (editorMode === "wysiwyg") {
         if (content) {
           // If content is raw Markdown (not HTML), convert to HTML first for TipTap
@@ -198,8 +212,44 @@ const NoteEditor: React.FC = () => {
           setMdContent("");
         }
       }
+      isLoadingContentRef.current = false;
+      setIsDirty(false);
     });
   }, [activeNoteId, editor]); // eslint-disable-line
+
+  // Listen for sticky save events — update editor when sticky saves same note
+  useEffect(() => {
+    const unlisten = listen<{ noteId: string; content: string }>(
+      "sticky:note-saved",
+      (event) => {
+        const { noteId: savedId, content } = event.payload;
+        if (savedId !== activeNoteIdRef.current) return;
+        // Reload content into editor (avoid echo loop)
+        const ed = editorRef.current;
+        if (!ed || !content) return;
+        if (editorMode === "wysiwyg") {
+          if (isHtmlContent(content)) {
+            ed.commands.setContent(content);
+          } else {
+            const html = marked(content) as string;
+            ed.commands.setContent(html);
+          }
+        } else {
+          // MD mode: convert HTML to markdown or use raw
+          if (isHtmlContent(content)) {
+            const md = turndownService.turndown(content);
+            setMdContent(md);
+          } else {
+            setMdContent(content);
+          }
+        }
+        setIsDirty(false);
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [editorMode]);
 
   // Ctrl+S / Cmd+S save handler
   useEffect(() => {

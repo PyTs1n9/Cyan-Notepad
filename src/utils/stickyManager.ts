@@ -1,9 +1,15 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { listen } from "@tauri-apps/api/event";
 
 // Track open sticky windows (key: noteId, value: window label)
 const openStickies = new Map<string, string>();
 // Counter for generating unique labels
 let stickyCounter = 0;
+
+// Listen for sticky-close events emitted by sticky windows themselves
+listen<{ noteId: string }>("sticky:closed", (event) => {
+  openStickies.delete(event.payload.noteId);
+});
 
 export async function createStickyNote(noteId: string): Promise<void> {
   // If already open, just focus it
@@ -35,6 +41,7 @@ export async function createStickyNote(noteId: string): Promise<void> {
     alwaysOnTop: true,
     transparent: true,
     resizable: true,
+    maximizable: false,
     skipTaskbar: true,
     visible: false, // Hidden initially to avoid flash
   });

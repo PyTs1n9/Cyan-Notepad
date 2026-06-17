@@ -4,6 +4,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import type { ThemeType, LangType, CustomColors, AppShortcuts } from "@/stores/settingsStore";
 import { THEME_COLORS, DEFAULT_SHORTCUTS } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
+import { pauseShortcuts, resumeShortcuts } from "@/utils/shortcutManager";
 
 interface SettingsModalProps {
   open: boolean;
@@ -14,6 +15,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const { theme, lang, customColors, savedPresets, shortcuts, setTheme, setLang, setCustomColors, savePreset, loadPreset, deletePreset, setShortcuts } = useSettingsStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [recordingField, setRecordingField] = useState<keyof AppShortcuts | null>(null);
+
+  // Pause/resume global shortcuts when recording
+  useEffect(() => {
+    if (recordingField) {
+      pauseShortcuts();
+    } else {
+      resumeShortcuts();
+    }
+  }, [recordingField]);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click

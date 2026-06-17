@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { emit, listen } from "@tauri-apps/api/event";
 import { Pin, PinOff, X } from "lucide-react";
-import { loadNoteContent, loadNoteList, loadSettings } from "@/utils/storage";
+import { loadNoteContent, loadNoteList, loadSettings, saveNoteContent } from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
 import { marked } from "marked";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
@@ -13,14 +14,24 @@ function isHtmlContent(content: string): boolean {
   return /<[a-zA-Z][\s\S]*>/.test(content);
 }
 
+const MIN_FONT = 10;
+const MAX_FONT = 32;
+const DEFAULT_FONT = 13;
+const FONT_STEP = 1;
+
 interface StickyNoteProps {
   noteId: string;
 }
 
 export default function StickyNote({ noteId }: StickyNoteProps) {
   const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(true);
+  const [fontSize, setFontSize] = useState<number>(DEFAULT_FONT);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isComposingRef = useRef(false);
+  // Track whether we initiated a save (to ignore our own echo event)
+  const selfSaveRef = useRef(false);
   const appWindow = getCurrentWindow();
 
   // Set sticky body class for transparent background
@@ -46,7 +57,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     initTheme();
   }, []);
 
-  // Load note content
+  // Load note content and inject into contentEditable
   useEffect(() => {
     const loadNote = async () => {
       try {
@@ -57,12 +68,13 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
         }
 
         const rawContent = await loadNoteContent(noteId);
-        if (rawContent) {
+        if (rawContent && editorRef.current) {
           if (isHtmlContent(rawContent)) {
-            setContent(rawContent);
+            editorRef.current.innerHTML = rawContent;
           } else {
             const html = await marked(rawContent);
-            setContent(typeof html === "string" ? html : rawContent);
+            editorRef.current.innerHTML =
+              typeof html === "string" ? html : rawContent;
           }
         }
       } catch (e) {
@@ -71,6 +83,113 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     };
     loadNote();
   }, [noteId]);
+
+  // Listen for content updates from main editor
+  useEffect(() => {
+    const unlisten = listen<{ noteId: string; content: string }>(
+      "sticky:note-updated",
+      (event) => {
+        if (event.payload.noteId !== noteId) return;
+        // Ignore if this update was triggered by our own save
+        if (selfSaveRef.current) {
+          selfSaveRef.current = false;
+          return;
+        }
+        const rawContent = event.payload.content;
+        if (editorRef.current && rawContent) {
+          if (isHtmlContent(rawContent)) {
+            editorRef.current.innerHTML = rawContent;
+          } else {
+            // Markdown → HTML for display
+            const html = marked(rawContent);
+            editorRef.current.innerHTML =
+              typeof html === "string" ? html : rawContent;
+          }
+        }
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [noteId]);
+
+  // Debounced auto-save with event emission
+  const scheduleAutoSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      if (editorRef.current) {
+        const content = editorRef.current.innerHTML;
+        await saveNoteContent(noteId, content);
+        // Notify main editor about the change
+        selfSaveRef.current = true;
+        emit("sticky:note-saved", { noteId, content });
+      }
+    }, 800);
+  }, [noteId]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  const handleInput = () => {
+    if (!isComposingRef.current) {
+      scheduleAutoSave();
+    }
+  };
+
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  const handleCompositionEnd = () => {
+    isComposingRef.current = false;
+    scheduleAutoSave();
+  };
+
+  // Ctrl + wheel to zoom font size
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setFontSize((prev) => {
+        const delta = e.deltaY < 0 ? FONT_STEP : -FONT_STEP;
+        return Math.min(MAX_FONT, Math.max(MIN_FONT, prev + delta));
+      });
+    },
+    [],
+  );
+
+  // Close: save content, notify main window, and destroy window
+  const closeSticky = async () => {
+    try {
+      if (editorRef.current) {
+        const content = editorRef.current.innerHTML;
+        await saveNoteContent(noteId, content);
+        emit("sticky:note-saved", { noteId, content });
+      }
+      // Notify main window to clear tracking before destroying
+      emit("sticky:closed", { noteId });
+      await appWindow.close();
+    } catch (e) {
+      console.error("Failed to close sticky:", e);
+    }
+  };
+
+
+
+
+
+  // Double-click on header to close
+  const handleHeaderDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).closest("button")) return;
+      closeSticky();
+    },
+    [], // eslint-disable-line
+  );
 
   const handleTogglePin = async () => {
     try {
@@ -82,25 +201,21 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     }
   };
 
-  const handleClose = async () => {
-    try {
-      await appWindow.close();
-    } catch (e) {
-      console.error("Failed to close:", e);
-    }
-  };
-
   return (
     <div className="sticky-mode h-screen w-screen">
       <div className="sticky-container h-full flex flex-col">
-        {/* Draggable Title Bar */}
+        {/* Draggable Title Bar — double-click to close */}
         <div
-          className="sticky-header flex items-center gap-2 cursor-move"
+          className="sticky-header flex items-center gap-2 cursor-move select-none"
+          onDoubleClick={handleHeaderDoubleClick}
           data-tauri-drag-region
         >
           <Pin size={12} className="text-accent flex-shrink-0" />
           <span className="flex-1 truncate text-text-primary text-xs font-semibold">
             {title}
+          </span>
+          <span className="text-[10px] text-text-muted tabular-nums select-none">
+            {fontSize}px
           </span>
           <div className="flex items-center gap-0.5">
             <button
@@ -111,7 +226,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
               {isAlwaysOnTop ? <PinOff size={11} /> : <Pin size={11} />}
             </button>
             <button
-              onClick={handleClose}
+              onClick={closeSticky}
               className="p-1 rounded hover:bg-danger/20 text-text-muted hover:text-danger transition-colors cursor-pointer"
               title="Close"
             >
@@ -120,10 +235,18 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           </div>
         </div>
 
-        {/* Note Content */}
+        {/* Editable Note Content */}
         <div
-          className="sticky-content flex-1 text-text-primary overflow-y-auto"
-          dangerouslySetInnerHTML={{ __html: content }}
+          ref={editorRef}
+          className="sticky-content flex-1 text-text-primary overflow-y-auto outline-none"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleInput}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
+          onWheel={handleWheel}
+          style={{ fontSize: `${fontSize}px` }}
+          spellCheck={false}
         />
       </div>
     </div>
