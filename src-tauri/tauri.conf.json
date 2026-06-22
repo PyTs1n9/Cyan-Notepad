@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "BaiQingTodo",
+  "productName": "Cyan Notepad",
   "version": "0.1.2",
-  "identifier": "com.pytsingtodo.app",
+  "identifier": "com.cyan-notepad.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:8787",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "BaiQingTodo",
+        "title": "Cyan Notepad",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

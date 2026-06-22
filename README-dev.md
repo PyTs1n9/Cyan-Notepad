@@ -1,4 +1,4 @@
-# BaiQingTodo - 开发者手册
+# Cyan Notepad - 开发者手册
 
 本文档面向开发者，介绍项目架构、环境配置、开发命令等内容。如需了解产品功能和使用方法，请参阅 [README.md](./README.md)。
 
@@ -233,17 +233,20 @@ npm run tauri dev
 
 ## 数据存储
 
-所有数据持久化在 Windows 应用数据目录：
+所有用户数据保存在本地，不会上传到任何服务器：
 
 ```
-%APPDATA%/com.pytsingtodo.app/data/
-├── todos.json          # 待办事项
+%APPDATA%/com.cyan-notepad.app/data/
+├── todos.json          # 待办事项数据
 ├── fonts.json          # 自定义字体注册表
-├── settings.json       # 主题 / 语言 / 自定义颜色 / 已保存预设
+├── settings.json       # 主题、语言、自定义颜色、已保存预设、快捷键配置
+├── app-icon.png        # 自定义应用图标
 └── notes/
-    ├── index.json      # 笔记元数据索引（ID / 标题 / 标签 / 时间）
-    └── <uuid>.md       # 笔记内容（按需加载）
+    ├── index.json      # 笔记元数据索引（标题、标签、时间）
+    └── <uuid>.md       # 笔记内容文件（HTML 或 Markdown 格式）
 ```
+
+> 💡 如需备份数据，复制上述目录即可。更换电脑时，将该目录复制到新电脑对应位置即可恢复所有数据。
 
 **说明：**
 - 笔记内容以 HTML（TipTap 输出）或 Markdown 存储在 `.md` 文件中
@@ -253,31 +256,28 @@ npm run tauri dev
 
 ---
 
-## 开发注意事项
+## 常见问题
 
-### Rust 入口
+**Q：数据存储在哪里？卸载后会丢失吗？**
+A：数据存储在 `%APPDATA%/com.cyan-notepad.app/data/` 目录下。卸载应用不会自动删除该目录，但建议提前备份。
 
-`main.rs` 必须调用 `pytsing_to_do_lib::run()`，该名称来自 `Cargo.toml` 中的 `[lib] name = "pytsing_to_do_lib"`，**不可修改为其他名称**。
+**Q：支持哪些操作系统？**
+A：目前仅支持 Windows 系统。
 
-### Tauri v2 权限
+**Q：笔记支持什么格式？**
+A：记事本模式下为富文本（WYSIWYG），MD 模式下为 Markdown。两种模式可自由切换，内容会自动转换。
 
-Tauri v2 的文件系统权限配置在 `src-tauri/capabilities/default.json` 中，**不是** `tauri.conf.json`。
+**Q：如何导入已有的 Markdown 文件？**
+A：在记事本页面点击「导入 Markdown」按钮，选择 `.md` 或 `.markdown` 文件即可批量导入。也支持导入 `.txt` 文本文件。
 
-### 命名导入
+**Q：如何导出笔记？**
+A：在笔记编辑界面顶部，点击「导出 MD」或「导出 TXT」按钮，选择保存位置即可。
 
-`@tiptap/extension-text-style` 中的 `TextStyle` 需要使用命名导入（named import），不能使用默认导入。
+**Q：什么是磁贴笔记？**
+A：「钉住磁贴」可将当前笔记弹出为独立的小窗口，始终显示在其他窗口之上，适合边查资料边记笔记。编辑内容会自动同步到主窗口。
 
-### 文件读取
-
-使用 `@tauri-apps/plugin-fs` 中的 `readFile`，不要使用已废弃的 `readBinaryFile`。
-
-### 国际化新增
-
-添加新的 UI 文本时，必须同时在 `src/utils/i18n.ts` 的 `zh` 和 `en` 对象中添加对应 key，否则会导致 TypeScript 编译错误。
-
-### 设置持久化
-
-`App.tsx` 中的 `saveSettings` 包含 `savedPresets` 数组；`loadSettingsState` 在加载时需要进行类型转换。
+**Q：如何配置全局快捷键？**
+A：在设置弹窗的「快捷键设置」区域，点击输入框并按下新的组合键即可自定义。默认快捷键为 `Ctrl+Space` 显示/隐藏窗口。
 
 ---
 

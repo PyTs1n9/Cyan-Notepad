@@ -44,22 +44,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'BaiQingTodo v__VERSION__'
+          releaseName: 'Cyan Notepad v__VERSION__'
           releaseBody: |
             ## 新增 | New
-            - 磁贴功能：连续点击3下磁贴标题栏，可以快速关闭磁贴。
-            - 检查更新：帮助-关于，可以检查更新。
 
             ## 改进 | Improved
-            - 磁贴钉出后可以修改文字。
-            - 磁贴和笔记内容同步。
-            - 在修改快捷键的时候，禁用原先快捷键功能。
+            - BaiQingTodo 柏青待办 正式改名为Cyan Notepad 青色记事本。
+            - 软件LOGO和图标更新。
+            - 待办事项功能优化：
 
             ## 修复 | Fixed
-            - 修复了版本不一致的问题
-            - 修复了最小化窗口ctrl+space无法显示的问题。
-            - 修复了快速切换笔记内容并发竞态的问题。
-            - 修复了其他已知问题。
 
             ## 删除 | Deleted
 
@@ -71,7 +65,7 @@ jobs:
             - 日历表中自定义待办。
 
             ## 下载 | Download
-            - `pytsing-to-do.exe` — 自包含可执行文件（无需额外运行时，开箱即用）
-            - `BaiQingTodo_<version>_x64-setup.msi` — Windows 安装包
+            - `Cyan-Notepad.exe` — 自包含可执行文件（无需额外运行时，开箱即用）
+            - `CyanNotepad_<version>_x64-setup.msi` — Windows 安装包
           releaseDraft: false
           prerelease: false

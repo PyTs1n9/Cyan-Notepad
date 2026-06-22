@@ -37,9 +37,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNewNote,
       {/* Logo + Collapse Toggle */}
       <div className={`px-3 py-4 flex items-center ${collapsed ? "flex-col justify-center gap-2" : "gap-2"}`}>
         <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-sm font-bold">B</span>
+          <span className="text-white text-sm font-bold">C</span>
         </div>
-        {!collapsed && <span className="font-semibold text-text-primary text-base truncate">BaiQingTodo</span>}
+        {!collapsed && <span className="font-semibold text-text-primary text-base truncate">Cyan Notepad</span>}
         {collapsed ? (
           <button
             onClick={onToggleCollapse}

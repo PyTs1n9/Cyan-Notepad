@@ -1,5 +1,4 @@
 [build]
-# Redirect build output to a path without Unicode characters.
-# RC.EXE (Windows Resource Compiler) cannot handle paths with
-# Chinese characters, so we use an ASCII-only target directory.
-target-dir = "C:\\pytsing-todo-target"
+# 通过 Junction (C:\BaiQingTodo -> 项目目录) 输出到项目内 target，
+# RC.EXE 只看到纯 ASCII 路径，不会因中文字符报错。
+target-dir = "D:\\桌面\\ProjectLists\\Todolist-vibe\\src-tauri\\target"

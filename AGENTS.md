@@ -4,7 +4,7 @@ This file provides guidance to Qoder (qoder.com) when working with code in this 
 
 ## Project Overview
 
-BaiQingTodo is a Windows desktop app built with **Tauri v2 + React 18 + TypeScript**. Core features:
+Cyan Notepad is a Windows desktop app built with **Tauri v2 + React 18 + TypeScript**. Core features:
 - **Todo List** — CRUD, three-level priority, filter tabs (all/active/completed)
 - **Rich Text Notepad** — TipTap WYSIWYG editor + MD split-pane mode with live preview
 - **Theme System** — 4 built-in presets (dark/blue/yellow/green) + custom palette + up to 5 saved user presets
@@ -49,7 +49,7 @@ Vite dev server port is **8787** (not the default 1420).
 
 **i18n** — `src/utils/i18n.ts` exports `t(lang, key)` and `tWithParams(lang, key, params)`. All UI strings are defined in `TranslationKeys`. When adding new UI text, add keys to both `zh` and `en` objects. Components use `useSettingsStore(s => s.lang)` to get current language.
 
-**Data Persistence** — `src/utils/storage.ts` wraps Tauri fs plugin. All data under `%APPDATA%/com.pytsingtodo.app/data/`:
+**Data Persistence** — `src/utils/storage.ts` wraps Tauri fs plugin. All data under `%APPDATA%/com.cyan-notepad.app/data/`:
 ```
 data/
 ├── todos.json          # Todo items
@@ -73,7 +73,7 @@ Note content files use `.md` extension but may contain HTML (TipTap output) or M
 - Tauri v2 with plugins: `tauri-plugin-fs`, `tauri-plugin-dialog`, `tauri-plugin-opener`
 - No custom Rust commands; all file I/O uses fs plugin from frontend
 - Permissions in `src-tauri/capabilities/default.json`
-- `Cargo.toml` defines `[lib] name = "pytsing_to_do_lib"` — `main.rs` MUST call `pytsing_to_do_lib::run()` with that exact name
+- `Cargo.toml` defines `[lib] name = "cyan_notepad_lib"` — `main.rs` MUST call `cyan_notepad_lib::run()` with that exact name
 
 ### Key Components
 
@@ -97,7 +97,7 @@ Note content files use `.md` extension but may contain HTML (TipTap output) or M
 
 ## Pitfalls & Important Details
 
-- **Main entry mismatch**: `main.rs` must call `pytsing_to_do_lib::run()`, NOT `todolist_vibe_temp_lib` or any other name. This name comes from `Cargo.toml` `[lib] name`.
+- **Main entry mismatch**: `main.rs` must call `cyan_notepad_lib::run()`, NOT `todolist_vibe_temp_lib` or any other name. This name comes from `Cargo.toml` `[lib] name`.
 - **Named import**: `TextStyle` from `@tiptap/extension-text-style` requires named import, not default.
 - **Binary file read**: Use `readFile` from `@tauri-apps/plugin-fs` (not deprecated `readBinaryFile`).
 - **Permissions**: Tauri v2 fs permissions go in `capabilities/default.json`, NOT `tauri.conf.json`.

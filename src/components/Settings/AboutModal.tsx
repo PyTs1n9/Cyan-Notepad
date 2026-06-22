@@ -4,8 +4,8 @@ import { t, tWithParams } from "@/utils/i18n";
 import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-const GITHUB_URL = "https://github.com/PyTs1n9/BaiQingTodo";
-const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/BaiQingTodo/releases/latest";
+const GITHUB_URL = "https://github.com/PyTs1n9/Cyan-Notepad";
+const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/Cyan-Notepad/releases/latest";
 const APP_VERSION = "0.1.2";
 
 type UpdateStatus = "idle" | "checking" | "upToDate" | "newVersion" | "error";
@@ -61,7 +61,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
         {/* App icon area */}
         <div className="flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-2xl bg-accent/15 flex items-center justify-center mb-4">
-            <span className="text-3xl font-bold text-accent">B</span>
+            <span className="text-3xl font-bold text-accent">C</span>
           </div>
 
           {/* App name - clickable GitHub link */}
@@ -71,7 +71,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             rel="noopener noreferrer"
             className="text-lg font-semibold text-accent hover:underline inline-flex items-center gap-1.5"
           >
-            BaiQingTodo
+            Cyan Notepad
             <ExternalLink size={15} />
           </a>
 
@@ -136,7 +136,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
         <div className="mt-3 space-y-2.5">
           <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary">
             <span className="text-text-muted">{t(lang, "author")}</span>
-            <span className="font-medium">Pytsing</span>
+            <span className="font-medium">Cyan Notepad</span>
           </div>
 
           <a

@@ -12,7 +12,7 @@ fn main() {
     let mut attrs = tauri_build::Attributes::default();
 
     if original_icon.exists() {
-        let temp_dir = env::temp_dir().join("pytsing_todo_build");
+        let temp_dir = env::temp_dir().join("cyan_notepad_build");
         let _ = fs::create_dir_all(&temp_dir);
         let temp_icon = temp_dir.join("icon.ico");
         let _ = fs::copy(&original_icon, &temp_icon);

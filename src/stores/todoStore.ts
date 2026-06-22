@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import type { Todo } from "@/types";
 
+/** 排序：未完成在前，已完成在后；同组内保持原有顺序 */
+const sortByCompletion = (items: Todo[]): Todo[] =>
+  [...items].sort((a, b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return 0;
+  });
+
 interface TodoState {
   todos: Todo[];
   filter: "all" | "active" | "completed";
@@ -37,8 +44,10 @@ export const useTodoStore = create<TodoState>((set) => ({
 
   toggleTodo: (id) =>
     set((state) => ({
-      todos: state.todos.map((t) =>
-        t.id === id ? { ...t, completed: !t.completed } : t
+      todos: sortByCompletion(
+        state.todos.map((t) =>
+          t.id === id ? { ...t, completed: !t.completed } : t
+        )
       ),
     })),
 
@@ -66,5 +75,5 @@ export const useTodoStore = create<TodoState>((set) => ({
 
   setPriorityFilter: (priorityFilter) => set({ priorityFilter }),
 
-  loadTodos: (todos) => set({ todos }),
+  loadTodos: (todos) => set({ todos: sortByCompletion(todos) }),
 }));
