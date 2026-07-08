@@ -1,293 +1,411 @@
-# Cyan Notepad - 开发者手册
+# Cyan Notepad - 开发者文档
 
-本文档面向开发者，介绍项目架构、环境配置、开发命令等内容。如需了解产品功能和使用方法，请参阅 [README.md](./README.md)。
+本文档面向开发者和 AI coding agent，描述当前项目结构、开发命令、数据模型、发布流程和常见维护约束。产品功能和下载说明请阅读 [README.md](./README.md)。
 
 ---
 
 ## 技术栈
 
 | 层级 | 技术 |
-|------|------|
+| --- | --- |
 | 桌面框架 | Tauri v2 |
 | 前端框架 | React 19 + TypeScript |
 | 构建工具 | Vite 7 |
-| 富文本编辑器 | TipTap 3（基于 ProseMirror） |
-| MD 解析 | turndown（HTML→MD）+ marked（MD→HTML） |
-| 状态管理 | Zustand 5（4 个 Store） |
-| 样式方案 | Tailwind CSS v4 + CSS 自定义属性主题 |
-| 图标库 | Lucide React |
-| 本地存储 | Tauri fs 插件（文件系统读写） |
-| 后端 | Rust（仅使用 Tauri 插件，无自定义命令） |
+| 状态管理 | Zustand 5 |
+| 样式 | Tailwind CSS v4 + CSS 变量主题 |
+| Markdown | `marked` 预览，`turndown` 兼容历史 HTML 转 Markdown |
+| 图标 | `lucide-react` |
+| 本地存储 | `@tauri-apps/plugin-fs` |
+| 文件对话框 | `@tauri-apps/plugin-dialog` |
+| 外链打开 | `@tauri-apps/plugin-opener` |
+| 全局快捷键 | `@tauri-apps/plugin-global-shortcut` |
+| 单实例 | `tauri-plugin-single-instance` |
 
----
+当前版本号为 `0.2.0`，需要同步维护：
 
-## 项目架构
-
-### 目录结构
-
-```
-Todolist-vibe/
-├── src/
-│   ├── components/
-│   │   ├── Editor/
-│   │   │   ├── NoteEditor.tsx      # 编辑器主组件（双模式 + 工具栏切换 + 滚动同步）
-│   │   │   └── Toolbar.tsx         # 排版工具栏（WYSIWYG / MD 双模式适配）
-│   │   ├── Layout/
-│   │   │   ├── Sidebar.tsx         # 侧边栏（导航 / 笔记列表 / 标签筛选 / 导入MD）
-│   │   │   └── TitleBar.tsx        # 标题栏组件
-│   │   ├── Settings/
-│   │   │   ├── AboutModal.tsx      # 关于弹窗
-│   │   │   └── SettingsModal.tsx   # 设置弹窗（主题预设 / 调色板 / 预设管理 / 语言）
-│   │   └── Todo/
-│   │       └── TodoView.tsx        # 待办事项视图
-│   ├── stores/
-│   │   ├── todoStore.ts            # 待办事项状态（CRUD、筛选）
-│   │   ├── noteStore.ts            # 笔记状态（元数据、活动笔记、标签筛选）
-│   │   ├── fontStore.ts            # 字体状态（内置 + 自定义导入）
-│   │   └── settingsStore.ts        # 设置状态（主题 / 语言 / 自定义颜色 / 保存预设）
-│   ├── types/
-│   │   └── index.ts                # TypeScript 类型定义
-│   ├── utils/
-│   │   ├── i18n.ts                 # 国际化（zh / en 双语言）
-│   │   └── storage.ts              # Tauri fs 封装（读写 todos / notes / fonts / settings）
-│   ├── App.tsx                     # 根组件（数据加载 / 主题应用 / 侧边栏拖拽 / MD 导入）
-│   ├── index.css                   # Tailwind + CSS 变量主题定义（4 套预设）
-│   └── main.tsx                    # React 入口
-├── src-tauri/
-│   ├── src/
-│   │   ├── lib.rs                  # Tauri 插件注册
-│   │   └── main.rs                 # Rust 入口
-│   ├── capabilities/
-│   │   └── default.json            # 权限配置（Tauri v2 权限系统）
-│   ├── Cargo.toml                  # Rust 依赖配置
-│   └── tauri.conf.json             # Tauri 应用配置
-├── env.ps1                         # 开发环境变量一键配置脚本
-├── vite.config.ts                  # Vite 配置（端口 8787，路径别名 @/ → src/）
-├── tsconfig.json                   # TypeScript 配置
-└── package.json                    # 前端依赖与脚本
-```
-
-### 核心组件职责
-
-| 组件 | 职责 |
-|------|------|
-| `App.tsx` | 根组件：数据加载、主题应用、侧边栏拖拽调整、设置弹窗、MD 导入处理 |
-| `Sidebar.tsx` | 导航切换、笔记列表（含删除）、标签筛选、导入 Markdown 按钮、设置按钮、动态宽度 |
-| `TodoView.tsx` | 待办事项 CRUD、优先级选择、筛选标签页 |
-| `NoteEditor.tsx` | TipTap 编辑器（WYSIWYG 模式）+ textarea/preview 分屏（MD 模式）、模式切换、工具栏切换、滚动同步、turndown/marked 转换 |
-| `Toolbar.tsx` | 排版工具栏，同时适配 WYSIWYG 和 MD 模式（MD 模式下插入 Markdown 语法） |
-| `SettingsModal.tsx` | 4 个主题预设网格、自定义调色板（5 字段）、保存/选择预设分按钮与下拉菜单 |
-
-### 状态管理
-
-项目使用 4 个 Zustand Store 管理全局状态：
-
-| Store | 文件 | 管理内容 |
-|-------|------|---------|
-| Todo Store | `stores/todoStore.ts` | 待办事项列表、筛选状态、CRUD 操作 |
-| Note Store | `stores/noteStore.ts` | 笔记元数据、活动笔记 ID、标签筛选、删除 |
-| Font Store | `stores/fontStore.ts` | 内置字体 + 导入的自定义字体 |
-| Settings Store | `stores/settingsStore.ts` | 主题类型、语言、自定义颜色、已保存预设（最多 5 个）、`THEME_COLORS` 预设映射 |
-
-### 数据流
-
-- 笔记内容以 HTML（TipTap 输出）或 Markdown 存储在 `.md` 文件中，元数据存于 `index.json`
-- 切换到 MD 模式：TipTap HTML → `turndown` → 纯 Markdown 写入 textarea
-- 切换到 WYSIWYG 模式：Markdown → `marked` → HTML 写入 TipTap
-- 自动保存：800ms 防抖，通过 `setTimeout` refs 实现
-- 设置（主题/语言/自定义颜色/预设）：变更即自动持久化，启动时加载
-- 侧边栏宽度：通过 `mousedown` / `mousemove` / `mouseup` 事件在 `App.tsx` 中拖拽调整
-
-### 主题系统
-
-- CSS 自定义属性定义在 `src/index.css`，默认主题为蓝调
-- 4 套预设主题类名：`.theme-dark`、`.theme-blue`、`.theme-yellow`、`.theme-green`
-- 自定义主题通过 `App.tsx` 中 `documentElement.style.setProperty` 内联设置
-- `settingsStore.ts` 中 `setTheme()` 在切换预设时自动同步 `customColors`
-- 已保存预设持久化在 `settings.json` 中
-
-### 国际化（i18n）
-
-- `src/utils/i18n.ts` 导出 `t(lang, key)` 和 `tWithParams(lang, key, params)`
-- 所有 UI 字符串定义在 `TranslationKeys` 类型中
-- 组件通过 `useSettingsStore(s => s.lang)` 获取当前语言
-- **新增 UI 文本时，必须同时在 `zh` 和 `en` 对象中添加对应 key**
-
-### 样式规范
-
-- 使用 Tailwind CSS v4（通过 `@tailwindcss/vite` 插件）
-- 所有颜色必须引用 CSS 变量 token（如 `bg-bg-primary`、`text-text-muted`、`bg-accent`）
-- **禁止在组件 `className` 中硬编码十六进制颜色值**，否则主题切换时不会更新
-
-### 路径别名
-
-- `@/` → `src/`（在 `vite.config.ts` 和 `tsconfig.json` 中配置）
-
----
-
-## 环境要求
-
-- **Node.js** ≥ 18
-- **Rust** stable（通过 [rustup](https://rustup.rs/) 安装）
-- **Windows** + [Microsoft Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)（提供 MSVC 链接器）
-
----
-
-## 快速开始
-
-### 1. 安装 Rust 工具链
-
-通过 [rustup](https://rustup.rs/) 一键安装：
-
-```powershell
-winget install --id Rustlang.Rustup
-```
-
-或访问 [https://rustup.rs/](https://rustup.rs/) 下载 `rustup-init.exe` 手动安装。
-
-安装完成后，**关闭并重新打开 PowerShell**，验证安装：
-
-```powershell
-rustc --version   # 应显示 rustc 1.xx.x
-cargo --version   # 应显示 cargo 1.xx.x
-```
-
-### 2. 安装 MSVC 编译工具（Windows 必需）
-
-下载并安装 [Microsoft Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools-tools/)，安装时勾选 **"使用 C++ 的桌面开发"** 工作负载。
-
-### 3. 安装前端依赖
-
-```bash
-npm install
-```
-
-### 4. 配置编译环境变量
-
-每次打开新的 PowerShell 窗口，在运行 Tauri 命令前需设置以下环境变量：
-
-```powershell
-# 添加 Rust 到 PATH（如未永久配置）
-$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
-
-# 添加 MSVC 链接器到 PATH
-$env:Path = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64;$env:Path"
-$env:LIB = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
-$env:INCLUDE = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt"
-$env:WindowsSdkDir = "C:\Program Files (x86)\Windows Kits\10\"
-```
-
-> ⚠️ 路径中的 MSVC / Windows SDK 版本号（如 `14.44.35207`、`10.0.26100.0`）需与本机实际安装的版本一致。可在 `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\` 下查看已安装版本。
-
-**快捷方式**：项目根目录已提供 `env.ps1` 脚本，一键配置：
-
-```powershell
-. .\env.ps1          # 加载环境变量
-npm run tauri dev    # 启动开发
-```
-
-### 5. 启动开发模式
-
-```bash
-npm run tauri dev
-```
-
-前端开发服务器运行在端口 `8787`，支持热更新。
-
----
-
-## 永久环境配置（推荐）
-
-为避免每次打开终端都要手动设置环境变量，建议将以下路径添加到系统 PATH：
-
-### Rust 工具链
-
-将 `%USERPROFILE%\.cargo\bin` 添加到系统环境变量 `Path` 中：
-
-1. 按 `Win + R`，输入 `sysdm.cpl`，点击「高级」→「环境变量」
-2. 在「用户变量」中找到 `Path`，双击编辑
-3. 新建一条：`%USERPROFILE%\.cargo\bin`
-4. 确定保存，重新打开终端即可生效
-
-### MSVC 编译工具
-
-使用项目根目录的 `env.ps1` 脚本，每次开发前执行一次即可：
-
-```powershell
-. .\env.ps1
-```
+- `package.json`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+- `.github/workflows/release.yml` 中的发布说明
 
 ---
 
 ## 常用命令
 
 | 命令 | 说明 |
-|------|------|
-| `npm run dev` | 仅启动 Tauri renderer 调试服务（端口 8787，不作为产品入口） |
-| `npm run tauri dev` | 启动完整桌面应用（前端 + Rust 后端） |
+| --- | --- |
+| `npm run dev` | 仅启动 Vite renderer，固定端口 `8787` |
+| `npm run tauri dev` | 启动完整 Tauri 桌面开发模式 |
 | `npx tsc --noEmit` | TypeScript 类型检查 |
-| `npm run build` | 构建 Tauri renderer 静态资源 |
-| `npm run tauri build` | 构建生产版本，生成 Windows 安装包 |
+| `npm run build` | 执行 `tsc && vite build`，构建前端产物 |
+| `npm run tauri build` | 构建 Windows 桌面安装包 |
+
+`npm run tauri ...` 实际执行 `scripts/tauri-with-cleanup.mjs`。该脚本会调用本地 `@tauri-apps/cli`，并在 `dev` 前后清理 `src-tauri/target/debug/build` 和 `.fingerprint` 中过多的历史调试构建目录，默认最多保留 3 组。
+
+在 Windows PowerShell 中，`npx tsc --noEmit` 可能因本机脚本执行策略拦截 `npx.ps1`。如果只是被执行策略拦截，而不是 TypeScript 报错，记录在最终说明里即可。
 
 ---
 
-## 数据存储
+## Windows 环境
 
-所有用户数据保存在本地，不会上传到任何服务器：
+Tauri / Rust 构建需要 MSVC 链接器。项目提供了 `env.ps1`，每次运行 Tauri 命令前建议在 PowerShell 中加载：
 
+```powershell
+. .\env.ps1
+npm run tauri dev
 ```
+
+`env.ps1` 中的 MSVC 和 Windows SDK 版本号必须匹配本机安装路径，例如：
+
+- `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\...`
+- `C:\Program Files (x86)\Windows Kits\10\Lib\...`
+
+CI 发布流程使用 `windows-latest`、Node.js 22、Rust stable 和 `tauri-apps/tauri-action@v1`。
+
+---
+
+## 项目结构
+
+```text
+Todolist-vibe/
+├── src/
+│   ├── components/
+│   │   ├── Editor/
+│   │   │   └── NoteEditor.tsx      # Markdown 主工作区：源码 / 预览 / 分屏
+│   │   ├── Layout/
+│   │   │   ├── Sidebar.tsx         # 导航、分类、笔记列表、导入导出、拖拽
+│   │   │   └── TitleBar.tsx        # 自定义标题栏、窗口控制、主操作入口
+│   │   ├── Settings/
+│   │   │   ├── AboutModal.tsx      # 关于、检查更新、GitHub、赞助入口
+│   │   │   └── SettingsModal.tsx   # 主题、语言、快捷键、自动保存
+│   │   ├── Sticky/
+│   │   │   └── StickyNote.tsx      # 可编辑独立便签窗口
+│   │   ├── Tile/
+│   │   │   └── TileView.tsx        # 只读磁贴预览窗口
+│   │   └── Todo/
+│   │       └── TodoView.tsx        # 待办列表、置顶、截止日期、筛选、拖拽
+│   ├── stores/
+│   │   ├── todoStore.ts            # 待办状态
+│   │   ├── noteStore.ts            # 笔记、分类、标签筛选
+│   │   ├── fontStore.ts            # 字体列表
+│   │   └── settingsStore.ts        # 主题、语言、快捷键、自动保存
+│   ├── types/
+│   │   └── index.ts                # 共享类型
+│   ├── utils/
+│   │   ├── storage.ts              # Tauri fs 持久化封装
+│   │   ├── theme.ts                # 主题 class 和 CSS 变量应用
+│   │   ├── i18n.ts                 # typed zh/en 翻译表
+│   │   ├── shortcutManager.ts      # 全局快捷键注册
+│   │   ├── stickyManager.ts        # sticky-* 窗口创建和追踪
+│   │   ├── tile.ts                 # tile-* 窗口创建和主题同步
+│   │   └── externalLinks.ts        # 预览区外链处理
+│   ├── App.tsx                     # 初始化、持久化、主题、导入导出、布局
+│   ├── main.tsx                    # 根据 query 渲染 App / TileView / StickyNote
+│   └── index.css                   # Tailwind v4 token、主题变量、窗口样式
+├── src-tauri/
+│   ├── src/
+│   │   ├── lib.rs                  # 插件、托盘、单实例、关闭到托盘、quit_app
+│   │   └── main.rs                 # 调用 cyan_notepad_lib::run()
+│   ├── capabilities/
+│   │   └── default.json            # main / sticky-* / tile-* 权限
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── scripts/
+│   └── tauri-with-cleanup.mjs      # Tauri CLI 包装与调试缓存清理
+├── env.ps1
+├── package.json
+└── vite.config.ts
+```
+
+---
+
+## 入口与窗口
+
+`src/main.tsx` 根据 URL query 选择渲染入口：
+
+- 默认：`<App />`
+- `/?tile=1&noteId=<id>`：`<TileView />`
+- `/?sticky=<id>`：`<StickyNote />`
+
+Tauri 权限在 `src-tauri/capabilities/default.json` 中声明，窗口 label 覆盖：
+
+```json
+["main", "sticky-*", "tile-*"]
+```
+
+新增窗口类型时，需要同步：
+
+- `src/main.tsx` 的入口选择
+- 创建窗口的 util
+- capabilities 中的 window label 和权限
+
+---
+
+## 状态模型
+
+### Todo Store
+
+文件：`src/stores/todoStore.ts`
+
+`Todo` 字段：
+
+- `id`
+- `title`
+- `completed`
+- `priority`: `low | medium | high`
+- `pinned`
+- `dueDate`
+- `createdAt`
+- `order`
+
+排序规则：
+
+1. 置顶项在最上方。
+2. 未完成项排在已完成项前。
+3. 手动拖拽会更新 `order`，但置顶项不能被拖动。
+
+置顶待办不能删除，避免误操作。
+
+### Note Store
+
+文件：`src/stores/noteStore.ts`
+
+`Note` 字段：
+
+- `id`
+- `title`
+- `content`
+- `tags`
+- `categoryId`
+- `pinned`
+- `order`
+- `createdAt`
+- `updatedAt`
+
+`NoteCategory` 字段：
+
+- `id`
+- `name`
+- `order`
+- `createdAt`
+
+分类规则：
+
+- `activeCategoryId = null` 表示全部笔记。
+- `UNCATEGORIZED_CATEGORY_ID` 表示未分类笔记。
+- 删除分类会把该分类下笔记移回未分类。
+- 笔记可在同分类内拖拽排序，也可拖到分类按钮上移动。
+- 置顶笔记不能拖动或删除。
+
+### Settings Store
+
+文件：`src/stores/settingsStore.ts`
+
+设置项包括：
+
+- `theme`: `dark | blue | yellow | green | custom`
+- `lang`: `zh | en`
+- `customColors`
+- `savedPresets`，最多 5 套
+- `shortcuts.toggleWindow`，默认 `Ctrl+Space`
+- `autoSaveInterval`: `0 | 10000 | 30000 | 60000`
+
+切换预设主题时会同步 `customColors`，便于在设置面板中继续微调。
+
+---
+
+## 数据持久化
+
+所有持久化集中在 `src/utils/storage.ts`，通过 Tauri fs 插件读写：
+
+```text
 %APPDATA%/com.cyan-notepad.app/data/
-├── todos.json          # 待办事项数据
-├── fonts.json          # 自定义字体注册表
-├── settings.json       # 主题、语言、自定义颜色、已保存预设、快捷键配置
-├── app-icon.png        # 自定义应用图标
+├── todos.json
+├── fonts.json
+├── settings.json
+├── app-icon.png
 └── notes/
-    ├── index.json      # 笔记元数据索引（标题、标签、时间）
-    └── <uuid>.md       # 笔记内容文件（HTML 或 Markdown 格式）
+    ├── index.json
+    └── <uuid>.md
 ```
 
-> 💡 如需备份数据，复制上述目录即可。更换电脑时，将该目录复制到新电脑对应位置即可恢复所有数据。
+`notes/index.json` 当前结构：
 
-**说明：**
-- 笔记内容以 HTML（TipTap 输出）或 Markdown 存储在 `.md` 文件中
-- `index.json` 存储元数据，列表加载时无需读取内容文件，提升性能
-- 设置变更自动持久化到 `settings.json`
-- `saveNoteContent` 在 MD 模式下存储纯 Markdown，在 WYSIWYG 模式下存储 HTML；`loadNoteContent` 需兼容两种格式
+```json
+{
+  "notes": [],
+  "categories": []
+}
+```
 
----
+兼容逻辑：
 
-## 常见问题
+- 旧版 `index.json` 如果是纯数组，会被当作 `notes` 读取，`categories` 为空。
+- 如果索引为空或损坏，会扫描 `notes/*.md` 尝试恢复笔记列表。
+- 内容文件扩展名是 `.md`，但历史版本可能存过 TipTap HTML。
+- `NoteEditor` 加载到 HTML 时会通过 `turndown` 转成 Markdown。
 
-**Q：数据存储在哪里？卸载后会丢失吗？**
-A：数据存储在 `%APPDATA%/com.cyan-notepad.app/data/` 目录下。卸载应用不会自动删除该目录，但建议提前备份。
+自动持久化位置：
 
-**Q：支持哪些操作系统？**
-A：目前仅支持 Windows 系统。
-
-**Q：笔记支持什么格式？**
-A：记事本模式下为富文本（WYSIWYG），MD 模式下为 Markdown。两种模式可自由切换，内容会自动转换。
-
-**Q：如何导入已有的 Markdown 文件？**
-A：在记事本页面点击「导入 Markdown」按钮，选择 `.md` 或 `.markdown` 文件即可批量导入。也支持导入 `.txt` 文本文件。
-
-**Q：如何导出笔记？**
-A：在笔记编辑界面顶部，点击「导出 MD」或「导出 TXT」按钮，选择保存位置即可。
-
-**Q：什么是磁贴笔记？**
-A：「钉住磁贴」可将当前笔记弹出为独立的小窗口，始终显示在其他窗口之上，适合边查资料边记笔记。编辑内容会自动同步到主窗口。
-
-**Q：如何配置全局快捷键？**
-A：在设置弹窗的「快捷键设置」区域，点击输入框并按下新的组合键即可自定义。默认快捷键为 `Ctrl+Space` 显示/隐藏窗口。
+- `App.tsx`：todos、note index、fonts、settings。
+- `NoteEditor.tsx`：当前笔记内容，支持 `Ctrl+S` 和设置中的周期自动保存。
+- `StickyNote.tsx`：独立窗口编辑后保存并通过事件通知主窗口。
 
 ---
 
-## 贡献指南
+## 编辑器流程
 
-欢迎提交 Issue 和 Pull Request！提交前请：
+当前主编辑器是 Markdown 工作区，不再暴露旧的 WYSIWYG / MD 双模式切换。
 
-1. 确保代码风格与项目一致
-2. 新增 UI 文本需同时添加中英文翻译
-3. 新增功能建议包含必要的说明
+`NoteEditor.tsx` 负责：
+
+- 加载活动笔记内容。
+- 检测历史 HTML 并转换为 Markdown。
+- 提供源码、预览、分屏三种视图。
+- 通过 `marked` 渲染预览，并对用户输入 HTML 做转义。
+- 源码与预览双向滚动同步。
+- 切换活动笔记前保存上一条笔记。
+- 丢弃过期的异步加载结果，避免快速切换笔记时串内容。
+- 监听 `sticky:note-saved`，同步便签窗口保存的内容。
+- 保存时发出 `sticky:note-updated`，通知已打开便签窗口。
+
+外链点击由 `src/utils/externalLinks.ts` 处理，避免 WebView 内默认导航造成无法回退的问题。
+
+---
+
+## 导入与导出
+
+导入逻辑在 `App.tsx`：
+
+- 文件选择器支持 `.md`、`.markdown`、`.txt`。
+- `.md` / `.markdown` 按原文保存。
+- `.txt` 会按行转为简单 HTML 段落后保存，加载时再由编辑器转换为 Markdown。
+- 新笔记会落在当前活动分类下。
+
+导出逻辑：
+
+- 当前活动笔记可导出为 Markdown 或文本。
+- 如果存储内容仍是历史 HTML，导出前会通过 `turndown` 转 Markdown。
+
+---
+
+## 主题与样式
+
+主题变量定义在 `src/index.css`，通过 Tailwind v4 `@theme` token 和 CSS 变量提供给组件。
+
+主题应用逻辑在 `src/utils/theme.ts`：
+
+- 预设主题通过 class 控制。
+- 自定义主题通过 `documentElement.style.setProperty` 写入变量。
+- 主题变化会通过 `tile-theme-sync` 同步给磁贴窗口。
+
+组件样式约束：
+
+- 优先使用 `bg-bg-primary`、`text-text-muted`、`bg-accent`、`border-border` 等 token。
+- 不要在组件 `className` 中硬编码普通 UI 颜色。
+- 用户内容颜色、图片、图标预览、主题色块等可以使用 inline style。
+
+---
+
+## i18n
+
+文件：`src/utils/i18n.ts`
+
+导出：
+
+- `t(lang, key)`
+- `tWithParams(lang, key, params)`
+
+新增 UI 文本必须：
+
+1. 在 `TranslationKeys` 中新增 key。
+2. 在 `zh` 和 `en` 对象里都补齐翻译。
+3. 组件通过 `useSettingsStore(s => s.lang)` 获取语言。
+
+不要绕过 typed translation table 写普通 UI 文案。
+
+---
+
+## Tauri 后端
+
+文件：`src-tauri/src/lib.rs`
+
+当前 Rust 侧职责：
+
+- 注册 opener、fs、dialog、global-shortcut、single-instance 插件。
+- 创建系统托盘菜单：Show Window / Quit。
+- 左键点击托盘显示主窗口。
+- 拦截普通关闭事件，将窗口隐藏到托盘。
+- 通过 `quit_app` command 实现真正退出。
+- 第二个实例启动时唤起已有主窗口。
+
+关键约束：
+
+- `src-tauri/Cargo.toml` 的 `[lib] name` 必须是 `cyan_notepad_lib`。
+- `src-tauri/src/main.rs` 必须调用 `cyan_notepad_lib::run()`。
+- Tauri v2 权限写在 `src-tauri/capabilities/default.json`，不是 `tauri.conf.json`。
+- `tauri.conf.json` 的 `devUrl` 是 `http://localhost:8787`，Vite 端口必须匹配。
+
+---
+
+## Release Workflow
+
+发布 workflow：`.github/workflows/release.yml`
+
+触发方式：
+
+- 推送 `v*` tag，例如 `v0.2.0`
+- 手动 `workflow_dispatch`
+
+流程：
+
+1. `actions/checkout@v7`
+2. `actions/setup-node@v6`，Node.js 22，npm cache
+3. `dtolnay/rust-toolchain@stable`
+4. `Swatinem/rust-cache@v2`
+5. `npm ci`
+6. `tauri-apps/tauri-action@v1` 构建并创建 GitHub Release
+
+发布说明目前内置在 workflow 的 `releaseBody` 中。版本发布前应同步检查：
+
+- release body 是否覆盖本次新增、改进、修复、删除和已知问题。
+- README 的用户功能说明是否与 release body 一致。
+- 版本号是否在 `package.json`、`Cargo.toml`、`tauri.conf.json` 保持一致。
+- `tauri.conf.json` 的 bundle target 当前为 `nsis`，Release 产物名称以实际上传资源为准。
+
+---
+
+## 开发注意事项
+
+- 改动前先读相关 store、component、utils，行为通常分散在三处。
+- 用户数据格式要向后兼容，尤其是 `notes/index.json` 和 `.md` 内容文件。
+- 置顶项目的删除、拖拽限制是刻意行为。
+- 新窗口必须补 capabilities。
+- 新 UI 文案必须补中英文翻译。
+- 新设置项必须在 store、加载、保存和默认值中一起处理。
+- 修改主题时同时考虑主窗口、磁贴窗口和便签窗口。
+- 不要随意改 Tauri library name、devUrl、Vite 端口。
+- 如果更新发布能力，先看 `.github/workflows/release.yml`。
+
+---
+
+## 贡献前检查
+
+建议在提交前运行：
+
+```bash
+npx tsc --noEmit
+npm run build
+```
+
+如果涉及 Tauri、窗口、托盘、快捷键、文件系统权限或打包流程，再运行：
+
+```powershell
+. .\env.ps1
+npm run tauri build
+```
+
+---
 
 ## 许可证
 
