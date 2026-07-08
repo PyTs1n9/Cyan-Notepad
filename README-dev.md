@@ -223,10 +223,10 @@ npm run tauri dev
 
 | 命令 | 说明 |
 |------|------|
-| `npm run dev` | 仅启动 Vite 前端开发服务器（端口 8787，无需 Rust 环境） |
+| `npm run dev` | 仅启动 Tauri renderer 调试服务（端口 8787，不作为产品入口） |
 | `npm run tauri dev` | 启动完整桌面应用（前端 + Rust 后端） |
 | `npx tsc --noEmit` | TypeScript 类型检查 |
-| `npm run build` | 构建前端静态资源 |
+| `npm run build` | 构建 Tauri renderer 静态资源 |
 | `npm run tauri build` | 构建生产版本，生成 Windows 安装包 |
 
 ---

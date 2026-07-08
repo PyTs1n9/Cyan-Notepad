@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 export type ThemeType = "dark" | "blue" | "yellow" | "green" | "custom";
 export type LangType = "zh" | "en";
+export type AutoSaveInterval = 0 | 10000 | 30000 | 60000;
 
 export interface CustomColors {
   bgPrimary: string;
@@ -38,6 +39,7 @@ interface SettingsState {
   customColors: CustomColors | null;
   savedPresets: SavedPreset[];
   shortcuts: AppShortcuts;
+  autoSaveInterval: AutoSaveInterval;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
@@ -45,12 +47,14 @@ interface SettingsState {
   loadPreset: (index: number) => void;
   deletePreset: (index: number) => void;
   setShortcuts: (shortcuts: AppShortcuts) => void;
+  setAutoSaveInterval: (interval: AutoSaveInterval) => void;
   loadSettings: (settings: {
     theme?: ThemeType;
     lang?: LangType;
     customColors?: CustomColors | null;
     savedPresets?: SavedPreset[];
     shortcuts?: AppShortcuts;
+    autoSaveInterval?: AutoSaveInterval;
   }) => void;
 }
 
@@ -60,6 +64,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   customColors: null,
   savedPresets: [],
   shortcuts: DEFAULT_SHORTCUTS,
+  autoSaveInterval: 0,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -93,6 +98,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setShortcuts: (shortcuts) => set({ shortcuts }),
 
+  setAutoSaveInterval: (autoSaveInterval) => set({ autoSaveInterval }),
+
   loadSettings: (settings) =>
     set({
       theme: settings.theme || "blue",
@@ -100,5 +107,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       customColors: settings.customColors || null,
       savedPresets: settings.savedPresets || [],
       shortcuts: settings.shortcuts || DEFAULT_SHORTCUTS,
+      autoSaveInterval: settings.autoSaveInterval || 0,
     }),
 }));

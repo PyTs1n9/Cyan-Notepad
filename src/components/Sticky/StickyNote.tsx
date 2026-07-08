@@ -6,6 +6,7 @@ import { loadNoteContent, loadNoteList, loadSettings, saveNoteContent } from "@/
 import { applyTheme } from "@/utils/theme";
 import { marked } from "marked";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
+import { handleExternalLinkClick } from "@/utils/externalLinks";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -61,8 +62,8 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   useEffect(() => {
     const loadNote = async () => {
       try {
-        const noteList = await loadNoteList();
-        const noteMeta = noteList.find((n: { id: string }) => n.id === noteId);
+        const noteIndex = await loadNoteList();
+        const noteMeta = noteIndex.notes.find((n: { id: string }) => n.id === noteId);
         if (noteMeta) {
           setTitle(noteMeta.title || "Untitled");
         }
@@ -163,7 +164,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   );
 
   // Close: save content, notify main window, and destroy window
-  const closeSticky = async () => {
+  const closeSticky = useCallback(async () => {
     try {
       if (editorRef.current) {
         const content = editorRef.current.innerHTML;
@@ -176,19 +177,19 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     } catch (e) {
       console.error("Failed to close sticky:", e);
     }
-  };
+  }, [appWindow, noteId]);
 
 
 
 
 
-  // Double-click on header to close
-  const handleHeaderDoubleClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest("button")) return;
+  const handleTitleDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLSpanElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
       closeSticky();
     },
-    [], // eslint-disable-line
+    [closeSticky],
   );
 
   const handleTogglePin = async () => {
@@ -206,14 +207,19 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
       <div className="sticky-container h-full flex flex-col">
         {/* Draggable Title Bar — double-click to close */}
         <div
-          className="sticky-header flex items-center gap-2 cursor-move select-none"
-          onDoubleClick={handleHeaderDoubleClick}
-          data-tauri-drag-region
+          className="sticky-header flex items-center gap-2 select-none"
         >
-          <Pin size={12} className="text-accent flex-shrink-0" />
-          <span className="flex-1 truncate text-text-primary text-xs font-semibold">
+          <span className="flex-shrink-0 cursor-move" data-tauri-drag-region>
+            <Pin size={12} className="text-accent" />
+          </span>
+          <span
+            className="sticky-title max-w-[55%] truncate text-text-primary text-xs font-semibold cursor-pointer"
+            onDoubleClick={handleTitleDoubleClick}
+            title={title}
+          >
             {title}
           </span>
+          <span className="flex-1 self-stretch cursor-move" data-tauri-drag-region />
           <span className="text-[10px] text-text-muted tabular-nums select-none">
             {fontSize}px
           </span>
@@ -244,6 +250,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           onInput={handleInput}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
+          onClick={handleExternalLinkClick}
           onWheel={handleWheel}
           style={{ fontSize: `${fontSize}px` }}
           spellCheck={false}

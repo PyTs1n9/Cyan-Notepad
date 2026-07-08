@@ -1,9 +1,17 @@
 import { create } from "zustand";
 import type { Todo } from "@/types";
 
-/** 排序：未完成在前，已完成在后；同组内保持原有顺序 */
-const sortByCompletion = (items: Todo[]): Todo[] =>
+const normalizeTodos = (items: Todo[]): Todo[] =>
+  items.map((todo, index) => ({
+    ...todo,
+    pinned: todo.pinned ?? false,
+    order: typeof todo.order === "number" ? todo.order : index,
+  }));
+
+/** Pinned items stay on top, then active items, while preserving manual order within each group. */
+const sortTodos = (items: Todo[]): Todo[] =>
   [...items].sort((a, b) => {
+    if ((a.pinned ?? false) !== (b.pinned ?? false)) return a.pinned ? -1 : 1;
     if (a.completed !== b.completed) return a.completed ? 1 : -1;
     return 0;
   });
@@ -12,10 +20,11 @@ interface TodoState {
   todos: Todo[];
   filter: "all" | "active" | "completed";
   priorityFilter: "all" | "low" | "medium" | "high";
-  addTodo: (title: string, priority?: Todo["priority"]) => void;
+  addTodo: (title: string, priority?: Todo["priority"], dueDate?: string) => void;
   toggleTodo: (id: string) => void;
   deleteTodo: (id: string) => void;
   updateTodo: (id: string, updates: Partial<Todo>) => void;
+  togglePinned: (id: string) => void;
   reorderTodos: (fromIndex: number, toIndex: number) => void;
   setFilter: (filter: TodoState["filter"]) => void;
   setPriorityFilter: (filter: TodoState["priorityFilter"]) => void;
@@ -27,24 +36,26 @@ export const useTodoStore = create<TodoState>((set) => ({
   filter: "all",
   priorityFilter: "all",
 
-  addTodo: (title, priority = "low") =>
+  addTodo: (title, priority = "low", dueDate) =>
     set((state) => ({
-      todos: [
+      todos: sortTodos([
         ...state.todos,
         {
           id: crypto.randomUUID(),
           title,
           completed: false,
           priority,
+          pinned: false,
+          dueDate,
           createdAt: new Date().toISOString(),
           order: state.todos.length,
         },
-      ],
+      ]),
     })),
 
   toggleTodo: (id) =>
     set((state) => ({
-      todos: sortByCompletion(
+      todos: sortTodos(
         state.todos.map((t) =>
           t.id === id ? { ...t, completed: !t.completed } : t
         )
@@ -52,14 +63,28 @@ export const useTodoStore = create<TodoState>((set) => ({
     })),
 
   deleteTodo: (id) =>
-    set((state) => ({
-      todos: state.todos.filter((t) => t.id !== id),
-    })),
+    set((state) => {
+      const todo = state.todos.find((t) => t.id === id);
+      if (todo?.pinned) return state;
+
+      return {
+        todos: state.todos.filter((t) => t.id !== id),
+      };
+    }),
 
   updateTodo: (id, updates) =>
     set((state) => ({
-      todos: state.todos.map((t) =>
+      todos: sortTodos(state.todos.map((t) =>
         t.id === id ? { ...t, ...updates } : t
+      )),
+    })),
+
+  togglePinned: (id) =>
+    set((state) => ({
+      todos: sortTodos(
+        state.todos.map((t) =>
+          t.id === id ? { ...t, pinned: !(t.pinned ?? false) } : t
+        )
       ),
     })),
 
@@ -67,13 +92,14 @@ export const useTodoStore = create<TodoState>((set) => ({
     set((state) => {
       const items = [...state.todos];
       const [moved] = items.splice(fromIndex, 1);
+      if (!moved || moved.pinned) return state;
       items.splice(toIndex, 0, moved);
-      return { todos: items.map((t, i) => ({ ...t, order: i })) };
+      return { todos: sortTodos(items.map((t, i) => ({ ...t, order: i }))) };
     }),
 
   setFilter: (filter) => set({ filter }),
 
   setPriorityFilter: (priorityFilter) => set({ priorityFilter }),
 
-  loadTodos: (todos) => set({ todos: sortByCompletion(todos) }),
+  loadTodos: (todos) => set({ todos: sortTodos(normalizeTodos(todos)) }),
 }));

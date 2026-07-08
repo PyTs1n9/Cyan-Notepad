@@ -6,6 +6,7 @@ import { loadNoteContent, loadNoteList, loadSettings } from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
 import { X } from "lucide-react";
+import { handleExternalLinkClick } from "@/utils/externalLinks";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -40,8 +41,8 @@ const TileView: React.FC = () => {
 
       // Load note metadata
       try {
-        const noteList = await loadNoteList();
-        const meta: NoteMeta | undefined = noteList.find((n) => n.id === noteId);
+        const noteIndex = await loadNoteList();
+        const meta: NoteMeta | undefined = noteIndex.notes.find((n) => n.id === noteId);
         if (meta) {
           setTitle(meta.title || "Untitled");
           setTags(meta.tags);
@@ -155,6 +156,7 @@ const TileView: React.FC = () => {
         {htmlContent ? (
           <div
             className="tile-content text-sm text-text-primary leading-relaxed"
+            onClick={handleExternalLinkClick}
             dangerouslySetInnerHTML={{ __html: htmlContent }}
           />
         ) : (

@@ -100,6 +100,8 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    scrollbar-color: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-bg-primary)) transparent;
+    scrollbar-width: thin;
   }
 
   body {
@@ -120,12 +122,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--color-bg-active);
-    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-bg-primary));
+    border-radius: 999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-text-muted);
+    background: color-mix(in srgb, var(--color-text-secondary) 86%, var(--color-bg-primary));
   }
 }
 
@@ -133,6 +135,115 @@
 body.sticky-body {
   background: transparent !important;
   overflow: hidden;
+}
+
+.calendar-motion {
+  will-change: transform, opacity;
+  animation-duration: 120ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  animation-fill-mode: both;
+}
+
+.calendar-motion-next {
+  animation-name: calendar-slide-next;
+}
+
+.calendar-motion-prev {
+  animation-name: calendar-slide-prev;
+}
+
+.calendar-motion-zoomIn {
+  animation-name: calendar-zoom-in;
+}
+
+.calendar-motion-zoomOut {
+  animation-name: calendar-zoom-out;
+}
+
+.markdown-view-pill {
+  will-change: transform;
+  transition: transform 360ms cubic-bezier(0.2, 1.35, 0.38, 1);
+}
+
+.markdown-view-pill-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--color-accent);
+  animation: markdown-pill-jelly 360ms cubic-bezier(0.2, 1.35, 0.38, 1);
+}
+
+@keyframes calendar-slide-next {
+  from {
+    opacity: 0;
+    transform: translate3d(10px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes calendar-slide-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(-10px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes calendar-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes calendar-zoom-out {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes markdown-pill-jelly {
+  0% {
+    transform: scaleX(0.92);
+  }
+  42% {
+    transform: scaleX(1.14);
+  }
+  68% {
+    transform: scaleX(0.96);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calendar-motion {
+    animation: none;
+  }
+
+  .markdown-view-pill {
+    transition-duration: 1ms;
+  }
+
+  .markdown-view-pill-fill {
+    animation: none;
+  }
 }
 
 .sticky-mode {
@@ -151,11 +262,19 @@ body.sticky-body {
   background-color: color-mix(in srgb, var(--color-bg-sidebar) 90%, transparent);
   border-bottom: 1px solid var(--color-border);
   padding: 6px 10px;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   user-select: none;
 }
 
 .sticky-mode .sticky-header button {
+  -webkit-app-region: no-drag;
+}
+
+.sticky-mode .sticky-header [data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+.sticky-mode .sticky-title {
   -webkit-app-region: no-drag;
 }
 

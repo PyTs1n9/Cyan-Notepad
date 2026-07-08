@@ -9,7 +9,7 @@ import { useTodoStore } from "@/stores/todoStore";
 import { useNoteStore } from "@/stores/noteStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { CustomColors, AppShortcuts } from "@/stores/settingsStore";
+import type { CustomColors, AppShortcuts, AutoSaveInterval } from "@/stores/settingsStore";
 import {
   loadTodos,
   saveTodos,
@@ -18,6 +18,7 @@ import {
   loadSavedFonts,
   saveFontList,
   saveNoteContent,
+  loadNoteContent,
   loadSettings,
   saveSettings,
   loadIconData,
@@ -25,16 +26,52 @@ import {
 import { applyTheme } from "@/utils/theme";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
-import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { t } from "@/utils/i18n";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, emit } from "@tauri-apps/api/event";
-import { marked } from "marked";
 import type { Todo, Note, ViewType } from "@/types";
+import TurndownService from "turndown";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 400;
-const COLLAPSED_WIDTH = 52;
+const COLLAPSED_WIDTH = 56;
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function isStoredEditorHtml(content: string): boolean {
+  return /<\/?(p|h[1-6]|ul|ol|li|blockquote|pre|div|img|hr|br)\b[\s\S]*>/i.test(content);
+}
+
+const turndownService = new TurndownService({
+  headingStyle: "atx",
+  codeBlockStyle: "fenced",
+  emDelimiter: "*",
+  bulletListMarker: "-",
+  hr: "---",
+});
+
+turndownService.addRule("img", {
+  filter: "img",
+  replacement: (_content, node) => {
+    const el = node as HTMLImageElement;
+    return `![${el.alt || "image"}](${el.src})`;
+  },
+});
+
+function htmlToMarkdown(html: string): string {
+  return turndownService
+    .turndown(html)
+    .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, "$1");
+}
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("todo");
@@ -49,6 +86,9 @@ export default function App() {
   const loadTodosState = useTodoStore((s) => s.loadTodos);
 
   const notes = useNoteStore((s) => s.notes);
+  const categories = useNoteStore((s) => s.categories);
+  const activeNoteId = useNoteStore((s) => s.activeNoteId);
+  const activeCategoryId = useNoteStore((s) => s.activeCategoryId);
   const addNote = useNoteStore((s) => s.addNote);
   const loadNotesState = useNoteStore((s) => s.loadNotes);
 
@@ -60,6 +100,7 @@ export default function App() {
   const customColors = useSettingsStore((s) => s.customColors);
   const savedPresets = useSettingsStore((s) => s.savedPresets);
   const shortcuts = useSettingsStore((s) => s.shortcuts);
+  const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
 
   // Load data on mount
@@ -73,7 +114,9 @@ export default function App() {
           loadSettings(),
         ]);
         if (savedTodos.length > 0) loadTodosState(savedTodos);
-        if (savedNotes.length > 0) loadNotesState(savedNotes as Note[]);
+        if (savedNotes.notes.length > 0 || savedNotes.categories.length > 0) {
+          loadNotesState(savedNotes.notes as Note[], savedNotes.categories);
+        }
         if (savedFonts.length > 0) loadFontsState(savedFonts);
         loadSettingsState(savedSettings as {
           theme?: "dark" | "blue" | "yellow" | "green" | "custom";
@@ -81,6 +124,7 @@ export default function App() {
           customColors?: CustomColors | null;
           savedPresets?: { name: string; colors: CustomColors }[];
           shortcuts?: AppShortcuts;
+          autoSaveInterval?: AutoSaveInterval;
         });
 
         // Load custom app icon, fallback to default icon
@@ -121,9 +165,9 @@ export default function App() {
   // Auto-save settings
   useEffect(() => {
     if (initialized) {
-      saveSettings({ theme, lang, customColors, savedPresets, shortcuts });
+      saveSettings({ theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval });
     }
-  }, [theme, lang, customColors, savedPresets, shortcuts, initialized]);
+  }, [theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval, initialized]);
 
   // Auto-save todos
   useEffect(() => {
@@ -133,12 +177,12 @@ export default function App() {
   // Auto-save note index
   useEffect(() => {
     if (initialized) {
-      const index = notes.map(({ id, title, tags, createdAt, updatedAt }) => ({
-        id, title, tags, createdAt, updatedAt,
+      const index = notes.map(({ id, title, tags, categoryId, pinned, order, createdAt, updatedAt }) => ({
+        id, title, tags, categoryId, pinned, order, createdAt, updatedAt,
       }));
-      saveNoteIndex(index);
+      saveNoteIndex(index, categories);
     }
-  }, [notes, initialized]);
+  }, [notes, categories, initialized]);
 
   // Auto-save fonts
   useEffect(() => {
@@ -224,6 +268,9 @@ export default function App() {
       title: "",
       content: "",
       tags: [],
+      categoryId: activeCategoryId,
+      pinned: false,
+      order: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -231,86 +278,89 @@ export default function App() {
     saveNoteContent(note.id, "");
   };
 
-  // Import Markdown files
-  const handleImportMd = useCallback(async () => {
-    try {
-      const selected = await open({
-        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
-        multiple: true,
-      });
-      if (!selected) return;
-      const files = Array.isArray(selected) ? selected : [selected];
-      for (const filePath of files) {
-        const content = await readTextFile(filePath);
-        console.log("[import] file:", filePath, "raw length:", content.length, "first 100 chars:", content.slice(0, 100));
-        // Convert Markdown to HTML for WYSIWYG display
-        const htmlContent = typeof marked(content) === "string" ? marked(content) as string : content;
-        console.log("[import] html length:", htmlContent.length, "first 100 chars:", htmlContent.slice(0, 100));
-        const fileName = filePath.split(/[\\/]/).pop() || "imported";
-        const title = fileName.replace(/\.(md|markdown)$/i, "");
-        const now = new Date().toISOString();
-        const note: Note = {
-          id: crypto.randomUUID(),
-          title,
-          content: "",
-          tags: [],
-          createdAt: now,
-          updatedAt: now,
-        };
-        // Save content to disk BEFORE activating the note (race condition fix)
-        await saveNoteContent(note.id, htmlContent);
-        console.log("[import-md] saved to disk, id:", note.id);
-        addNote(note);
-      }
-      setCurrentView("note");
-    } catch (e) {
-      console.error("Failed to import markdown:", e);
-    }
-  }, [addNote]);
+  const createImportedNote = useCallback(async (filePath: string, content: string, savedContent: string) => {
+    const fileName = filePath.split(/[\\/]/).pop() || "imported";
+    const title = fileName.replace(/\.(md|markdown|txt)$/i, "");
+    const now = new Date().toISOString();
+    const note: Note = {
+      id: crypto.randomUUID(),
+      title,
+      content: savedContent,
+      tags: [],
+      categoryId: activeCategoryId,
+      pinned: false,
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await saveNoteContent(note.id, savedContent);
+    console.log("[import] saved", fileName, "raw length:", content.length, "id:", note.id);
+    addNote(note);
+  }, [activeCategoryId, addNote]);
 
-  // Import Text files
-  const handleImportTxt = useCallback(async () => {
+  // Import Markdown and Text files in one picker
+  const handleImportTextNotes = useCallback(async () => {
     try {
       const selected = await open({
-        filters: [{ name: "Text Files", extensions: ["txt"] }],
+        filters: [{ name: "Markdown / Text", extensions: ["md", "markdown", "txt"] }],
         multiple: true,
       });
       if (!selected) return;
       const files = Array.isArray(selected) ? selected : [selected];
       for (const filePath of files) {
         const content = await readTextFile(filePath);
-        console.log("[import-txt] file:", filePath, "raw length:", content.length);
-        // Wrap plain text as HTML paragraphs (preserve line breaks)
-        const htmlContent = content
-          .split(/\n/)
-          .map((line) => line ? `<p>${line}</p>` : "<p><br></p>")
-          .join("\n");
-        console.log("[import-txt] html length:", htmlContent.length);
-        const fileName = filePath.split(/[\\/]/).pop() || "imported";
-        const title = fileName.replace(/\.txt$/i, "");
-        const now = new Date().toISOString();
-        const note: Note = {
-          id: crypto.randomUUID(),
-          title,
-          content: "",
-          tags: [],
-          createdAt: now,
-          updatedAt: now,
-        };
-        await saveNoteContent(note.id, htmlContent);
-        console.log("[import-txt] saved, id:", note.id);
-        addNote(note);
+        const isTextFile = /\.txt$/i.test(filePath);
+        const savedContent = isTextFile
+          ? content
+            .split(/\n/)
+            .map((line) => line ? `<p>${escapeHtml(line)}</p>` : "<p><br></p>")
+            .join("\n")
+          : content;
+        await createImportedNote(filePath, content, savedContent);
       }
       setCurrentView("note");
     } catch (e) {
-      console.error("Failed to import text:", e);
+      console.error("Failed to import text notes:", e);
     }
-  }, [addNote]);
+  }, [createImportedNote]);
+
+  const handleExportActiveNote = useCallback(async () => {
+    if (!activeNoteId) return;
+    const activeNote = notes.find((note) => note.id === activeNoteId);
+    if (!activeNote) return;
+
+    try {
+      const defaultPath = `${activeNote.title || t(lang, "untitled")}.md`;
+      const savePath = await save({
+        filters: [
+          { name: "Markdown", extensions: ["md"] },
+          { name: "Text", extensions: ["txt"] },
+        ],
+        defaultPath,
+      });
+      if (!savePath) return;
+
+      const storedContent = Object.prototype.hasOwnProperty.call(activeNote, "content")
+        ? activeNote.content
+        : await loadNoteContent(activeNote.id);
+      const exportContent = isStoredEditorHtml(storedContent)
+        ? htmlToMarkdown(storedContent)
+        : storedContent;
+      await writeTextFile(savePath, exportContent);
+    } catch (e) {
+      console.error("Export file failed:", e);
+    }
+  }, [activeNoteId, lang, notes]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg-primary">
       {/* Custom Title Bar */}
       <TitleBar
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        onNewNote={handleNewNote}
+        onImportTextNotes={handleImportTextNotes}
+        onExportActiveNote={handleExportActiveNote}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
       />
@@ -322,9 +372,10 @@ export default function App() {
             currentView={currentView}
             onViewChange={setCurrentView}
             onNewNote={handleNewNote}
-            onImportMd={handleImportMd}
-            onImportTxt={handleImportTxt}
+            onImportTextNotes={handleImportTextNotes}
+            onExportActiveNote={handleExportActiveNote}
             collapsed={sidebarCollapsed}
+            width={sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           />
         </div>
