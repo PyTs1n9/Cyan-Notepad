@@ -6,7 +6,7 @@
 
 <img src="./src-tauri/icons/icon.png" width="120" alt="Cyan Notepad 图标">
 
-# Cyan Notepad
+# Cyan Notepad 青の记事本
 
 轻量、优雅、现代化的 Windows 桌面工具箱<br>
 基于 Tauri v2 + React 19 + TypeScript 构建
@@ -51,7 +51,6 @@
   文字颜色（取色器 + 快捷面板）、文本对齐（左/中/右）、字体选择、字号缩放（`Ctrl+滚轮`）
 - **图片插入** — 支持本地图片自动转 Base64 内嵌
 - **标签系统** — 编辑器中插入 `#标签`，侧栏按标签筛选笔记
-- **自定义字体** — 导入 `.ttf` / `.otf` / `.woff` / `.woff2` 字体文件
 - **导入导出** — 导入 `.md` / `.txt` 文件；导出为 Markdown 或纯文本
 - **自动保存** — 800ms 防抖自动写入磁盘，亦可按 `Ctrl+S` 手动保存
 
