@@ -1,12 +1,13 @@
 {
   "name": "cyan-notepad",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "tauri": "node scripts/tauri-with-cleanup.mjs"
+    "tauri": "node scripts/tauri-with-cleanup.mjs",
+    "version:set": "node scripts/set-version.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
