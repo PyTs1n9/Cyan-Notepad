@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "@/components/Layout/Sidebar";
+import { SIDEBAR_LABEL_MIN_WIDTH } from "@/components/Layout/sidebarLayout";
 import TitleBar from "@/components/Layout/TitleBar";
 import TodoView from "@/components/Todo/TodoView";
 import NoteEditor from "@/components/Editor/NoteEditor";
@@ -218,6 +219,12 @@ export default function App() {
       emit("tile-theme-sync", { theme, customColors });
     }
   }, [theme, customColors, initialized]);
+
+  // Keep translated sidebar actions readable without overriding a wider user-set width.
+  useEffect(() => {
+    if (!initialized) return;
+    setSidebarWidth((currentWidth) => Math.max(currentWidth, SIDEBAR_LABEL_MIN_WIDTH[lang]));
+  }, [lang, initialized]);
 
   // Sidebar resize drag
   const rafId = useRef<number | null>(null);
