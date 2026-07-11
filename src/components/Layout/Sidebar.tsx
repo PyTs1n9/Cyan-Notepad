@@ -22,6 +22,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import { deleteNoteFile } from "@/utils/storage";
 import type { Note, NoteCategory, ViewType } from "@/types";
+import { SIDEBAR_LABEL_MIN_WIDTH } from "@/components/Layout/sidebarLayout";
 
 interface SidebarProps {
   currentView: ViewType;
@@ -95,7 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     scrollbarGutter: "stable",
   } satisfies React.CSSProperties;
   const renderRailDivider = () => <div className="my-1 h-px w-8 bg-border" aria-hidden="true" />;
-  const showActionLabels = !collapsed && width >= (lang === "zh" ? 196 : 280);
+  const showActionLabels = !collapsed && width >= SIDEBAR_LABEL_MIN_WIDTH[lang];
   const showBrandMark = !collapsed && width >= 212;
   const labeledActionClass = showActionLabels ? "justify-center gap-1.5" : "justify-center px-0";
   const renderActionLabel = (label: string) =>
