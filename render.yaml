@@ -2,6 +2,7 @@ services:
   - type: web
     name: cyan-notepad-collab
     runtime: docker
+    plan: free
     rootDir: collab-server
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health

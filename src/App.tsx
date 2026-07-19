@@ -40,7 +40,8 @@ import TurndownService from "turndown";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 400;
-const COLLAPSED_WIDTH = 56;
+const COLLAPSED_WIDTH = 0;
+const ACTIVITY_BAR_WIDTH = 48;
 const WorkspaceView = lazy(() => import("@/components/Workspace/WorkspaceView"));
 
 function escapeHtml(text: string): string {
@@ -258,7 +259,7 @@ export default function App() {
     };
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return;
-      latestX.current = e.clientX;
+      latestX.current = e.clientX - ACTIVITY_BAR_WIDTH;
       if (rafId.current === null) {
         rafId.current = requestAnimationFrame(applyWidth);
       }
@@ -393,8 +394,10 @@ export default function App() {
           currentView={currentView}
           onViewChange={setCurrentView}
           onOpenSettings={() => setSettingsOpen(true)}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
-        <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 transition-[width] duration-200 ease-in-out">
+        <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out">
           <Sidebar
             currentView={currentView}
             onViewChange={setCurrentView}

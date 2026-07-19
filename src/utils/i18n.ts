@@ -4,6 +4,7 @@ type TranslationKeys = {
   todo: string;
   notepad: string;
   imageHost: string;
+  explorer: string;
   newNote: string;
   importMd: string;
   importTxt: string;
@@ -203,6 +204,7 @@ type TranslationKeys = {
 };
 
 const zh: TranslationKeys = {
+  explorer: "资源管理器",
   imageHost: "图床",
   todo: "待办事项",
   notepad: "记事本",
@@ -405,6 +407,7 @@ const zh: TranslationKeys = {
 };
 
 const en: TranslationKeys = {
+  explorer: "Explorer",
   imageHost: "Image Host",
   todo: "Todo List",
   notepad: "Notepad",

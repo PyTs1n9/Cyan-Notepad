@@ -140,16 +140,19 @@ export default function TitleBar({
   return (
     <>
       <div
-        className="flex items-center h-8 bg-bg-sidebar select-none flex-shrink-0 border-b border-border"
+        className="flex h-9 flex-shrink-0 items-center border-b border-border-chrome bg-bg-chrome text-text-chrome select-none"
         onDoubleClick={handleToggleMaximize}
       >
+        <div className="flex h-full w-12 flex-shrink-0 items-center justify-center border-r border-border-chrome bg-bg-activity" aria-hidden="true">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-chrome text-xs font-bold text-white">C</div>
+        </div>
         {/* Menu Bar */}
         <div ref={menuRef} className="flex items-center h-full relative" onDoubleClick={(e) => e.stopPropagation()}>
           {/* File Menu */}
           <div className="relative h-full flex items-center">
             <button
               data-menu-btn
-              className={`px-3 h-full text-xs hover:bg-bg-hover transition-colors ${openMenu === "file" ? "bg-bg-hover" : ""}`}
+              className={`h-full px-3 text-xs hover:bg-bg-activity-hover transition-colors ${openMenu === "file" ? "bg-bg-activity-hover" : ""}`}
               onClick={() => setOpenMenu(openMenu === "file" ? null : "file")}
             >
               {t(lang, "file")}
@@ -219,7 +222,7 @@ export default function TitleBar({
           <div className="relative h-full flex items-center">
             <button
               data-menu-btn
-              className={`px-3 h-full text-xs hover:bg-bg-hover transition-colors ${openMenu === "help" ? "bg-bg-hover" : ""}`}
+              className={`h-full px-3 text-xs hover:bg-bg-activity-hover transition-colors ${openMenu === "help" ? "bg-bg-activity-hover" : ""}`}
               onClick={() => setOpenMenu(openMenu === "help" ? null : "help")}
             >
               {t(lang, "help")}
@@ -238,47 +241,49 @@ export default function TitleBar({
         </div>
 
         {/* Drag region */}
-        <div data-tauri-drag-region className="flex-1 h-full" />
+        <div data-tauri-drag-region className="flex h-full flex-1 items-center justify-center text-xs text-text-chrome/60">
+          <span className="pointer-events-none truncate">Cyan Notepad</span>
+        </div>
 
         {/* Window Controls */}
-        <div className="flex items-center h-full gap-0.5 pr-1.5" onDoubleClick={(e) => e.stopPropagation()}>
+        <div className="flex h-full items-center gap-0.5 pr-1.5" onDoubleClick={(e) => e.stopPropagation()}>
           <button
-            className="group flex items-center justify-center w-8 h-6 rounded-md hover:bg-accent/15 transition-all duration-150"
+            className="group flex h-8 w-8 items-center justify-center rounded-md hover:bg-bg-activity-hover transition-all duration-150"
             onClick={onOpenAuth}
             title={authUser?.email ?? t(lang, "authSignIn")}
             aria-label={authUser?.email ?? t(lang, "authSignIn")}
           >
             {authUser?.email ? (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent-light text-[10px] font-semibold uppercase text-accent">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent-chrome text-[10px] font-semibold uppercase text-white">
                 {authUser.email.slice(0, 1)}
               </span>
             ) : (
-              <LogIn size={14} strokeWidth={2} className="text-text-muted transition-colors group-hover:text-accent" />
+              <LogIn size={14} strokeWidth={2} className="text-text-chrome/65 transition-colors group-hover:text-text-chrome" />
             )}
           </button>
           <button
-            className="group flex items-center justify-center w-8 h-6 rounded-md hover:bg-bg-hover transition-all duration-150"
+            className="group flex h-8 w-8 items-center justify-center rounded-md hover:bg-bg-activity-hover transition-all duration-150"
             onClick={handleMinimize}
             title={t(lang, "minimize")}
           >
-            <Minus size={14} strokeWidth={2.5} className="text-text-muted group-hover:text-text-primary transition-colors" />
+            <Minus size={14} strokeWidth={2.5} className="text-text-chrome/65 group-hover:text-text-chrome transition-colors" />
           </button>
           <button
-            className="group flex items-center justify-center w-8 h-6 rounded-md hover:bg-accent/15 transition-all duration-150"
+            className="group flex h-8 w-8 items-center justify-center rounded-md hover:bg-bg-activity-hover transition-all duration-150"
             onClick={handleToggleMaximize}
             title={isMaximized ? t(lang, "restore") : t(lang, "maximize")}
           >
             {isMaximized
-              ? <Square size={11} strokeWidth={2.5} className="text-text-muted group-hover:text-accent transition-colors" />
-              : <Maximize2 size={13} strokeWidth={2} className="text-text-muted group-hover:text-accent transition-colors" />
+              ? <Square size={11} strokeWidth={2.5} className="text-text-chrome/65 group-hover:text-text-chrome transition-colors" />
+              : <Maximize2 size={13} strokeWidth={2} className="text-text-chrome/65 group-hover:text-text-chrome transition-colors" />
             }
           </button>
           <button
-            className="group flex items-center justify-center w-8 h-6 rounded-md hover:bg-danger transition-all duration-150"
+            className="group flex h-8 w-8 items-center justify-center rounded-md hover:bg-danger transition-all duration-150"
             onClick={handleClose}
             title={t(lang, "close")}
           >
-            <X size={14} strokeWidth={2.5} className="text-text-muted group-hover:text-white transition-colors" />
+            <X size={14} strokeWidth={2.5} className="text-text-chrome/65 group-hover:text-white transition-colors" />
           </button>
         </div>
       </div>

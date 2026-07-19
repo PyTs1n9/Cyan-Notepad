@@ -1,13 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
 import {
-  CheckSquare,
   FileDown,
-  FileText,
   FileUp,
   Plus,
   Tag,
   Trash2,
-  PanelLeftClose,
   PanelLeftOpen,
   Folder,
   FolderOpen,
@@ -16,7 +13,6 @@ import {
   Pencil,
   Pin,
   PinOff,
-  Users,
 } from "lucide-react";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -89,16 +85,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   const actionCollapsed = "w-10 h-10 shrink-0";
   const actionSecondary =
     "border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary";
-  const navActionBase = `${actionBase} border border-border`;
-  const navActionActive = "bg-accent text-white border-accent font-medium hover:bg-accent-hover";
-  const navActionInactive = "bg-bg-primary text-text-secondary hover:bg-bg-hover hover:text-text-primary";
   const categoryViewportStyle = {
     maxHeight: "calc(11 * 1.75rem + 10 * 0.125rem)",
     scrollbarGutter: "stable",
   } satisfies React.CSSProperties;
   const renderRailDivider = () => <div className="my-1 h-px w-8 bg-border" aria-hidden="true" />;
   const showActionLabels = !collapsed && width >= SIDEBAR_LABEL_MIN_WIDTH[lang];
-  const showBrandMark = !collapsed && width >= 212;
   const labeledActionClass = showActionLabels ? "justify-center gap-1.5" : "justify-center px-0";
   const renderActionLabel = (label: string) =>
     showActionLabels ? <span className="whitespace-nowrap">{label}</span> : null;
@@ -597,30 +589,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               <PanelLeftOpen size={16} />
             </button>
             {renderRailDivider()}
-            <button
-              onClick={() => onViewChange("note")}
-              className={`${navActionBase} ${actionCollapsed} mt-1
-                ${currentView === "note" ? navActionActive : navActionInactive}`}
-              title={t(lang, "notepad")}
-            >
-              <FileText size={16} />
-            </button>
-            <button
-              onClick={() => onViewChange("todo")}
-              className={`${navActionBase} ${actionCollapsed} mt-2
-                ${currentView === "todo" ? navActionActive : navActionInactive}`}
-              title={t(lang, "todo")}
-            >
-              <CheckSquare size={16} />
-            </button>
-            <button
-              onClick={() => onViewChange("workspace")}
-              className={`${navActionBase} ${actionCollapsed} mt-2
-                ${currentView === "workspace" ? navActionActive : navActionInactive}`}
-              title={t(lang, "workspace")}
-            >
-              <Users size={16} />
-            </button>
             {renderRailDivider()}
             <button
               onClick={() => {
@@ -643,53 +611,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <>
             <div className="flex items-center gap-2 px-1 pb-2">
-              {showBrandMark && (
-                <div className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">
-                  C
-                </div>
-              )}
-              <div className="flex-1">
-                <div className="text-sm font-semibold text-text-primary whitespace-nowrap">Cyan Notepad</div>
+              <div className="flex-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-secondary whitespace-nowrap">
+                {t(lang, "explorer")}
               </div>
-              <button
-                onClick={onToggleCollapse}
-                className={`${actionBase} ${actionSecondary} w-8 h-8 flex-shrink-0`}
-                title={t(lang, "collapseSidebar")}
-              >
-                <PanelLeftClose size={16} />
-              </button>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
-              <button
-                onClick={() => onViewChange("note")}
-                className={`${navActionBase} h-9 px-2 text-sm min-w-0 ${labeledActionClass}
-                  ${currentView === "note" ? navActionActive : navActionInactive}`}
-                title={t(lang, "notepad")}
-                aria-label={t(lang, "notepad")}
-              >
-                <FileText size={15} className="flex-shrink-0" />
-                {renderActionLabel(t(lang, "notepad"))}
-              </button>
-              <button
-                onClick={() => onViewChange("todo")}
-                className={`${navActionBase} h-9 px-2 text-sm min-w-0 ${labeledActionClass}
-                  ${currentView === "todo" ? navActionActive : navActionInactive}`}
-                title={t(lang, "todo")}
-                aria-label={t(lang, "todo")}
-              >
-                <CheckSquare size={15} className="flex-shrink-0" />
-                {renderActionLabel(t(lang, "todo"))}
-              </button>
-              <button
-                onClick={() => onViewChange("workspace")}
-                className={`${navActionBase} col-span-2 h-9 px-2 text-sm min-w-0 ${labeledActionClass}
-                  ${currentView === "workspace" ? navActionActive : navActionInactive}`}
-                title={t(lang, "workspace")}
-                aria-label={t(lang, "workspace")}
-              >
-                <Users size={15} className="flex-shrink-0" />
-                {renderActionLabel(t(lang, "workspace"))}
-              </button>
               <button
                 onClick={() => {
                   onNewNote();
