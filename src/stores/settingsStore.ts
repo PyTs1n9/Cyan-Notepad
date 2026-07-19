@@ -4,6 +4,17 @@ export type ThemeType = "dark" | "blue" | "yellow" | "green" | "custom";
 export type LangType = "zh" | "en";
 export type AutoSaveInterval = 0 | 10000 | 30000 | 60000;
 
+export const DEFAULT_STICKY_OPACITY = 85;
+export const MIN_STICKY_OPACITY = 0;
+export const MAX_STICKY_OPACITY = 100;
+
+export function normalizeStickyOpacity(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_STICKY_OPACITY;
+  }
+  return Math.min(MAX_STICKY_OPACITY, Math.max(MIN_STICKY_OPACITY, Math.round(value)));
+}
+
 export interface CustomColors {
   bgPrimary: string;
   bgSecondary: string;
@@ -40,6 +51,7 @@ interface SettingsState {
   savedPresets: SavedPreset[];
   shortcuts: AppShortcuts;
   autoSaveInterval: AutoSaveInterval;
+  stickyOpacity: number;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
@@ -48,6 +60,7 @@ interface SettingsState {
   deletePreset: (index: number) => void;
   setShortcuts: (shortcuts: AppShortcuts) => void;
   setAutoSaveInterval: (interval: AutoSaveInterval) => void;
+  setStickyOpacity: (opacity: number) => void;
   loadSettings: (settings: {
     theme?: ThemeType;
     lang?: LangType;
@@ -55,6 +68,7 @@ interface SettingsState {
     savedPresets?: SavedPreset[];
     shortcuts?: AppShortcuts;
     autoSaveInterval?: AutoSaveInterval;
+    stickyOpacity?: number;
   }) => void;
 }
 
@@ -65,6 +79,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   savedPresets: [],
   shortcuts: DEFAULT_SHORTCUTS,
   autoSaveInterval: 0,
+  stickyOpacity: DEFAULT_STICKY_OPACITY,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -100,6 +115,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setAutoSaveInterval: (autoSaveInterval) => set({ autoSaveInterval }),
 
+  setStickyOpacity: (stickyOpacity) => set({ stickyOpacity: normalizeStickyOpacity(stickyOpacity) }),
+
   loadSettings: (settings) =>
     set({
       theme: settings.theme || "blue",
@@ -108,5 +125,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       savedPresets: settings.savedPresets || [],
       shortcuts: settings.shortcuts || DEFAULT_SHORTCUTS,
       autoSaveInterval: settings.autoSaveInterval || 0,
+      stickyOpacity: normalizeStickyOpacity(settings.stickyOpacity),
     }),
 }));

@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "@/components/Layout/Sidebar";
+import ActivityBar from "@/components/Layout/ActivityBar";
 import { SIDEBAR_LABEL_MIN_WIDTH } from "@/components/Layout/sidebarLayout";
 import TitleBar from "@/components/Layout/TitleBar";
 import TodoView from "@/components/Todo/TodoView";
 import NoteEditor from "@/components/Editor/NoteEditor";
 import SettingsModal from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
+import AuthModal from "@/components/Auth/AuthModal";
 import { useTodoStore } from "@/stores/todoStore";
 import { useNoteStore } from "@/stores/noteStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useAuthStore } from "@/stores/authStore";
 import type { CustomColors, AppShortcuts, AutoSaveInterval } from "@/stores/settingsStore";
 import {
   loadTodos,
@@ -38,6 +41,7 @@ import TurndownService from "turndown";
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 400;
 const COLLAPSED_WIDTH = 56;
+const WorkspaceView = lazy(() => import("@/components/Workspace/WorkspaceView"));
 
 function escapeHtml(text: string): string {
   return text
@@ -64,7 +68,8 @@ turndownService.addRule("img", {
   filter: "img",
   replacement: (_content, node) => {
     const el = node as HTMLImageElement;
-    return `![${el.alt || "image"}](${el.src})`;
+    const source = el.dataset.attachmentSrc || el.src;
+    return `![${el.alt || "image"}](${source})`;
   },
 });
 
@@ -78,6 +83,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("todo");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -102,7 +108,13 @@ export default function App() {
   const savedPresets = useSettingsStore((s) => s.savedPresets);
   const shortcuts = useSettingsStore((s) => s.shortcuts);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
+  const stickyOpacity = useSettingsStore((s) => s.stickyOpacity);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
+  const initializeAuth = useAuthStore((s) => s.initialize);
+
+  useEffect(() => {
+    void initializeAuth();
+  }, [initializeAuth]);
 
   // Load data on mount
   useEffect(() => {
@@ -126,6 +138,7 @@ export default function App() {
           savedPresets?: { name: string; colors: CustomColors }[];
           shortcuts?: AppShortcuts;
           autoSaveInterval?: AutoSaveInterval;
+          stickyOpacity?: number;
         });
 
         // Load custom app icon, fallback to default icon
@@ -166,9 +179,9 @@ export default function App() {
   // Auto-save settings
   useEffect(() => {
     if (initialized) {
-      saveSettings({ theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval });
+      saveSettings({ theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval, stickyOpacity });
     }
-  }, [theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval, initialized]);
+  }, [theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval, stickyOpacity, initialized]);
 
   // Auto-save todos
   useEffect(() => {
@@ -217,8 +230,9 @@ export default function App() {
   useEffect(() => {
     if (initialized) {
       emit("tile-theme-sync", { theme, customColors });
+      emit("sticky:appearance-updated", { theme, customColors, stickyOpacity });
     }
-  }, [theme, customColors, initialized]);
+  }, [theme, customColors, stickyOpacity, initialized]);
 
   // Keep translated sidebar actions readable without overriding a wider user-set width.
   useEffect(() => {
@@ -368,12 +382,18 @@ export default function App() {
         onNewNote={handleNewNote}
         onImportTextNotes={handleImportTextNotes}
         onExportActiveNote={handleExportActiveNote}
+        onOpenAuth={() => setAuthOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
       />
 
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
+        <ActivityBar
+          currentView={currentView}
+          onViewChange={setCurrentView}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
         <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 transition-[width] duration-200 ease-in-out">
           <Sidebar
             currentView={currentView}
@@ -395,12 +415,21 @@ export default function App() {
           />
         )}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {currentView === "todo" ? <TodoView /> : <NoteEditor />}
+          {currentView === "todo"
+            ? <TodoView />
+            : currentView === "workspace"
+              ? (
+                <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted">{t(lang, "authWorking")}</div>}>
+                  <WorkspaceView onOpenAuth={() => setAuthOpen(true)} />
+                </Suspense>
+              )
+              : <NoteEditor />}
         </main>
       </div>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </div>
   );
 }

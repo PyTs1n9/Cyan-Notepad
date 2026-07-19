@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cyan-notepad-collab
+    runtime: docker
+    rootDir: collab-server
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: SUPABASE_URL
+        value: https://skwkzymlhqwgygwwlxoy.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_8TIwPzBdrHmYEwhnikfk5g_sVjODHwW
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

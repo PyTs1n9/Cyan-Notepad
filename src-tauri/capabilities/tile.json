@@ -12,11 +12,15 @@
     "core:event:default",
     "core:event:allow-listen",
     "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
     "fs:allow-read-text-file",
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$APPDATA/**" }
+        { "path": "$APPDATA/**" },
+        { "path": "$RESOURCE/**" }
       ]
     }
   ]

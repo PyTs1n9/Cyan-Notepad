@@ -1,18 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { marked } from "marked";
 import { loadNoteContent, loadNoteList, loadSettings } from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
 import { X } from "lucide-react";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
-
-marked.setOptions({ breaks: true, gfm: true });
-
-function isHtmlContent(content: string): boolean {
-  return /<[a-zA-Z][\s\S]*>/.test(content);
-}
+import { renderStoredNoteContent } from "@/utils/markdown";
 
 interface NoteMeta {
   id: string;
@@ -56,7 +50,7 @@ const TileView: React.FC = () => {
       try {
         const raw = await loadNoteContent(noteId);
         if (raw) {
-          const html = isHtmlContent(raw) ? raw : (await marked(raw)) as string;
+          const html = await renderStoredNoteContent(raw);
           setHtmlContent(html);
         }
       } catch {
@@ -155,7 +149,9 @@ const TileView: React.FC = () => {
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         {htmlContent ? (
           <div
-            className="tile-content text-sm text-text-primary leading-relaxed"
+            className="tile-content text-sm text-text-primary leading-relaxed
+              [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
+              [&_a]:text-accent [&_a]:underline"
             onClick={handleExternalLinkClick}
             dangerouslySetInnerHTML={{ __html: htmlContent }}
           />

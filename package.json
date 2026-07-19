@@ -7,9 +7,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "tauri": "node scripts/tauri-with-cleanup.mjs",
+    "collab:dev": "npm --prefix collab-server run dev",
+    "collab:build": "npm --prefix collab-server run build",
     "version:set": "node scripts/set-version.mjs"
   },
   "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.1",
+    "@hocuspocus/provider": "^4.4.0",
+    "@supabase/supabase-js": "^2.110.7",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
@@ -28,11 +33,15 @@
     "@tiptap/pm": "^3.26.1",
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
+    "codemirror": "^6.0.2",
     "lucide-react": "^1.18.0",
     "marked": "^18.0.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "turndown": "^7.2.4",
+    "y-codemirror.next": "^0.3.5",
+    "y-indexeddb": "^9.0.12",
+    "yjs": "^13.6.31",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

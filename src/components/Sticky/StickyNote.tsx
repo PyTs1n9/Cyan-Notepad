@@ -1,19 +1,23 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { Pin, PinOff, X } from "lucide-react";
-import { loadNoteContent, loadNoteList, loadSettings, saveNoteContent } from "@/utils/storage";
+import {
+  cleanupUnusedImageAttachments,
+  loadNoteContent,
+  loadNoteList,
+  loadSettings,
+  saveNoteContent,
+} from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
-import { marked } from "marked";
+import {
+  DEFAULT_STICKY_OPACITY,
+  MAX_STICKY_OPACITY,
+  normalizeStickyOpacity,
+} from "@/stores/settingsStore";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
-
-marked.setOptions({ breaks: true, gfm: true });
-
-// Detect whether content is HTML or raw Markdown
-function isHtmlContent(content: string): boolean {
-  return /<[a-zA-Z][\s\S]*>/.test(content);
-}
+import { renderStoredNoteContent } from "@/utils/markdown";
 
 const MIN_FONT = 10;
 const MAX_FONT = 32;
@@ -28,6 +32,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   const [title, setTitle] = useState("");
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(true);
   const [fontSize, setFontSize] = useState<number>(DEFAULT_FONT);
+  const [stickyOpacity, setStickyOpacity] = useState(DEFAULT_STICKY_OPACITY);
   const editorRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isComposingRef = useRef(false);
@@ -51,11 +56,27 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
         const theme = (settings.theme as ThemeType) || "blue";
         const customColors = (settings.customColors as CustomColors | null) || null;
         applyTheme(theme, customColors);
+        setStickyOpacity(normalizeStickyOpacity(settings.stickyOpacity));
       } catch (e) {
         console.error("Failed to load theme for sticky:", e);
       }
     };
     initTheme();
+  }, []);
+
+  // Keep open sticky windows in sync with appearance settings.
+  useEffect(() => {
+    const unlisten = listen<{
+      theme: ThemeType;
+      customColors: CustomColors | null;
+      stickyOpacity: number;
+    }>("sticky:appearance-updated", (event) => {
+      applyTheme(event.payload.theme, event.payload.customColors);
+      setStickyOpacity(normalizeStickyOpacity(event.payload.stickyOpacity));
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   // Load note content and inject into contentEditable
@@ -70,13 +91,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
 
         const rawContent = await loadNoteContent(noteId);
         if (rawContent && editorRef.current) {
-          if (isHtmlContent(rawContent)) {
-            editorRef.current.innerHTML = rawContent;
-          } else {
-            const html = await marked(rawContent);
-            editorRef.current.innerHTML =
-              typeof html === "string" ? html : rawContent;
-          }
+          editorRef.current.innerHTML = await renderStoredNoteContent(rawContent);
         }
       } catch (e) {
         console.error("Failed to load sticky note:", e);
@@ -98,14 +113,10 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
         }
         const rawContent = event.payload.content;
         if (editorRef.current && rawContent) {
-          if (isHtmlContent(rawContent)) {
-            editorRef.current.innerHTML = rawContent;
-          } else {
             // Markdown → HTML for display
-            const html = marked(rawContent);
-            editorRef.current.innerHTML =
-              typeof html === "string" ? html : rawContent;
-          }
+          void renderStoredNoteContent(rawContent).then((html) => {
+            if (editorRef.current) editorRef.current.innerHTML = html;
+          });
         }
       },
     );
@@ -121,6 +132,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
       if (editorRef.current) {
         const content = editorRef.current.innerHTML;
         await saveNoteContent(noteId, content);
+        await cleanupUnusedImageAttachments();
         // Notify main editor about the change
         selfSaveRef.current = true;
         emit("sticky:note-saved", { noteId, content });
@@ -169,6 +181,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
       if (editorRef.current) {
         const content = editorRef.current.innerHTML;
         await saveNoteContent(noteId, content);
+        await cleanupUnusedImageAttachments();
         emit("sticky:note-saved", { noteId, content });
       }
       // Notify main window to clear tracking before destroying
@@ -203,7 +216,13 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   };
 
   return (
-    <div className="sticky-mode h-screen w-screen">
+    <div
+      className="sticky-mode h-screen w-screen"
+      style={{
+        "--sticky-bg-opacity": `${stickyOpacity}%`,
+        "--sticky-header-opacity": `${Math.min(MAX_STICKY_OPACITY, stickyOpacity + 5)}%`,
+      } as CSSProperties}
+    >
       <div className="sticky-container h-full flex flex-col">
         {/* Draggable Title Bar — double-click to close */}
         <div

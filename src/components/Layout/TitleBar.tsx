@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useAuthStore } from "@/stores/authStore";
 import { t } from "@/utils/i18n";
 import type { ViewType } from "@/types";
 import {
@@ -17,6 +18,8 @@ import {
   X,
   Maximize2,
   Settings,
+  LogIn,
+  Users,
 } from "lucide-react";
 
 interface TitleBarProps {
@@ -25,6 +28,7 @@ interface TitleBarProps {
   onNewNote: () => void;
   onImportTextNotes: () => void;
   onExportActiveNote: () => void;
+  onOpenAuth: () => void;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
 }
@@ -35,10 +39,12 @@ export default function TitleBar({
   onNewNote,
   onImportTextNotes,
   onExportActiveNote,
+  onOpenAuth,
   onOpenSettings,
   onOpenAbout,
 }: TitleBarProps) {
   const lang = useSettingsStore((s) => s.lang);
+  const authUser = useAuthStore((s) => s.user);
   const activeNoteId = useNoteStore((s) => s.activeNoteId);
   const addCategory = useNoteStore((s) => s.addCategory);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -164,6 +170,13 @@ export default function TitleBar({
                   <CheckSquare size={14} className="flex-shrink-0" />
                   <span>{t(lang, "todo")}</span>
                 </button>
+                <button
+                  className={`${menuItemClass} ${currentView === "workspace" ? "text-accent" : ""}`}
+                  onClick={() => handleViewChange("workspace")}
+                >
+                  <Users size={14} className="flex-shrink-0" />
+                  <span>{t(lang, "workspace")}</span>
+                </button>
                 <div className="border-t border-border my-1" />
                 <button className={menuItemClass} onClick={handleNewNote}>
                   <Plus size={14} className="flex-shrink-0" />
@@ -231,10 +244,17 @@ export default function TitleBar({
         <div className="flex items-center h-full gap-0.5 pr-1.5" onDoubleClick={(e) => e.stopPropagation()}>
           <button
             className="group flex items-center justify-center w-8 h-6 rounded-md hover:bg-accent/15 transition-all duration-150"
-            onClick={onOpenSettings}
-            title={t(lang, "settings")}
+            onClick={onOpenAuth}
+            title={authUser?.email ?? t(lang, "authSignIn")}
+            aria-label={authUser?.email ?? t(lang, "authSignIn")}
           >
-            <Settings size={14} strokeWidth={2} className="text-text-muted group-hover:text-accent group-hover:rotate-45 transition-all duration-300" />
+            {authUser?.email ? (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent-light text-[10px] font-semibold uppercase text-accent">
+                {authUser.email.slice(0, 1)}
+              </span>
+            ) : (
+              <LogIn size={14} strokeWidth={2} className="text-text-muted transition-colors group-hover:text-accent" />
+            )}
           </button>
           <button
             className="group flex items-center justify-center w-8 h-6 rounded-md hover:bg-bg-hover transition-all duration-150"

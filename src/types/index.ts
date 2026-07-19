@@ -35,4 +35,4 @@ export interface AppFont {
   path: string;
 }
 
-export type ViewType = "todo" | "note";
+export type ViewType = "todo" | "note" | "workspace";

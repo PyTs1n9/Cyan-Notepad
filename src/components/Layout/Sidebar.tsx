@@ -16,6 +16,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Users,
 } from "lucide-react";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -612,6 +613,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <CheckSquare size={16} />
             </button>
+            <button
+              onClick={() => onViewChange("workspace")}
+              className={`${navActionBase} ${actionCollapsed} mt-2
+                ${currentView === "workspace" ? navActionActive : navActionInactive}`}
+              title={t(lang, "workspace")}
+            >
+              <Users size={16} />
+            </button>
             {renderRailDivider()}
             <button
               onClick={() => {
@@ -670,6 +679,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               >
                 <CheckSquare size={15} className="flex-shrink-0" />
                 {renderActionLabel(t(lang, "todo"))}
+              </button>
+              <button
+                onClick={() => onViewChange("workspace")}
+                className={`${navActionBase} col-span-2 h-9 px-2 text-sm min-w-0 ${labeledActionClass}
+                  ${currentView === "workspace" ? navActionActive : navActionInactive}`}
+                title={t(lang, "workspace")}
+                aria-label={t(lang, "workspace")}
+              >
+                <Users size={15} className="flex-shrink-0" />
+                {renderActionLabel(t(lang, "workspace"))}
               </button>
               <button
                 onClick={() => {

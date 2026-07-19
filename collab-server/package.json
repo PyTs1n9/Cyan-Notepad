@@ -1,0 +1,23 @@
+{
+  "name": "cyan-notepad-collab-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "^4.4.0",
+    "@hocuspocus/server": "^4.4.0",
+    "@supabase/supabase-js": "^2.110.7",
+    "dotenv": "^17.2.3",
+    "yjs": "^13.6.31"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.3"
+  }
+}

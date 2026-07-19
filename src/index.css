@@ -17,6 +17,14 @@
   --color-danger: #ef4444;
   --color-success: #22c55e;
   --color-warning: #eab308;
+  /* VS Code-inspired application chrome */
+  --color-bg-chrome: #181b20;
+  --color-bg-activity: #15181c;
+  --color-bg-activity-hover: #252a31;
+  --color-bg-activity-active: #20252c;
+  --color-border-chrome: #2d333b;
+  --color-text-chrome: #c7ced8;
+  --color-accent-chrome: #39a9ff;
 }
 
 /* Dark Theme */
@@ -251,7 +259,7 @@ body.sticky-body {
 }
 
 .sticky-mode .sticky-container {
-  background-color: color-mix(in srgb, var(--color-bg-primary) 85%, transparent);
+  background-color: color-mix(in srgb, var(--color-bg-primary) var(--sticky-bg-opacity, 85%), transparent);
   backdrop-filter: blur(12px);
   border-radius: 12px;
   border: 1px solid var(--color-border);
@@ -259,7 +267,7 @@ body.sticky-body {
 }
 
 .sticky-mode .sticky-header {
-  background-color: color-mix(in srgb, var(--color-bg-sidebar) 90%, transparent);
+  background-color: color-mix(in srgb, var(--color-bg-sidebar) var(--sticky-header-opacity, 90%), transparent);
   border-bottom: 1px solid var(--color-border);
   padding: 6px 10px;
   -webkit-app-region: no-drag;
