@@ -228,7 +228,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const document = await workspaceApi.createDocument(workspaceId, userId, title, content);
       set((state) => ({
-        documents: [document, ...state.documents],
+        // The INSERT realtime event may finish reloading this document before
+        // the create request returns. Replace that copy instead of prepending
+        // the same document a second time.
+        documents: [document, ...state.documents.filter((item) => item.id !== document.id)],
         activeDocumentId: document.id,
         error: null,
       }));

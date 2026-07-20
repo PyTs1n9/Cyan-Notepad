@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff, ListChecks } from "lucide-react";
 import { useTodoStore } from "@/stores/todoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -671,7 +672,7 @@ const TodoView: React.FC = () => {
                     {todo.dueDate ? formatDateInputValue(todo.dueDate, lang) : t(lang, "noDueDate")}
                   </span>
                 </button>
-                {openCalendarTodoId === todo.id && (
+                {openCalendarTodoId === todo.id && createPortal(
                   <div
                     ref={calendarRef}
                     className="todo-popover fixed z-50 w-[248px] rounded-xl border border-border bg-bg-primary p-3
@@ -812,7 +813,8 @@ const TodoView: React.FC = () => {
                       </div>
                     )}
                     </div>
-                  </div>
+                  </div>,
+                  document.body,
                 )}
                 {todo.dueDate && (
                   <button
