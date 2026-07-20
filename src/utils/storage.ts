@@ -11,7 +11,7 @@ import {
   rename,
   stat,
 } from "@tauri-apps/plugin-fs";
-import { appDataDir, dirname, join, resourceDir } from "@tauri-apps/api/path";
+import { appDataDir, dirname, executableDir, join, resourceDir } from "@tauri-apps/api/path";
 import type { Note, NoteCategory, TodoListData } from "@/types";
 
 const TODOS_FILE = "todos.json";
@@ -124,12 +124,33 @@ async function migrateLegacyData(source: string, target: string): Promise<void> 
   }
 }
 
+async function resolveLocalProjectDataDirectory(): Promise<string | null> {
+  try {
+    const resources = (await resourceDir()).replace(/\\/g, "/").replace(/\/+$/, "");
+    const match = resources.match(/^(.*)\/src-tauri\/target\/(?:debug|release)(?:\/.*)?$/i);
+    return match ? await join(match[1], DATA_DIR_NAME) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function resolveDataDirectory(): Promise<string> {
   const fallback = await join(await appDataDir(), DATA_DIR_NAME);
 
-  // Frontend-only development should continue using the normal app data path
-  // instead of creating a data folder in the Vite/Tauri build directory.
   if (!import.meta.env.PROD) {
+    // Tauri dev runs keep their data alongside the project instead of sharing
+    // the installed app's AppData directory.
+    const localProjectData = await resolveLocalProjectDataDirectory();
+    if (localProjectData) {
+      try {
+        await assertWritable(localProjectData);
+        return localProjectData;
+      } catch (error) {
+        console.warn("Project data directory is not writable; using AppData:", error);
+      }
+    }
+
+    // Frontend-only development has no local Tauri resource path.
     await ensureDirectory(fallback);
     return fallback;
   }
@@ -138,7 +159,7 @@ async function resolveDataDirectory(): Promise<string> {
   // install data directory, but must not run the write probe or migration.
   if (new URLSearchParams(window.location.search).get("tile") === "1") {
     try {
-      const installData = await join(await resourceDir(), DATA_DIR_NAME);
+      const installData = await join(await executableDir(), DATA_DIR_NAME);
       if (await exists(installData)) return installData;
     } catch {
       // Fall through to the legacy AppData location.
@@ -152,7 +173,7 @@ async function resolveDataDirectory(): Promise<string> {
   }
 
   try {
-    const installData = await join(await resourceDir(), DATA_DIR_NAME);
+    const installData = await join(await executableDir(), DATA_DIR_NAME);
     await assertWritable(installData);
     try {
       await migrateLegacyData(fallback, installData);
@@ -203,6 +224,10 @@ async function ensureNotesDir() {
   return dir;
 }
 
+export async function getNotesDirectory(): Promise<string> {
+  return ensureNotesDir();
+}
+
 async function ensureImageDir() {
   const base = await getDataRoot();
   const dir = await join(base, IMAGES_DIR);
@@ -238,7 +263,11 @@ async function migrateLegacyImageTrashFiles(trashRoot: string, notesTrashDir: st
   }
 }
 
-export async function getImageTrashDirectory(partition: ImageTrashPartition = "notes"): Promise<string> {
+async function ensureImageTrashDirectories(): Promise<{
+  root: string;
+  notes: string;
+  canvas: string;
+}> {
   const trashRoot = await join(await getDataRoot(), IMAGE_TRASH_DIR);
   const notesTrashDir = await join(trashRoot, IMAGE_TRASH_PARTITION_DIRS.notes);
   const canvasTrashDir = await join(trashRoot, IMAGE_TRASH_PARTITION_DIRS.canvas);
@@ -251,7 +280,15 @@ export async function getImageTrashDirectory(partition: ImageTrashPartition = "n
     legacyImageTrashMigrationPromise = migrateLegacyImageTrashFiles(trashRoot, notesTrashDir);
   }
   await legacyImageTrashMigrationPromise;
-  return partition === "canvas" ? canvasTrashDir : notesTrashDir;
+  return { root: trashRoot, notes: notesTrashDir, canvas: canvasTrashDir };
+}
+
+export async function getImageTrashRootDirectory(): Promise<string> {
+  return (await ensureImageTrashDirectories()).root;
+}
+
+export async function getImageTrashDirectory(partition: ImageTrashPartition = "notes"): Promise<string> {
+  return (await ensureImageTrashDirectories())[partition];
 }
 
 async function ensureImageNeedDirectory(): Promise<string> {

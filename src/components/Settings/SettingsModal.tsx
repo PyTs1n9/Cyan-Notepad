@@ -45,8 +45,8 @@ import { pauseShortcuts, resumeShortcuts } from "@/utils/shortcutManager";
 import {
   deleteAvatarCache,
   deleteCustomBackground,
-  getDataDirectory,
-  getImageDirectory,
+  getImageTrashRootDirectory,
+  getNotesDirectory,
   listAvatarHistory,
   listCustomBackgroundHistory,
   loadAvatarCacheDataUrl,
@@ -55,7 +55,7 @@ import {
 } from "@/utils/storage";
 import type { StoredImageHistoryItem } from "@/utils/storage";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 interface SettingsModalProps {
   open: boolean;
@@ -203,14 +203,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     if (!open) return;
 
     let active = true;
-    getDataDirectory()
+    getNotesDirectory()
       .then((path) => {
         if (active) setDataDirectory(path);
       })
       .catch((error) => {
         console.error("Failed to resolve data directory:", error);
       });
-    getImageDirectory()
+    getImageTrashRootDirectory()
       .then((path) => {
         if (active) setImageCacheDirectory(path);
       })
@@ -483,14 +483,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
 
   const handleOpenDataDirectory = async () => {
     try {
-      const path = dataDirectory ?? await getDataDirectory();
+      const path = dataDirectory ?? await getNotesDirectory();
       setDataDirectory(path);
-      try {
-        await revealItemInDir(path);
-      } catch (revealError) {
-        console.warn("Failed to reveal data directory; trying the default opener:", revealError);
-        await openPath(path);
-      }
+      await openPath(path);
     } catch (error) {
       console.error("Failed to open data directory:", error);
     }
@@ -498,7 +493,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
 
   const handleOpenImageCacheDirectory = async () => {
     try {
-      const path = imageCacheDirectory ?? await getImageDirectory();
+      const path = imageCacheDirectory ?? await getImageTrashRootDirectory();
       setImageCacheDirectory(path);
       await openPath(path);
     } catch (error) {

@@ -22,7 +22,15 @@
     "core:window:allow-destroy",
     "core:window:allow-is-visible",
     "opener:default",
-    "opener:allow-open-path",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$EXE/**" },
+        { "path": "$RESOURCE/**" },
+        { "path": "**" }
+      ]
+    },
     "fs:default",
     "fs:allow-read-file",
     "fs:allow-copy-file",

@@ -1,4 +1,4 @@
 [build]
-# 通过 Junction (C:\BaiQingTodo -> 项目目录) 输出到项目内 target，
-# RC.EXE 只看到纯 ASCII 路径，不会因中文字符报错。
-target-dir = "D:\\桌面\\ProjectLists\\Todolist-vibe\\src-tauri\\target"
+# Keep Rust build artifacts inside this checkout. The path is relative to the
+# src-tauri directory, so it resolves to <project>/src-tauri/target.
+target-dir = "target"
