@@ -6,7 +6,7 @@ import { openInDefaultBrowser } from "@/utils/externalLinks";
 
 const GITHUB_URL = "https://github.com/PyTs1n9/Cyan-Notepad";
 const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/Cyan-Notepad/releases/latest";
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.3.1";
 const SPONSOR_IMAGES = Object.entries(
   import.meta.glob("@/assets/sponsors/*.{jpg,jpeg,png,webp,gif,svg}", {
     eager: true,

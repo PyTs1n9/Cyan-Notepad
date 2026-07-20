@@ -109,6 +109,8 @@ the repository root. Both resolve to a `data` directory with this structure:
 
 Do not silently fall back to `%APPDATA%`: the install/project `data` directory is
 the single source of truth so portable data remains attached to the app folder.
+Do not bundle `data` as an installer resource because reinstalling would overwrite
+the user's live files. Existing install-directory data must remain external.
 
 Important details:
 - `notes/index.json` stores metadata only: `id`, `title`, `tags`, `createdAt`, `updatedAt`.

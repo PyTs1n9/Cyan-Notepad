@@ -10,12 +10,14 @@ import {
   rename,
   stat,
 } from "@tauri-apps/plugin-fs";
-import { executableDir, join, resourceDir } from "@tauri-apps/api/path";
+import { join, resourceDir } from "@tauri-apps/api/path";
 import type { Note, NoteCategory, TodoListData } from "@/types";
 
 const TODOS_FILE = "todos.json";
 const TODO_LISTS_FILE = "todo-lists.json";
 const NOTES_DIR = "notes";
+const NOTE_INDEX_FILE = "index.json";
+const NOTE_INDEX_BACKUP_FILE = "index.backup.json";
 const IMAGES_DIR = "img";
 const IMAGE_TRASH_DIR = "img-trash";
 const IMAGE_TRASH_PARTITION_DIRS = {
@@ -43,12 +45,12 @@ async function ensureDirectory(path: string): Promise<void> {
 }
 
 async function resolveLocalProjectDataDirectory(): Promise<string | null> {
-  const candidates = await Promise.allSettled([resourceDir(), executableDir()]);
-  for (const candidate of candidates) {
-    if (candidate.status !== "fulfilled") continue;
-    const path = candidate.value.replace(/\\/g, "/").replace(/\/+$/, "");
+  try {
+    const path = (await resourceDir()).replace(/\\/g, "/").replace(/\/+$/, "");
     const match = path.match(/^(.*)\/src-tauri\/target\/(?:debug|release)(?:\/.*)?$/i);
     if (match) return join(match[1], DATA_DIR_NAME);
+  } catch {
+    // The production path below will surface a useful error if this also fails.
   }
   return null;
 }
@@ -66,7 +68,9 @@ async function resolveDataDirectory(): Promise<string> {
   // The executable directory is the single source of truth for installed builds.
   // Never silently switch to AppData, otherwise an existing portable data folder
   // appears to have been lost.
-  const installData = await join(await executableDir(), DATA_DIR_NAME);
+  // On Windows Tauri's executableDir() is unsupported and returns "unknown path".
+  // resourceDir() resolves to the folder containing the installed executable.
+  const installData = await join(await resourceDir(), DATA_DIR_NAME);
   const isReadOnlyTile = new URLSearchParams(window.location.search).get("tile") === "1";
   if (!isReadOnlyTile) await ensureDirectory(installData);
   return installData;
@@ -240,8 +244,8 @@ async function recoverNoteListFromFiles(base: string): Promise<Note[]> {
     const notes = await Promise.all(files.map(async (file, index) => {
       const id = file.name.replace(/\.md$/i, "");
       const path = await join(base, file.name);
-      const content = await readTextFile(path);
-      const now = new Date().toISOString();
+      const [content, info] = await Promise.all([readTextFile(path), stat(path)]);
+      const modifiedAt = info.mtime?.toISOString() ?? new Date().toISOString();
       return {
         id,
         title: getTitleFromContent(content, id),
@@ -250,8 +254,8 @@ async function recoverNoteListFromFiles(base: string): Promise<Note[]> {
         categoryId: null,
         pinned: false,
         order: index,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: modifiedAt,
+        updatedAt: modifiedAt,
       };
     }));
     return notes;
@@ -259,6 +263,26 @@ async function recoverNoteListFromFiles(base: string): Promise<Note[]> {
     console.error("Failed to recover note list from files:", e);
   }
   return [];
+}
+
+interface NoteIndexPayload {
+  notes: Note[];
+  categories: NoteCategory[];
+}
+
+async function readNoteIndexFile(path: string): Promise<NoteIndexPayload | null> {
+  if (!(await exists(path))) return null;
+  try {
+    const parsed = JSON.parse(await readTextFile(path));
+    if (Array.isArray(parsed)) return { notes: parsed, categories: [] };
+    return {
+      notes: Array.isArray(parsed?.notes) ? parsed.notes : [],
+      categories: Array.isArray(parsed?.categories) ? parsed.categories : [],
+    };
+  } catch (error) {
+    console.warn("Failed to read note index candidate:", path, error);
+    return null;
+  }
 }
 
 export async function loadTodoLists(): Promise<TodoListData | null> {
@@ -288,17 +312,27 @@ export async function saveTodoLists(data: TodoListData): Promise<void> {
 export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteCategory[] }> {
   const base = await ensureNotesDir();
   try {
-    const indexPath = await join(base, "index.json");
-    if (await exists(indexPath)) {
-      const content = await readTextFile(indexPath);
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed)) {
-        const notes = parsed.length > 0 ? parsed : await recoverNoteListFromFiles(base);
-        return { notes, categories: [] };
-      }
-      const notes = Array.isArray(parsed.notes) ? parsed.notes : [];
-      const categories = Array.isArray(parsed.categories) ? parsed.categories : [];
-      return { notes: notes.length > 0 ? notes : await recoverNoteListFromFiles(base), categories };
+    const [indexPath, backupPath, recovered] = await Promise.all([
+      join(base, NOTE_INDEX_FILE),
+      join(base, NOTE_INDEX_BACKUP_FILE),
+      recoverNoteListFromFiles(base),
+    ]);
+    const [primary, backup] = await Promise.all([
+      readNoteIndexFile(indexPath),
+      readNoteIndexFile(backupPath),
+    ]);
+    const fileIds = new Set(recovered.map((note) => note.id));
+    const coverage = (candidate: NoteIndexPayload | null) =>
+      candidate?.notes.filter((note) => fileIds.has(note.id)).length ?? -1;
+    // Prefer the primary index unless the backup describes more content files.
+    // This also restores category definitions and each note's categoryId link.
+    const selected = coverage(backup) > coverage(primary) ? backup : primary;
+    if (selected) {
+      const knownIds = new Set(selected.notes.map((note) => note.id));
+      return {
+        notes: [...selected.notes, ...recovered.filter((note) => !knownIds.has(note.id))],
+        categories: selected.categories,
+      };
     }
   } catch (e) {
     console.error("Failed to load note list:", e);
@@ -321,8 +355,21 @@ export async function saveNoteIndex(
 ): Promise<void> {
   try {
     const base = await ensureNotesDir();
-    const indexPath = await join(base, "index.json");
-    await writeTextFile(indexPath, JSON.stringify({ notes, categories }, null, 2));
+    const indexPath = await join(base, NOTE_INDEX_FILE);
+    const backupPath = await join(base, NOTE_INDEX_BACKUP_FILE);
+    const tempPath = await join(base, `${NOTE_INDEX_FILE}.tmp`);
+    const [primary, backup] = await Promise.all([
+      readNoteIndexFile(indexPath),
+      readNoteIndexFile(backupPath),
+    ]);
+    // Preserve the richer previous index. Both files contain category records
+    // and each note's categoryId, so the directory tree can be reconstructed.
+    if (primary && (!backup || primary.notes.length >= backup.notes.length)) {
+      await writeTextFile(backupPath, await readTextFile(indexPath));
+    }
+    await writeTextFile(tempPath, JSON.stringify({ notes, categories }, null, 2));
+    if (await exists(indexPath)) await remove(indexPath);
+    await rename(tempPath, indexPath);
   } catch (e) {
     console.error("Failed to save note index:", e);
   }

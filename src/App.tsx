@@ -196,10 +196,10 @@ export default function App() {
             document.head.appendChild(style);
           }
         });
+        setInitialized(true);
       } catch (e) {
         console.error("Init failed:", e);
       }
-      setInitialized(true);
     };
     init();
   }, []); // eslint-disable-line

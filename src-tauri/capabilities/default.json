@@ -47,6 +47,7 @@
       "identifier": "fs:scope",
       "allow": [
         { "path": "$APPDATA/**" },
+        { "path": "$EXE/**" },
         { "path": "$HOME/Desktop/**" },
         { "path": "$HOME/Documents/**" },
         { "path": "$HOME/Downloads/**" },
