@@ -4,6 +4,40 @@ type TranslationKeys = {
   todo: string;
   notepad: string;
   imageHost: string;
+  canvas: string;
+  canvasSelect: string;
+  canvasPan: string;
+  canvasAddImage: string;
+  canvasAddText: string;
+  canvasZoomOut: string;
+  canvasZoomIn: string;
+  canvasResetZoom: string;
+  canvasFit: string;
+  canvasMoveLayerUp: string;
+  canvasMoveLayerDown: string;
+  canvasDelete: string;
+  canvasExport: string;
+  canvasExporting: string;
+  canvasSaved: string;
+  canvasSaving: string;
+  canvasEmpty: string;
+  canvasPasteHint: string;
+  canvasLoading: string;
+  canvasGuideTitle: string;
+  canvasGuideSelect: string;
+  canvasGuidePan: string;
+  canvasGuideAdd: string;
+  canvasGuideZoom: string;
+  canvasGuideEdit: string;
+  canvasGuideOverview: string;
+  canvasOverview: string;
+  canvasNew: string;
+  canvasNamePlaceholder: string;
+  canvasRename: string;
+  canvasDeleteQuestion: string;
+  canvasDeleteCanvas: string;
+  canvasOpenList: string;
+  canvasCloseList: string;
   explorer: string;
   newNote: string;
   importMd: string;
@@ -48,7 +82,11 @@ type TranslationKeys = {
   workspaceLoginHint: string;
   createWorkspace: string;
   joinWorkspace: string;
+  workspaceAlreadyJoined: string;
   workspaceName: string;
+  workspaceNameHint: string;
+  renameWorkspace: string;
+  saveWorkspaceName: string;
   inviteCode: string;
   inviteCodeHint: string;
   inviteRole: string;
@@ -58,14 +96,22 @@ type TranslationKeys = {
   copied: string;
   regenerateInvite: string;
   newCloudDocument: string;
+  newCloudDocumentHint: string;
+  renameCloudDocument: string;
   cloudDocumentName: string;
+  workspaceDocuments: string;
   noWorkspaces: string;
   noCloudDocuments: string;
+  noCloudDocumentsReadOnly: string;
   workspaceMembers: string;
   roleOwner: string;
   roleEditor: string;
   roleViewer: string;
   removeMember: string;
+  confirmRemoveMember: string;
+  removedFromWorkspaceTitle: string;
+  removedFromWorkspaceMessage: string;
+  acknowledge: string;
   leaveWorkspace: string;
   deleteWorkspace: string;
   confirmDeleteWorkspace: string;
@@ -76,6 +122,7 @@ type TranslationKeys = {
   collaborationError: string;
   collaborationNotConfigured: string;
   onlineUsers: string;
+  userHighlights: string;
   readOnly: string;
   cloudSavedRealtime: string;
   workspaceBackendNotReady: string;
@@ -88,6 +135,18 @@ type TranslationKeys = {
   deleteNote: string;
   deleteTodo: string;
   confirmDeleteTodoMessage: string;
+  todoLists: string;
+  todoListSummary: string;
+  newTodoList: string;
+  newTodo: string;
+  defaultTodoList: string;
+  listNamePlaceholder: string;
+  renameTodoList: string;
+  deleteTodoList: string;
+  confirmDeleteTodoListMessage: string;
+  pinTodoList: string;
+  unpinTodoList: string;
+  dragTodoList: string;
   todoTitle: string;
   totalStats: string;
   addTaskPlaceholder: string;
@@ -133,6 +192,13 @@ type TranslationKeys = {
   greenTheme: string;
   customTheme: string;
   customPalette: string;
+  customBackground: string;
+  customBackgroundHint: string;
+  backgroundHistory: string;
+  chooseBackground: string;
+  replaceBackground: string;
+  removeBackground: string;
+  backgroundUploadFailed: string;
   savePreset: string;
   selectPreset: string;
   noPresets: string;
@@ -147,6 +213,35 @@ type TranslationKeys = {
   language: string;
   chinese: string;
   english: string;
+  personal: string;
+  personalSignInTitle: string;
+  personalSignInHint: string;
+  personalOpenSignIn: string;
+  personalSignedIn: string;
+  personalProfile: string;
+  personalNickname: string;
+  personalNicknamePlaceholder: string;
+  personalChangeNickname: string;
+  personalSaveNickname: string;
+  personalChangeAvatar: string;
+  personalAvatarHint: string;
+  avatarHistory: string;
+  useHistoryAvatar: string;
+  useHistoryBackground: string;
+  deleteHistoryImage: string;
+  personalSecurity: string;
+  personalChangePassword: string;
+  personalNewPassword: string;
+  personalConfirmPassword: string;
+  personalPasswordUpdated: string;
+  personalPasswordMismatch: string;
+  personalProfileUpdated: string;
+  personalAvatarUpdated: string;
+  personalSignOutHint: string;
+  personalDataHint: string;
+  personalNotConfigured: string;
+  personalSaving: string;
+  personalChooseImage: string;
   close: string;
   defaultFont: string;
   importFont: string;
@@ -158,9 +253,9 @@ type TranslationKeys = {
   save: string;
   undo: string;
   redo: string;
-  file: string;
+  tools: string;
+  portal: string;
   help: string;
-  exit: string;
   about: string;
   aboutTitle: string;
   version: string;
@@ -206,6 +301,40 @@ type TranslationKeys = {
 const zh: TranslationKeys = {
   explorer: "资源管理器",
   imageHost: "图床",
+  canvas: "画布",
+  canvasSelect: "选择",
+  canvasPan: "平移",
+  canvasAddImage: "添加图片",
+  canvasAddText: "添加文字",
+  canvasZoomOut: "缩小",
+  canvasZoomIn: "放大",
+  canvasResetZoom: "重置缩放",
+  canvasFit: "适应画布",
+  canvasMoveLayerUp: "上移图层",
+  canvasMoveLayerDown: "下移图层",
+  canvasDelete: "删除对象",
+  canvasExport: "导出",
+  canvasExporting: "导出中…",
+  canvasSaved: "已保存",
+  canvasSaving: "保存中…",
+  canvasEmpty: "画布还是空的",
+  canvasPasteHint: "粘贴截图、拖入图片，或使用工具栏添加文字",
+  canvasLoading: "正在加载画布…",
+  canvasGuideTitle: "画布使用说明",
+  canvasGuideSelect: "选择：拖动对象，拖拽右下角调整大小",
+  canvasGuidePan: "平移：选择“平移”工具，或按住空格拖动",
+  canvasGuideAdd: "添加：粘贴/拖入图片，或点击“添加图片”和“添加文字”",
+  canvasGuideZoom: "缩放：按住 Ctrl/Cmd + 滚轮缩放画布；选中图片调整图片大小，选中文字调整字号",
+  canvasGuideEdit: "编辑：双击文字进入编辑；Delete 删除，Ctrl/Cmd+Z 撤销",
+  canvasGuideOverview: "小地图：右下角查看所有对象位置与当前视口，点击对象可居中跟踪",
+  canvasOverview: "画布总览",
+  canvasNew: "新建画布",
+  canvasNamePlaceholder: "输入画布名称",
+  canvasRename: "重命名画布",
+  canvasDeleteQuestion: "确定删除“{name}”吗？",
+  canvasDeleteCanvas: "删除画布",
+  canvasOpenList: "展开画布列表",
+  canvasCloseList: "收起画布列表",
   todo: "待办事项",
   notepad: "记事本",
   newNote: "新建笔记",
@@ -246,12 +375,16 @@ const zh: TranslationKeys = {
   authNotConfigured: "登录服务尚未配置",
   authNotConfiguredHint: "请在 .env.local 中填写 Supabase Project URL 和 publishable/anon key，然后重新启动应用。",
   workspace: "工作台",
-  workspaceTitle: "联网工作台",
+  workspaceTitle: "工作台",
   workspaceLoginRequired: "登录后使用工作台",
   workspaceLoginHint: "登录后即可创建或加入多人协作工作台",
   createWorkspace: "创建工作台",
   joinWorkspace: "加入工作台",
+  workspaceAlreadyJoined: "已经加入该工作台",
   workspaceName: "工作台名称",
+  workspaceNameHint: "仅工作台所有者可以修改名称",
+  renameWorkspace: "修改工作台名称",
+  saveWorkspaceName: "保存名称",
   inviteCode: "邀请码",
   inviteCodeHint: "将邀请码发送给其他用户即可加入",
   inviteRole: "新成员权限",
@@ -261,24 +394,33 @@ const zh: TranslationKeys = {
   copied: "已复制",
   regenerateInvite: "更换邀请码",
   newCloudDocument: "新建云文档",
+  newCloudDocumentHint: "在当前工作台开始协作",
+  renameCloudDocument: "修改文档名",
   cloudDocumentName: "文档名称",
+  workspaceDocuments: "协作文档",
   noWorkspaces: "还没有工作台，创建或加入一个吧",
   noCloudDocuments: "工作台中还没有文档",
+  noCloudDocumentsReadOnly: "你在此工作台中为访客，仅可查看已有文档",
   workspaceMembers: "工作台成员",
   roleOwner: "所有者",
   roleEditor: "可编辑",
   roleViewer: "仅查看",
   removeMember: "移除成员",
+  confirmRemoveMember: '确定将“{member}”移出“{workspace}”工作台吗？移除后，该成员将无法再访问其中的文档。',
+  removedFromWorkspaceTitle: "已被移出工作台",
+  removedFromWorkspaceMessage: '你已被移出“{workspace}”工作台，无法再访问其中的文档。',
+  acknowledge: "知道了",
   leaveWorkspace: "退出工作台",
   deleteWorkspace: "删除工作台",
-  confirmDeleteWorkspace: "确定删除整个工作台及其中的所有文档吗？",
-  confirmDeleteCloudDocument: "确定删除这篇云文档吗？",
+  confirmDeleteWorkspace: '是否删除"{workspace}"工作台及其中的所有文档？',
+  confirmDeleteCloudDocument: '是否删除"{document}"云文档？',
   collaborationConnecting: "正在连接",
   collaborationConnected: "实时同步",
   collaborationDisconnected: "离线编辑",
   collaborationError: "协作连接失败",
   collaborationNotConfigured: "尚未配置协作服务器地址",
   onlineUsers: "在线",
+  userHighlights: "用户高光",
   readOnly: "只读",
   cloudSavedRealtime: "修改会实时保存",
   workspaceBackendNotReady: "工作台数据库尚未初始化，请先在 Supabase SQL Editor 中执行项目提供的迁移脚本。",
@@ -291,6 +433,18 @@ const zh: TranslationKeys = {
   deleteNote: "删除笔记",
   deleteTodo: "删除待办",
   confirmDeleteTodoMessage: '是否删除"{todo}"待办？',
+  todoLists: "待办事项",
+  todoListSummary: "共 {lists} 个清单 · {pending} 项待办",
+  newTodoList: "新建清单",
+  newTodo: "新建待办",
+  defaultTodoList: "我的清单",
+  listNamePlaceholder: "输入清单名称",
+  renameTodoList: "重命名清单",
+  deleteTodoList: "删除清单",
+  confirmDeleteTodoListMessage: '删除清单“{list}”及其中的 {count} 项任务？此操作无法撤销。',
+  pinTodoList: "置顶清单",
+  unpinTodoList: "取消置顶",
+  dragTodoList: "拖动清单",
   todoTitle: "待办事项",
   totalStats: "共 {total} 项，已完成 {done} 项",
   addTaskPlaceholder: "添加新任务...",
@@ -336,6 +490,13 @@ const zh: TranslationKeys = {
   greenTheme: "清新绿",
   customTheme: "自定义",
   customPalette: "自定义调色板",
+  customBackground: "自定义背景",
+  customBackgroundHint: "支持 JPG、PNG、WebP，图片将铺满主界面并存储在 img-need 中。",
+  backgroundHistory: "历史背景",
+  chooseBackground: "选择背景",
+  replaceBackground: "更换背景",
+  removeBackground: "移除背景",
+  backgroundUploadFailed: "背景图片上传失败",
   savePreset: "保存预设",
   selectPreset: "选择预设",
   noPresets: "暂无保存的预设",
@@ -350,6 +511,35 @@ const zh: TranslationKeys = {
   language: "语言",
   chinese: "中文",
   english: "English",
+  personal: "个人",
+  personalSignInTitle: "登录后管理个人资料",
+  personalSignInHint: "登录后可以同步昵称和头像，并在不同设备间使用云端工作区。",
+  personalOpenSignIn: "登录 / 注册",
+  personalSignedIn: "已登录",
+  personalProfile: "个人资料",
+  personalNickname: "昵称",
+  personalNicknamePlaceholder: "输入一个容易记住的昵称",
+  personalChangeNickname: "更换昵称",
+  personalSaveNickname: "保存昵称",
+  personalChangeAvatar: "更换头像",
+  personalAvatarHint: "支持 JPG、PNG，建议使用 256×256 像素图片；历史头像保存在 img-need 中。",
+  avatarHistory: "历史头像",
+  useHistoryAvatar: "使用这个头像",
+  useHistoryBackground: "使用这个背景",
+  deleteHistoryImage: "删除历史图片",
+  personalSecurity: "账号安全",
+  personalChangePassword: "修改密码",
+  personalNewPassword: "新密码",
+  personalConfirmPassword: "确认新密码",
+  personalPasswordUpdated: "密码已更新",
+  personalPasswordMismatch: "两次输入的新密码不一致",
+  personalProfileUpdated: "昵称已更新",
+  personalAvatarUpdated: "头像已更新",
+  personalSignOutHint: "退出后仍可继续使用本地笔记，云端工作区需要重新登录。",
+  personalDataHint: "个人资料会安全地保存在登录账户中，仅用于身份识别和同步展示。",
+  personalNotConfigured: "登录服务尚未配置，请先完成 Supabase 配置。",
+  personalSaving: "保存中...",
+  personalChooseImage: "选择图片",
   close: "关闭",
   defaultFont: "默认字体",
   importFont: "导入字体",
@@ -361,9 +551,9 @@ const zh: TranslationKeys = {
   save: "保存",
   undo: "撤销",
   redo: "前进",
-  file: "文件",
+  tools: "工具",
+  portal: "传送门",
   help: "帮助",
-  exit: "退出",
   about: "关于",
   aboutTitle: "关于 Cyan Notepad",
   version: "版本",
@@ -375,7 +565,7 @@ const zh: TranslationKeys = {
   restore: "还原",
   wordCount: "{count} 字",
   showWindow: "显示窗口",
-  quitApp: "退出",
+  quitApp: "退出软件",
   hideToTray: "最小化到托盘",
   shortcutsSection: "快捷键设置",
   autoSaveSection: "自动保存",
@@ -409,6 +599,40 @@ const zh: TranslationKeys = {
 const en: TranslationKeys = {
   explorer: "Explorer",
   imageHost: "Image Host",
+  canvas: "Canvas",
+  canvasSelect: "Select",
+  canvasPan: "Pan",
+  canvasAddImage: "Add image",
+  canvasAddText: "Add text",
+  canvasZoomOut: "Zoom out",
+  canvasZoomIn: "Zoom in",
+  canvasResetZoom: "Reset zoom",
+  canvasFit: "Fit canvas",
+  canvasMoveLayerUp: "Move layer up",
+  canvasMoveLayerDown: "Move layer down",
+  canvasDelete: "Delete object",
+  canvasExport: "Export",
+  canvasExporting: "Exporting…",
+  canvasSaved: "Saved",
+  canvasSaving: "Saving…",
+  canvasEmpty: "Your canvas is empty",
+  canvasPasteHint: "Paste a screenshot, drop an image, or add text from the toolbar",
+  canvasLoading: "Loading canvas…",
+  canvasGuideTitle: "Canvas guide",
+  canvasGuideSelect: "Select: drag an object, or drag its bottom-right handle to resize",
+  canvasGuidePan: "Pan: choose Pan, or hold Space while dragging",
+  canvasGuideAdd: "Add: paste/drop an image, or use Add image and Add text",
+  canvasGuideZoom: "Zoom: hold Ctrl/Cmd + wheel for the canvas; wheel a selected image to resize it or selected text to change its size",
+  canvasGuideEdit: "Edit: double-click text to edit; Delete removes it, Ctrl/Cmd+Z undoes",
+  canvasGuideOverview: "Minimap: see all object positions and the current viewport in the lower-right; click an object to center on it",
+  canvasOverview: "Canvas overview",
+  canvasNew: "New canvas",
+  canvasNamePlaceholder: "Canvas name",
+  canvasRename: "Rename canvas",
+  canvasDeleteQuestion: "Delete \"{name}\"?",
+  canvasDeleteCanvas: "Delete canvas",
+  canvasOpenList: "Open canvas list",
+  canvasCloseList: "Close canvas list",
   todo: "Todo List",
   notepad: "Notepad",
   newNote: "New Note",
@@ -454,7 +678,11 @@ const en: TranslationKeys = {
   workspaceLoginHint: "Create or join a collaborative workspace after signing in",
   createWorkspace: "Create Workspace",
   joinWorkspace: "Join Workspace",
+  workspaceAlreadyJoined: "You have already joined this workspace",
   workspaceName: "Workspace name",
+  workspaceNameHint: "Only the workspace owner can change its name",
+  renameWorkspace: "Rename Workspace",
+  saveWorkspaceName: "Save name",
   inviteCode: "Invite code",
   inviteCodeHint: "Share this code with people you want to invite",
   inviteRole: "New member role",
@@ -464,24 +692,33 @@ const en: TranslationKeys = {
   copied: "Copied",
   regenerateInvite: "Regenerate code",
   newCloudDocument: "New Cloud Document",
+  newCloudDocumentHint: "Start collaborating in this workspace",
+  renameCloudDocument: "Rename Document",
   cloudDocumentName: "Document name",
+  workspaceDocuments: "Shared documents",
   noWorkspaces: "No workspace yet. Create or join one.",
   noCloudDocuments: "No documents in this workspace",
+  noCloudDocumentsReadOnly: "You are a viewer in this workspace and can only read existing documents",
   workspaceMembers: "Workspace Members",
   roleOwner: "Owner",
   roleEditor: "Editor",
   roleViewer: "Viewer",
   removeMember: "Remove member",
+  confirmRemoveMember: 'Remove “{member}” from the “{workspace}” workspace? They will no longer be able to access its documents.',
+  removedFromWorkspaceTitle: "Removed from workspace",
+  removedFromWorkspaceMessage: 'You were removed from the “{workspace}” workspace and can no longer access its documents.',
+  acknowledge: "Got it",
   leaveWorkspace: "Leave Workspace",
   deleteWorkspace: "Delete Workspace",
-  confirmDeleteWorkspace: "Delete this workspace and all of its documents?",
-  confirmDeleteCloudDocument: "Delete this cloud document?",
+  confirmDeleteWorkspace: 'Delete "{workspace}" workspace and all of its documents?',
+  confirmDeleteCloudDocument: 'Delete "{document}" cloud document?',
   collaborationConnecting: "Connecting",
   collaborationConnected: "Live sync",
   collaborationDisconnected: "Editing offline",
   collaborationError: "Collaboration failed",
   collaborationNotConfigured: "Collaboration server URL is not configured",
   onlineUsers: "Online",
+  userHighlights: "User highlights",
   readOnly: "Read only",
   cloudSavedRealtime: "Changes are saved in real time",
   workspaceBackendNotReady: "The workspace database is not initialized. Run the provided migration in the Supabase SQL Editor first.",
@@ -494,6 +731,18 @@ const en: TranslationKeys = {
   deleteNote: "Delete Note",
   deleteTodo: "Delete Todo",
   confirmDeleteTodoMessage: 'Delete "{todo}" todo?',
+  todoLists: "Task Lists",
+  todoListSummary: "{lists} lists · {pending} pending",
+  newTodoList: "New List",
+  newTodo: "New Todo",
+  defaultTodoList: "My List",
+  listNamePlaceholder: "Enter list name",
+  renameTodoList: "Rename List",
+  deleteTodoList: "Delete List",
+  confirmDeleteTodoListMessage: 'Delete “{list}” and its {count} tasks? This cannot be undone.',
+  pinTodoList: "Pin List",
+  unpinTodoList: "Unpin List",
+  dragTodoList: "Drag List",
   todoTitle: "Todo List",
   totalStats: "{total} items, {done} completed",
   addTaskPlaceholder: "Add a new task...",
@@ -539,6 +788,13 @@ const en: TranslationKeys = {
   greenTheme: "Fresh Green",
   customTheme: "Custom",
   customPalette: "Custom Palette",
+  customBackground: "Custom Background",
+  customBackgroundHint: "Supports JPG, PNG, and WebP. The image fills the main view and is stored in img-need.",
+  backgroundHistory: "Background History",
+  chooseBackground: "Choose Background",
+  replaceBackground: "Replace Background",
+  removeBackground: "Remove Background",
+  backgroundUploadFailed: "Failed to upload background image",
   savePreset: "Save Preset",
   selectPreset: "Select Preset",
   noPresets: "No saved presets",
@@ -553,6 +809,35 @@ const en: TranslationKeys = {
   language: "Language",
   chinese: "中文",
   english: "English",
+  personal: "Personal",
+  personalSignInTitle: "Sign in to manage your profile",
+  personalSignInHint: "Sign in to sync your nickname and avatar, and use cloud workspaces across devices.",
+  personalOpenSignIn: "Sign in / Create account",
+  personalSignedIn: "Signed in",
+  personalProfile: "Profile",
+  personalNickname: "Nickname",
+  personalNicknamePlaceholder: "Choose a nickname people will remember",
+  personalChangeNickname: "Change nickname",
+  personalSaveNickname: "Save nickname",
+  personalChangeAvatar: "Change avatar",
+  personalAvatarHint: "JPG or PNG, ideally 256×256 pixels. Avatar history is stored in img-need.",
+  avatarHistory: "Avatar History",
+  useHistoryAvatar: "Use this avatar",
+  useHistoryBackground: "Use this background",
+  deleteHistoryImage: "Delete history image",
+  personalSecurity: "Account security",
+  personalChangePassword: "Change password",
+  personalNewPassword: "New password",
+  personalConfirmPassword: "Confirm new password",
+  personalPasswordUpdated: "Password updated",
+  personalPasswordMismatch: "The new passwords do not match",
+  personalProfileUpdated: "Nickname updated",
+  personalAvatarUpdated: "Avatar updated",
+  personalSignOutHint: "You can keep using local notes after signing out. Cloud workspaces require signing in again.",
+  personalDataHint: "Your profile is stored securely with your account and is used only for identity and sync display.",
+  personalNotConfigured: "Sign-in is not configured yet. Finish the Supabase setup first.",
+  personalSaving: "Saving...",
+  personalChooseImage: "Choose image",
   close: "Close",
   defaultFont: "Default Font",
   importFont: "Import Font",
@@ -564,9 +849,9 @@ const en: TranslationKeys = {
   save: "Save",
   undo: "Undo",
   redo: "Redo",
-  file: "File",
+  tools: "Tools",
+  portal: "Portal",
   help: "Help",
-  exit: "Exit",
   about: "About",
   aboutTitle: "About Cyan Notepad",
   version: "Version",
@@ -578,7 +863,7 @@ const en: TranslationKeys = {
   restore: "Restore",
   wordCount: "{count} words",
   showWindow: "Show Window",
-  quitApp: "Quit",
+  quitApp: "Quit Application",
   hideToTray: "Minimize to Tray",
   shortcutsSection: "Keyboard Shortcuts",
   autoSaveSection: "Auto Save",

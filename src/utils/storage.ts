@@ -12,18 +12,30 @@ import {
   stat,
 } from "@tauri-apps/plugin-fs";
 import { appDataDir, dirname, join, resourceDir } from "@tauri-apps/api/path";
-import type { Note, NoteCategory } from "@/types";
+import type { Note, NoteCategory, TodoListData } from "@/types";
 
 const TODOS_FILE = "todos.json";
+const TODO_LISTS_FILE = "todo-lists.json";
 const NOTES_DIR = "notes";
 const IMAGES_DIR = "img";
 const IMAGE_TRASH_DIR = "img-trash";
+const IMAGE_TRASH_PARTITION_DIRS = {
+  notes: "notes",
+  canvas: "canvas",
+} as const;
+const IMAGE_NEED_DIR = "img-need";
 const IMAGE_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const AVATAR_CACHE_PREFIX = "avatar-";
+const CUSTOM_BACKGROUND_PREFIX = "background-";
 const FONTS_FILE = "fonts.json";
 const SETTINGS_FILE = "settings.json";
 const DATA_DIR_NAME = "data";
 
 let dataDirectoryPromise: Promise<string> | null = null;
+let imageNeedDirectoryPromise: Promise<string> | null = null;
+let legacyImageTrashMigrationPromise: Promise<void> | null = null;
+
+export type ImageTrashPartition = keyof typeof IMAGE_TRASH_PARTITION_DIRS;
 
 async function ensureDirectory(path: string): Promise<void> {
   if (!(await exists(path))) {
@@ -202,10 +214,75 @@ export async function getImageDirectory(): Promise<string> {
   return ensureImageDir();
 }
 
-export async function getImageTrashDirectory(): Promise<string> {
-  const dir = await join(await getDataRoot(), IMAGE_TRASH_DIR);
+async function migrateLegacyImageTrashFiles(trashRoot: string, notesTrashDir: string): Promise<void> {
+  try {
+    const entries = await readDir(trashRoot);
+    for (const entry of entries) {
+      if (!entry.isFile || !entry.name) continue;
+      // These files belong to img-need and are migrated by ensureImageNeedDirectory().
+      if (isAvatarCacheFilename(entry.name) || isCustomBackgroundFilename(entry.name)) continue;
+      const source = await join(trashRoot, entry.name);
+      const target = await join(notesTrashDir, entry.name);
+      try {
+        if (await exists(target)) {
+          await remove(source);
+        } else {
+          await rename(source, target);
+        }
+      } catch (error) {
+        console.warn("Failed to partition legacy image trash:", entry.name, error);
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to inspect legacy image trash:", error);
+  }
+}
+
+export async function getImageTrashDirectory(partition: ImageTrashPartition = "notes"): Promise<string> {
+  const trashRoot = await join(await getDataRoot(), IMAGE_TRASH_DIR);
+  const notesTrashDir = await join(trashRoot, IMAGE_TRASH_PARTITION_DIRS.notes);
+  const canvasTrashDir = await join(trashRoot, IMAGE_TRASH_PARTITION_DIRS.canvas);
+  await Promise.all([
+    ensureDirectory(notesTrashDir),
+    ensureDirectory(canvasTrashDir),
+  ]);
+
+  if (!legacyImageTrashMigrationPromise) {
+    legacyImageTrashMigrationPromise = migrateLegacyImageTrashFiles(trashRoot, notesTrashDir);
+  }
+  await legacyImageTrashMigrationPromise;
+  return partition === "canvas" ? canvasTrashDir : notesTrashDir;
+}
+
+async function ensureImageNeedDirectory(): Promise<string> {
+  const dataRoot = await getDataRoot();
+  const dir = await join(dataRoot, IMAGE_NEED_DIR);
   await ensureDirectory(dir);
+
+  // Move avatar/background files created by older builds out of img-trash.
+  const trashDir = await join(dataRoot, IMAGE_TRASH_DIR);
+  if (await exists(trashDir)) {
+    const entries = await readDir(trashDir);
+    for (const entry of entries) {
+      if (!entry.isFile || !entry.name) continue;
+      if (!isAvatarCacheFilename(entry.name) && !isCustomBackgroundFilename(entry.name)) continue;
+      const source = await join(trashDir, entry.name);
+      const target = await join(dir, entry.name);
+      try {
+        if (!(await exists(target))) await rename(source, target);
+      } catch (error) {
+        console.warn("Failed to migrate retained image into img-need:", entry.name, error);
+      }
+    }
+  }
   return dir;
+}
+
+export async function getImageNeedDirectory(): Promise<string> {
+  if (!imageNeedDirectoryPromise) {
+    imageNeedDirectoryPromise = ensureImageNeedDirectory();
+  }
+  return imageNeedDirectoryPromise;
 }
 
 // --- Todos ---
@@ -262,6 +339,30 @@ async function recoverNoteListFromFiles(base: string): Promise<Note[]> {
     console.error("Failed to recover note list from files:", e);
   }
   return [];
+}
+
+export async function loadTodoLists(): Promise<TodoListData | null> {
+  try {
+    const base = await ensureDataDir();
+    const path = await join(base, TODO_LISTS_FILE);
+    if (await exists(path)) {
+      const content = await readTextFile(path);
+      return JSON.parse(content) as TodoListData;
+    }
+  } catch (e) {
+    console.error("Failed to load todo lists:", e);
+  }
+  return null;
+}
+
+export async function saveTodoLists(data: TodoListData): Promise<void> {
+  try {
+    const base = await ensureDataDir();
+    const path = await join(base, TODO_LISTS_FILE);
+    await writeTextFile(path, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Failed to save todo lists:", e);
+  }
 }
 
 export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteCategory[] }> {
@@ -335,6 +436,121 @@ function normalizeImageExtension(extension: string): string {
   return normalized || "png";
 }
 
+function isAvatarCacheFilename(filename: string): boolean {
+  return new RegExp(`^${AVATAR_CACHE_PREFIX}[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)$`, "i").test(filename);
+}
+
+function isCustomBackgroundFilename(filename: string): boolean {
+  return new RegExp(`^${CUSTOM_BACKGROUND_PREFIX}[A-Za-z0-9_-]+\\.(?:jpg|jpeg|png|webp)$`, "i").test(filename);
+}
+
+export interface StoredImageHistoryItem {
+  filename: string;
+  path: string;
+  modifiedAt: number;
+}
+
+function safeAvatarUserId(userId: string): string {
+  return userId.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function isAvatarFilenameForUser(filename: string, userId: string): boolean {
+  const prefix = `${AVATAR_CACHE_PREFIX}${safeAvatarUserId(userId)}`;
+  return filename.startsWith(`${prefix}.`) || filename.startsWith(`${prefix}-`);
+}
+
+async function listImageHistory(predicate: (filename: string) => boolean): Promise<StoredImageHistoryItem[]> {
+  const dir = await getImageNeedDirectory();
+  const entries = await readDir(dir);
+  const items = await Promise.all(entries
+    .filter((entry) => entry.isFile && entry.name && predicate(entry.name))
+    .map(async (entry) => {
+      const path = await join(dir, entry.name!);
+      const info = await stat(path);
+      return {
+        filename: entry.name!,
+        path,
+        modifiedAt: info.mtime ? new Date(info.mtime).getTime() : 0,
+      };
+    }));
+  return items.sort((a, b) => b.modifiedAt - a.modifiedAt);
+}
+
+/** Keep every uploaded avatar in img-need so it remains available in history. */
+export async function saveAvatarCache(userId: string, dataUrl: string): Promise<string> {
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) throw new Error("Unsupported avatar data");
+
+  const id = typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const filename = `${AVATAR_CACHE_PREFIX}${safeAvatarUserId(userId)}-${id}.jpg`;
+  const imageNeedDir = await getImageNeedDirectory();
+
+  const binary = atob(match[2]);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  await writeFile(await join(imageNeedDir, filename), bytes);
+  return filename;
+}
+
+export async function listAvatarHistory(userId: string): Promise<StoredImageHistoryItem[]> {
+  return listImageHistory((filename) => isAvatarFilenameForUser(filename, userId));
+}
+
+export async function loadAvatarCacheDataUrl(filename: string, userId: string): Promise<string> {
+  if (!isAvatarCacheFilename(filename) || !isAvatarFilenameForUser(filename, userId)) {
+    throw new Error("Invalid avatar history filename");
+  }
+  const bytes = await readFile(await join(await getImageNeedDirectory(), filename));
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return `data:image/jpeg;base64,${btoa(binary)}`;
+}
+
+export async function deleteAvatarCache(filename: string, userId: string): Promise<void> {
+  if (!isAvatarCacheFilename(filename) || !isAvatarFilenameForUser(filename, userId)) return;
+  const path = await join(await getImageNeedDirectory(), filename);
+  if (await exists(path)) await remove(path);
+}
+
+/** Keep every uploaded app background in img-need so it remains available in history. */
+export async function saveCustomBackground(data: Uint8Array, extension: string): Promise<string> {
+  const normalizedExtension = normalizeImageExtension(extension);
+  if (!new Set(["jpg", "jpeg", "png", "webp"]).has(normalizedExtension)) {
+    throw new Error("Unsupported background image type");
+  }
+
+  const id = typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const filename = `${CUSTOM_BACKGROUND_PREFIX}${id}.${normalizedExtension}`;
+  await writeFile(await join(await getImageNeedDirectory(), filename), data);
+  return filename;
+}
+
+export async function listCustomBackgroundHistory(): Promise<StoredImageHistoryItem[]> {
+  return listImageHistory(isCustomBackgroundFilename);
+}
+
+export async function resolveCustomBackground(filename: string): Promise<string | null> {
+  if (!isCustomBackgroundFilename(filename)) return null;
+  try {
+    const path = await join(await getImageNeedDirectory(), filename);
+    return await exists(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteCustomBackground(filename: string): Promise<void> {
+  if (!isCustomBackgroundFilename(filename)) return;
+  const path = await join(await getImageNeedDirectory(), filename);
+  if (await exists(path)) await remove(path);
+}
+
 export async function saveImageAttachment(
   data: Uint8Array,
   extension: string,
@@ -361,7 +577,7 @@ export async function resolveImageAttachment(filename: string): Promise<string |
 
     // An attachment may have been moved to the reversible trash after a
     // mistaken edit. Restore it lazily when the user undoes that edit.
-    const trashPath = await join(dataRoot, IMAGE_TRASH_DIR, filename);
+    const trashPath = await join(await getImageTrashDirectory("notes"), filename);
     if (!(await exists(trashPath))) return null;
     await ensureDirectory(imageDir);
     await rename(trashPath, path);
@@ -378,8 +594,7 @@ export async function cleanupUnusedImageAttachments(): Promise<void> {
     const dataRoot = await getDataRoot();
     const imageDir = await join(dataRoot, IMAGES_DIR);
     if (!(await exists(imageDir))) return;
-    const trashDir = await join(dataRoot, IMAGE_TRASH_DIR);
-    await ensureDirectory(trashDir);
+    const trashDir = await getImageTrashDirectory("notes");
 
     const referenced = new Set<string>();
     const notesDir = await join(dataRoot, NOTES_DIR);

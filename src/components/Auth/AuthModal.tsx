@@ -4,6 +4,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { isSupabaseConfigured } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
+import LoadingText from "@/components/LoadingText";
 
 interface AuthModalProps {
   open: boolean;
@@ -139,7 +140,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                 className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-danger disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <LogOut size={15} />
-                {loading ? t(lang, "authWorking") : t(lang, "authSignOut")}
+                {loading ? <LoadingText label={t(lang, "authWorking")} /> : t(lang, "authSignOut")}
               </button>
             </div>
           ) : (
@@ -224,7 +225,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                 >
                   {mode === "signUp" && !loading ? <UserPlus size={15} /> : <LogIn size={15} />}
                   {loading
-                    ? t(lang, "authWorking")
+                    ? <LoadingText label={t(lang, "authWorking")} />
                     : t(lang, mode === "signIn" ? "authSignIn" : "authSignUp")}
                 </button>
               </form>

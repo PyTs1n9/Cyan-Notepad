@@ -1,0 +1,112 @@
+import { create } from "zustand";
+import type { CanvasBoard, CanvasItem, CanvasViewport } from "@/types";
+import { createEmptyCanvasBoard } from "@/types/canvas";
+
+const MAX_HISTORY = 60;
+
+function cloneBoard(board: CanvasBoard): CanvasBoard {
+  return JSON.parse(JSON.stringify(board)) as CanvasBoard;
+}
+
+interface CanvasState {
+  board: CanvasBoard;
+  selectedId: string | null;
+  loaded: boolean;
+  history: CanvasBoard[];
+  future: CanvasBoard[];
+  loadBoard: (board: CanvasBoard) => void;
+  setSelectedId: (id: string | null) => void;
+  setViewport: (viewport: CanvasViewport) => void;
+  addItem: (item: CanvasItem) => void;
+  updateItem: (id: string, updates: Partial<CanvasItem>) => void;
+  moveLayer: (id: string, direction: "up" | "down") => void;
+  removeItem: (id: string) => void;
+  clearBoard: () => void;
+  undo: () => void;
+  redo: () => void;
+}
+
+function commit(state: CanvasState, board: CanvasBoard) {
+  return {
+    board: { ...board, updatedAt: new Date().toISOString() },
+    history: [...state.history, cloneBoard(state.board)].slice(-MAX_HISTORY),
+    future: [],
+  };
+}
+
+export const useCanvasStore = create<CanvasState>((set) => ({
+  board: createEmptyCanvasBoard(),
+  selectedId: null,
+  loaded: false,
+  history: [],
+  future: [],
+
+  loadBoard: (board) => set({ board: cloneBoard(board), selectedId: null, loaded: true, history: [], future: [] }),
+  setSelectedId: (id) => set({ selectedId: id }),
+  setViewport: (viewport) => set((state) => ({
+    board: {
+      ...state.board,
+      viewport: {
+        x: viewport.x,
+        y: viewport.y,
+        zoom: Math.min(4, Math.max(0.2, viewport.zoom)),
+      },
+    },
+  })),
+  addItem: (item) => set((state) => commit(state, {
+    ...state.board,
+    items: [...state.board.items, item],
+  })),
+  updateItem: (id, updates) => set((state) => {
+    const item = state.board.items.find((candidate) => candidate.id === id);
+    if (!item) return state;
+    return commit(state, {
+      ...state.board,
+      items: state.board.items.map((candidate) => (
+        candidate.id === id ? { ...candidate, ...updates } as CanvasItem : candidate
+      )),
+    });
+  }),
+  moveLayer: (id, direction) => set((state) => {
+    const ordered = [...state.board.items].sort((a, b) => a.zIndex - b.zIndex);
+    const index = ordered.findIndex((item) => item.id === id);
+    if (index < 0) return state;
+    const targetIndex = direction === "up" ? index + 1 : index - 1;
+    if (targetIndex < 0 || targetIndex >= ordered.length) return state;
+
+    [ordered[index], ordered[targetIndex]] = [ordered[targetIndex], ordered[index]];
+    const items = ordered.map((item, zIndex) => ({ ...item, zIndex }));
+    return commit(state, { ...state.board, items });
+  }),
+  removeItem: (id) => set((state) => {
+    if (!state.board.items.some((item) => item.id === id)) return state;
+    return {
+      ...commit(state, { ...state.board, items: state.board.items.filter((item) => item.id !== id) }),
+      selectedId: state.selectedId === id ? null : state.selectedId,
+    };
+  }),
+  clearBoard: () => set((state) => {
+    if (state.board.items.length === 0) return state;
+    return { ...commit(state, { ...state.board, items: [] }), selectedId: null };
+  }),
+  undo: () => set((state) => {
+    const previous = state.history[state.history.length - 1];
+    if (!previous) return state;
+    return {
+      board: previous,
+      history: state.history.slice(0, -1),
+      future: [cloneBoard(state.board), ...state.future].slice(0, MAX_HISTORY),
+      selectedId: null,
+    };
+  }),
+  redo: () => set((state) => {
+    const next = state.future[0];
+    if (!next) return state;
+    return {
+      board: next,
+      history: [...state.history, cloneBoard(state.board)].slice(-MAX_HISTORY),
+      future: state.future.slice(1),
+      selectedId: null,
+    };
+  }),
+}));

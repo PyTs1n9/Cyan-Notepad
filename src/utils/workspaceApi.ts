@@ -4,6 +4,7 @@ import type {
   WorkspaceDocument,
   WorkspaceInviteRole,
   WorkspaceMember,
+  WorkspaceRemovalNotification,
   WorkspaceRole,
 } from "@/types/workspace";
 
@@ -21,10 +22,23 @@ interface DocumentRow {
   id: string;
   workspace_id: string;
   title: string;
-  content: string;
+  content?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+interface WorkspaceNotificationRow {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  workspace_name: string;
+  created_at: string;
+}
+
+interface ProfileRow {
+  display_name?: unknown;
+  avatar_url?: unknown;
 }
 
 function requireSupabase() {
@@ -37,7 +51,7 @@ function mapDocument(row: DocumentRow): WorkspaceDocument {
     id: row.id,
     workspaceId: row.workspace_id,
     title: row.title,
-    content: row.content,
+    content: row.content ?? "",
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -142,7 +156,9 @@ export async function fetchDocuments(workspaceId: string): Promise<WorkspaceDocu
   const client = requireSupabase();
   const { data, error } = await client
     .from("documents")
-    .select("id, workspace_id, title, content, created_by, created_at, updated_at")
+    // The editor syncs its body through Yjs; the document list only needs metadata.
+    // Avoid transferring every document's full content during workspace startup.
+    .select("id, workspace_id, title, created_by, created_at, updated_at")
     .eq("workspace_id", workspaceId)
     .order("updated_at", { ascending: false });
   if (error) throw error;
@@ -217,16 +233,22 @@ export async function fetchMembers(workspaceId: string): Promise<WorkspaceMember
 
   return (data ?? []).map((item) => {
     const profileValue = item.profile as unknown as
-      | { display_name: string; avatar_url: string | null }
-      | { display_name: string; avatar_url: string | null }[]
+      | ProfileRow
+      | ProfileRow[]
       | null;
     const profile = Array.isArray(profileValue) ? profileValue[0] : profileValue;
+    const displayName = typeof profile?.display_name === "string"
+      ? profile.display_name.trim()
+      : "";
+    const avatarUrl = typeof profile?.avatar_url === "string" && profile.avatar_url.trim()
+      ? profile.avatar_url
+      : null;
     return {
       userId: item.user_id as string,
       role: item.role as WorkspaceRole,
       joinedAt: item.joined_at as string,
-      displayName: profile?.display_name || "User",
-      avatarUrl: profile?.avatar_url ?? null,
+      displayName: displayName || "User",
+      avatarUrl,
     };
   });
 }
@@ -251,5 +273,40 @@ export async function removeMember(workspaceId: string, userId: string): Promise
     target_workspace_id: workspaceId,
     target_user_id: userId,
   });
+  if (error) throw error;
+}
+
+export async function fetchUnreadWorkspaceRemovalNotifications(
+  userId: string,
+): Promise<WorkspaceRemovalNotification[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("workspace_notifications")
+    .select("id, user_id, workspace_id, workspace_name, created_at")
+    .eq("user_id", userId)
+    .eq("type", "member_removed")
+    .is("read_at", null)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  return ((data ?? []) as WorkspaceNotificationRow[]).map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    workspaceId: row.workspace_id,
+    workspaceName: row.workspace_name,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function markWorkspaceNotificationRead(
+  notificationId: string,
+  userId: string,
+): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client
+    .from("workspace_notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", notificationId)
+    .eq("user_id", userId);
   if (error) throw error;
 }

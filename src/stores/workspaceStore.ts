@@ -14,6 +14,7 @@ interface WorkspaceState {
   activeWorkspaceId: string | null;
   activeDocumentId: string | null;
   loading: boolean;
+  creatingDocument: boolean;
   error: string | null;
   reset: () => void;
   clearError: () => void;
@@ -23,7 +24,10 @@ interface WorkspaceState {
   loadMembers: (workspaceId?: string) => Promise<void>;
   selectDocument: (documentId: string | null) => void;
   createWorkspace: (name: string, userId: string) => Promise<boolean>;
-  joinWorkspace: (inviteCode: string, userId: string) => Promise<boolean>;
+  joinWorkspace: (
+    inviteCode: string,
+    userId: string,
+  ) => Promise<"joined" | "alreadyJoined" | false>;
   leaveWorkspace: (workspaceId: string, userId: string) => Promise<boolean>;
   deleteWorkspace: (workspaceId: string, userId: string) => Promise<boolean>;
   updateWorkspace: (
@@ -50,6 +54,7 @@ const initialState = {
   activeWorkspaceId: null as string | null,
   activeDocumentId: null as string | null,
   loading: false,
+  creatingDocument: false,
   error: null as string | null,
 };
 
@@ -75,7 +80,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         : workspaces[0]?.id ?? null;
       set({ workspaces, activeWorkspaceId: nextId, loading: false });
       if (nextId) {
-        await Promise.all([get().loadDocuments(nextId), get().loadMembers(nextId)]);
+        // Load member profiles together with the workspace documents so the
+        // member list is ready immediately and can stay in sync with realtime
+        // profile updates even before the management dialog is opened.
+        await Promise.all([
+          get().loadDocuments(nextId),
+          get().loadMembers(nextId),
+        ]);
       } else {
         set({ documents: [], members: [], activeDocumentId: null });
       }
@@ -93,7 +104,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       error: null,
     });
     if (workspaceId) {
-      await Promise.all([get().loadDocuments(workspaceId), get().loadMembers(workspaceId)]);
+      await Promise.all([
+        get().loadDocuments(workspaceId),
+        get().loadMembers(workspaceId),
+      ]);
     }
   },
 
@@ -144,11 +158,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   joinWorkspace: async (inviteCode, userId) => {
     set({ loading: true, error: null });
     try {
+      const joinedWorkspaceIds = new Set(get().workspaces.map((workspace) => workspace.id));
       const workspaceId = await workspaceApi.joinWorkspace(inviteCode);
+      if (joinedWorkspaceIds.has(workspaceId)) {
+        set({ loading: false });
+        return "alreadyJoined";
+      }
       await get().loadWorkspaces(userId);
       await get().selectWorkspace(workspaceId);
       set({ loading: false });
-      return true;
+      return "joined";
     } catch (error) {
       set({ loading: false, error: errorMessage(error) });
       return false;
@@ -201,7 +220,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   createDocument: async (title, userId, content = "") => {
     const workspaceId = get().activeWorkspaceId;
-    if (!workspaceId) return false;
+    // The request can be slow when the cloud backend is under load. Guard at
+    // the store boundary as well as in the UI so repeated clicks/Enter presses
+    // cannot enqueue multiple document creations.
+    if (!workspaceId || get().creatingDocument) return false;
+    set({ creatingDocument: true, error: null });
     try {
       const document = await workspaceApi.createDocument(workspaceId, userId, title, content);
       set((state) => ({
@@ -213,6 +236,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       set({ error: errorMessage(error) });
       return false;
+    } finally {
+      set({ creatingDocument: false });
     }
   },
 

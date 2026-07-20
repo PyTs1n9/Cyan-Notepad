@@ -48,27 +48,33 @@ interface SettingsState {
   theme: ThemeType;
   lang: LangType;
   customColors: CustomColors | null;
+  customBackground: string | null;
   savedPresets: SavedPreset[];
   shortcuts: AppShortcuts;
   autoSaveInterval: AutoSaveInterval;
   stickyOpacity: number;
+  showWorkspaceHighlights: boolean;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
+  setCustomBackground: (filename: string | null) => void;
   savePreset: (name: string) => void;
   loadPreset: (index: number) => void;
   deletePreset: (index: number) => void;
   setShortcuts: (shortcuts: AppShortcuts) => void;
   setAutoSaveInterval: (interval: AutoSaveInterval) => void;
   setStickyOpacity: (opacity: number) => void;
+  setShowWorkspaceHighlights: (show: boolean) => void;
   loadSettings: (settings: {
     theme?: ThemeType;
     lang?: LangType;
     customColors?: CustomColors | null;
+    customBackground?: string | null;
     savedPresets?: SavedPreset[];
     shortcuts?: AppShortcuts;
     autoSaveInterval?: AutoSaveInterval;
     stickyOpacity?: number;
+    showWorkspaceHighlights?: boolean;
   }) => void;
 }
 
@@ -76,10 +82,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: "blue",
   lang: "zh",
   customColors: null,
+  customBackground: null,
   savedPresets: [],
   shortcuts: DEFAULT_SHORTCUTS,
   autoSaveInterval: 0,
   stickyOpacity: DEFAULT_STICKY_OPACITY,
+  showWorkspaceHighlights: true,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -93,6 +101,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setLang: (lang) => set({ lang }),
 
   setCustomColors: (colors) => set({ customColors: colors, theme: "custom" }),
+
+  setCustomBackground: (customBackground) => set({ customBackground }),
 
   savePreset: (name) => {
     const { customColors, savedPresets } = get();
@@ -117,14 +127,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setStickyOpacity: (stickyOpacity) => set({ stickyOpacity: normalizeStickyOpacity(stickyOpacity) }),
 
+  setShowWorkspaceHighlights: (showWorkspaceHighlights) => set({ showWorkspaceHighlights }),
+
   loadSettings: (settings) =>
     set({
       theme: settings.theme || "blue",
       lang: settings.lang || "zh",
       customColors: settings.customColors || null,
+      customBackground: settings.customBackground || null,
       savedPresets: settings.savedPresets || [],
       shortcuts: settings.shortcuts || DEFAULT_SHORTCUTS,
       autoSaveInterval: settings.autoSaveInterval || 0,
       stickyOpacity: normalizeStickyOpacity(settings.stickyOpacity),
+      showWorkspaceHighlights: settings.showWorkspaceHighlights ?? true,
     }),
 }));

@@ -239,7 +239,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
             {title}
           </span>
           <span className="flex-1 self-stretch cursor-move" data-tauri-drag-region />
-          <span className="text-[10px] text-text-muted tabular-nums select-none">
+          <span className="text-[11px] font-medium text-text-muted tabular-nums select-none">
             {fontSize}px
           </span>
           <div className="flex items-center gap-0.5">

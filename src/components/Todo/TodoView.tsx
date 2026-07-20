@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff } from "lucide-react";
+import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff, ListChecks } from "lucide-react";
 import { useTodoStore } from "@/stores/todoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
+import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import type { Todo } from "@/types";
 
 type Priority = "low" | "medium" | "high";
@@ -88,10 +89,13 @@ const getYearRange = (date: Date) => {
 };
 
 const TodoView: React.FC = () => {
-  const { todos, filter, priorityFilter, addTodo, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
+  const { todos, lists, activeListId, filter, priorityFilter, addTodo, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
   const lang = useSettingsStore((s) => s.lang);
+  const activeList = lists.find((list) => list.id === activeListId);
+  const listTodos = todos.filter((todo) => todo.listId === activeListId);
   const [newTitle, setNewTitle] = useState("");
   const [newPriority, setNewPriority] = useState<Priority>("low");
+  const newTodoInputRef = useRef<HTMLInputElement>(null);
   const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false);
   const priorityDropdownRef = useRef<HTMLDivElement>(null);
   const [priorityFilterDropdownOpen, setPriorityFilterDropdownOpen] = useState(false);
@@ -112,10 +116,21 @@ const TodoView: React.FC = () => {
   // 拖拽排序状态
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null);
   const dragNodeRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const dragRealIndexRef = useRef<number>(-1);
-  const dragOverRealIndexRef = useRef<number>(-1);
+  const dragTodoIdRef = useRef<string | null>(null);
+  const dragOverTodoIdRef = useRef<string | null>(null);
+  const dragOverPositionRef = useRef<"before" | "after">("before");
+
+  useEffect(() => {
+    const handlePortalAction = (event: Event) => {
+      if ((event as CustomEvent<PortalAction>).detail !== "new-todo") return;
+      newTodoInputRef.current?.focus();
+    };
+    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
+    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
+  }, []);
 
   const confirmDeleteTodo = () => {
     if (!deleteConfirmTodo) return;
@@ -134,9 +149,9 @@ const TodoView: React.FC = () => {
     const draggedTodo = filteredTodos[filteredIndex];
     if (!draggedTodo || draggedTodo.pinned) return;
 
-    const realIdx = todos.findIndex((t) => t.id === draggedTodo.id);
     setDragIndex(filteredIndex);
-    dragRealIndexRef.current = realIdx;
+    dragTodoIdRef.current = draggedTodo.id;
+    dragOverPositionRef.current = "before";
 
     const itemEls = listRef.current?.children;
     if (!itemEls || !itemEls[filteredIndex]) return;
@@ -165,26 +180,59 @@ const TodoView: React.FC = () => {
 
       // 计算当前 hover 到哪个 item
       if (!listRef.current) return;
+      const viewport = listRef.current.getBoundingClientRect();
+      if (ev.clientX < viewport.left || ev.clientX > viewport.right) {
+        dragOverTodoIdRef.current = null;
+        setDragOverIndex(null);
+        setDragOverPosition(null);
+        return;
+      }
       const children = Array.from(listRef.current.children) as HTMLElement[];
       let found = false;
       for (let i = 0; i < children.length; i++) {
+        if (filteredTodos[i]?.pinned || filteredTodos[i]?.id === draggedTodo.id) continue;
+        const rect = children[i].getBoundingClientRect();
+        if (ev.clientY >= rect.top && ev.clientY <= rect.bottom) {
+          setDragOverIndex(i);
+          dragOverTodoIdRef.current = filteredTodos[i]?.id ?? null;
+          dragOverPositionRef.current = ev.clientY >= rect.top + rect.height / 2 ? "after" : "before";
+          setDragOverPosition(dragOverPositionRef.current);
+          found = true;
+          break;
+        }
+      }
+      if (found) return;
+      for (let i = 0; i < children.length; i++) {
+        if (filteredTodos[i]?.pinned) continue;
+        if (filteredTodos[i]?.id === draggedTodo.id) continue;
         const rect = children[i].getBoundingClientRect();
         const mid = rect.top + rect.height / 2;
         if (ev.clientY < mid) {
           setDragOverIndex(i);
-          dragOverRealIndexRef.current = todos.findIndex((t) => t.id === filteredTodos[i]?.id);
+          dragOverTodoIdRef.current = filteredTodos[i]?.id ?? null;
+          dragOverPositionRef.current = "before";
+          setDragOverPosition("before");
           found = true;
           break;
         }
       }
       if (!found) {
-        const last = children.length - 1;
+        let last = -1;
+        for (let index = filteredTodos.length - 1; index >= 0; index -= 1) {
+          if (!filteredTodos[index].pinned && filteredTodos[index].id !== draggedTodo.id) {
+            last = index;
+            break;
+          }
+        }
+        if (last < 0) return;
         setDragOverIndex(last);
-        dragOverRealIndexRef.current = todos.findIndex((t) => t.id === filteredTodos[last]?.id);
+        dragOverTodoIdRef.current = filteredTodos[last]?.id ?? null;
+        dragOverPositionRef.current = "after";
+        setDragOverPosition("after");
       }
     };
 
-    const onUp = () => {
+    const onUp = (upEvent: MouseEvent) => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       clone.remove();
@@ -192,15 +240,19 @@ const TodoView: React.FC = () => {
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
 
-      const fromReal = dragRealIndexRef.current;
-      const toReal = dragOverRealIndexRef.current;
-      if (fromReal >= 0 && toReal >= 0 && fromReal !== toReal) {
-        reorderTodos(fromReal, toReal);
+      const todoId = dragTodoIdRef.current;
+      const targetTodoId = dragOverTodoIdRef.current;
+      const viewport = listRef.current?.getBoundingClientRect();
+      const insideViewport = !viewport || (upEvent.clientX >= viewport.left && upEvent.clientX <= viewport.right);
+      if (insideViewport && todoId && targetTodoId && todoId !== targetTodoId) {
+        reorderTodos(todoId, targetTodoId, dragOverPositionRef.current);
       }
       setDragIndex(null);
       setDragOverIndex(null);
-      dragRealIndexRef.current = -1;
-      dragOverRealIndexRef.current = -1;
+      setDragOverPosition(null);
+      dragTodoIdRef.current = null;
+      dragOverTodoIdRef.current = null;
+      dragOverPositionRef.current = "before";
     };
 
     document.addEventListener("mousemove", onMove);
@@ -213,6 +265,14 @@ const TodoView: React.FC = () => {
       editInputRef.current.select();
     }
   }, [editingId]);
+
+  useEffect(() => {
+    setNewTitle("");
+    setEditingId(null);
+    setEditingTitle("");
+    setOpenCalendarTodoId(null);
+    setDeleteConfirmTodo(null);
+  }, [activeListId]);
 
   useEffect(() => {
     if (!priorityDropdownOpen) return;
@@ -332,7 +392,7 @@ const TodoView: React.FC = () => {
     setCalendarView(view);
   };
 
-  const filteredTodos = todos.filter((t) => {
+  const filteredTodos = listTodos.filter((t) => {
     if (filter === "active" && t.completed) return false;
     if (filter === "completed" && !t.completed) return false;
     if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
@@ -346,7 +406,8 @@ const TodoView: React.FC = () => {
     setNewPriority("low");
   };
 
-  const completedCount = todos.filter((t) => t.completed).length;
+  const completedCount = listTodos.filter((t) => t.completed).length;
+  const completionRate = listTodos.length === 0 ? 0 : Math.round((completedCount / listTodos.length) * 100);
   const todayInputValue = getTodayInputValue();
   const priorityOptions: { value: Priority; label: string }[] = [
     { value: "low", label: t(lang, "lowPriority") },
@@ -363,35 +424,56 @@ const TodoView: React.FC = () => {
   const selectedPriorityFilterLabel = priorityFilterOptions.find((option) => option.value === priorityFilter)?.label;
 
   return (
-    <div className="flex-1 flex flex-col h-full">
+    <div className="todo-surface flex-1 flex flex-col h-full">
       {/* Header */}
-      <div className="px-8 pt-8 pb-4">
-        <h1 className="text-2xl font-bold text-text-primary">{t(lang, "todoTitle")}</h1>
-        <p className="text-sm text-text-muted mt-1">
-          {tWithParams(lang, "totalStats", { total: todos.length, done: completedCount })}
-        </p>
+      <div className="flex items-center gap-3 px-4 pb-4 pt-4">
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-accent/20 bg-accent-light text-accent">
+          <ListChecks size={21} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-2xl font-bold text-text-primary">{activeList?.name ?? t(lang, "todoTitle")}</h1>
+          <p className="mt-1 text-sm text-text-muted">
+            {tWithParams(lang, "totalStats", { total: listTodos.length, done: completedCount })}
+          </p>
+        </div>
+        <div className="w-32 flex-shrink-0 rounded-xl border border-border bg-bg-primary/70 px-3 py-2 shadow-sm backdrop-blur-md">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-text-muted">
+            <span>{completedCount}/{listTodos.length}</span>
+            <span className="text-accent">{completionRate}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-bg-secondary">
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+              style={{ width: `${completionRate}%` }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Add Todo */}
-      <div className="px-8 pb-4">
-        <div className="flex gap-2 items-center">
+      <div className="px-4 pb-4">
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-bg-primary/75 p-2 focus-within:border-accent/45">
+          <span className="ml-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+            <Plus size={16} strokeWidth={2.4} />
+          </span>
           <input
+            ref={newTodoInputRef}
             type="text"
             value={newTitle}
+            disabled={!activeListId}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder={t(lang, "addTaskPlaceholder")}
-            className="flex-1 px-4 py-2.5 rounded-lg border border-border bg-bg-primary text-sm
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-text-primary
-              placeholder:text-text-muted"
+            className="h-10 min-w-0 flex-1 rounded-lg bg-transparent px-2 text-sm text-text-primary
+              placeholder:text-text-muted focus:outline-none"
           />
           <div className="relative flex-shrink-0" ref={priorityDropdownRef}>
             <button
               type="button"
               onClick={() => setPriorityDropdownOpen((open) => !open)}
-              className="h-10 min-w-[112px] rounded-lg border border-border bg-bg-primary px-3 text-sm
-                text-text-secondary shadow-sm transition-colors cursor-pointer hover:bg-bg-secondary
-                focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent flex items-center justify-between gap-2"
+              className="h-10 min-w-[112px] rounded-lg border border-border bg-bg-secondary/70 px-3 text-sm
+                text-text-secondary cursor-pointer hover:border-accent/30 hover:bg-bg-hover
+                focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 flex items-center justify-between gap-2"
             >
               <span className="truncate">{selectedPriorityLabel}</span>
               <ChevronDown
@@ -401,7 +483,7 @@ const TodoView: React.FC = () => {
             </button>
 
             {priorityDropdownOpen && (
-              <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-border
+              <div className="todo-popover absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-border
                 bg-bg-primary shadow-lg">
                 {priorityOptions.map((option) => (
                   <button
@@ -424,10 +506,9 @@ const TodoView: React.FC = () => {
           </div>
           <button
             onClick={handleAdd}
-            disabled={!newTitle.trim()}
-            className="px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium
-              hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed
-              flex items-center gap-1.5 cursor-pointer transition-colors"
+            disabled={!newTitle.trim() || !activeListId}
+            className="flex h-10 items-center gap-1.5 rounded-lg bg-accent px-4 text-sm font-medium text-white
+              hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Plus size={14} />
             <span>{t(lang, "add")}</span>
@@ -436,24 +517,26 @@ const TodoView: React.FC = () => {
       </div>
 
       {/* Filter Tabs */}
-      <div className="px-8 pb-3 flex items-center gap-2 pr-10">
-        {(["all", "active", "completed"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1 rounded-full text-xs cursor-pointer transition-colors
-              ${filter === f ? "bg-accent text-white" : "bg-bg-secondary text-text-secondary hover:bg-bg-hover"}`}
-          >
-            {f === "all" ? t(lang, "filterAll") : f === "active" ? t(lang, "filterActive") : t(lang, "filterCompleted")}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 px-4 pb-3">
+        <div className="flex items-center gap-1 rounded-full border border-border bg-bg-secondary/70 p-1">
+          {(["all", "active", "completed"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded-full px-3 py-1 text-xs cursor-pointer
+                ${filter === f ? "bg-accent text-white" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
+            >
+              {f === "all" ? t(lang, "filterAll") : f === "active" ? t(lang, "filterActive") : t(lang, "filterCompleted")}
+            </button>
+          ))}
+        </div>
         {/* Priority Filter Dropdown */}
         <div className="relative ml-auto flex-shrink-0" ref={priorityFilterDropdownRef}>
           <button
             type="button"
             onClick={() => setPriorityFilterDropdownOpen((open) => !open)}
             className="min-w-[86px] rounded-full border border-border bg-bg-primary px-3 py-1 text-xs
-              text-text-secondary shadow-sm transition-colors cursor-pointer hover:bg-bg-secondary
+              text-text-secondary transition-colors cursor-pointer hover:bg-bg-secondary
               focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent flex items-center justify-between gap-1.5"
           >
             <span className="truncate">{selectedPriorityFilterLabel}</span>
@@ -464,7 +547,7 @@ const TodoView: React.FC = () => {
           </button>
 
           {priorityFilterDropdownOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 min-w-full overflow-hidden rounded-lg border border-border
+            <div className="todo-popover absolute right-0 top-full z-20 mt-1 min-w-full overflow-hidden rounded-xl border border-border
               bg-bg-primary shadow-lg">
               {priorityFilterOptions.map((option) => (
                 <button
@@ -488,7 +571,7 @@ const TodoView: React.FC = () => {
       </div>
 
       {/* Todo List */}
-      <div className="mx-8 mb-8 flex-1 min-h-0 overflow-hidden rounded-lg border border-border bg-bg-primary/70">
+      <div className="app-work-area-overlay mx-4 mb-3 flex-1 min-h-0 overflow-hidden rounded-2xl border border-border bg-bg-primary/65">
         <div className="h-full overflow-y-auto px-4 py-4">
         <div className="space-y-1" ref={listRef}>
           {filteredTodos.map((todo, index) => {
@@ -499,25 +582,33 @@ const TodoView: React.FC = () => {
             return (
             <div
               key={todo.id}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg group transition-colors
-                ${todo.completed ? "bg-bg-secondary opacity-60" : "bg-bg-primary hover:bg-bg-secondary"}
-                border border-transparent hover:border-border
+              className={`todo-task-row group relative flex items-center gap-3 rounded-xl border px-4 py-3
+                ${todo.completed ? "border-transparent bg-bg-secondary/75 opacity-65" : "border-transparent bg-bg-primary/75 hover:border-border hover:bg-bg-primary"}
                 ${isDragging ? "opacity-30" : ""}
-                ${isDragOver ? "border-t-2 border-t-accent" : ""}`}
+                ${isDragOver ? "bg-accent-light/35" : ""}`}
             >
-              <GripVertical
-                size={14}
-                className={`text-text-muted transition-opacity select-none flex-shrink-0
-                  ${todo.pinned
-                    ? "opacity-20 cursor-not-allowed"
-                    : "opacity-30 group-hover:opacity-100 cursor-grab active:cursor-grabbing"}`}
-                onMouseDown={(e) => handleDragStart(e, index)}
-              />
-              <button onClick={() => toggleTodo(todo.id)} className="cursor-pointer flex-shrink-0">
+              {isDragOver && dragOverPosition && (
+                <span
+                  aria-hidden="true"
+                  className={`drag-insertion-line drag-insertion-line--${dragOverPosition}`}
+                />
+              )}
+              {!todo.pinned && (
+                <GripVertical
+                  size={14}
+                  className="flex-shrink-0 cursor-grab select-none text-text-muted opacity-30 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+                  onMouseDown={(e) => handleDragStart(e, index)}
+                />
+              )}
+              {todo.pinned && <Pin size={14} className="flex-shrink-0 text-accent" />}
+              <button
+                onClick={() => toggleTodo(todo.id)}
+                className={`flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center rounded-full hover:bg-accent-light ${todo.completed ? "todo-check-done" : ""}`}
+              >
                 {todo.completed ? (
-                  <CheckCircle2 size={18} className="text-success" />
+                  <CheckCircle2 size={19} className="text-success" />
                 ) : (
-                  <Circle size={18} className="text-text-muted hover:text-accent transition-colors" />
+                  <Circle size={19} className="text-text-muted hover:text-accent transition-colors" />
                 )}
               </button>
 
@@ -583,7 +674,7 @@ const TodoView: React.FC = () => {
                 {openCalendarTodoId === todo.id && (
                   <div
                     ref={calendarRef}
-                    className="fixed z-50 w-[248px] rounded-lg border border-border bg-bg-primary p-3
+                    className="todo-popover fixed z-50 w-[248px] rounded-xl border border-border bg-bg-primary p-3
                       text-text-primary shadow-lg shadow-black/10"
                     style={{ top: calendarPosition.top, left: calendarPosition.left }}
                   >
@@ -784,11 +875,11 @@ const TodoView: React.FC = () => {
 
       {deleteConfirmTodo && (
         <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center px-4"
+          className="todo-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center px-4"
           style={{ backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 42%))" }}
         >
           <div
-            className="w-full max-w-[320px] overflow-hidden rounded-lg border border-border bg-bg-secondary shadow-xl"
+            className="todo-modal-panel w-full max-w-[320px] overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-xl"
             role="dialog"
             aria-modal="true"
           >

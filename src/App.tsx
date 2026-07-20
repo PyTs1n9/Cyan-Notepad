@@ -1,13 +1,18 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "@/components/Layout/Sidebar";
 import ActivityBar from "@/components/Layout/ActivityBar";
-import { SIDEBAR_LABEL_MIN_WIDTH } from "@/components/Layout/sidebarLayout";
+import SidebarResizeHandle from "@/components/Layout/SidebarResizeHandle";
+import { SIDEBAR_MIN_WIDTH } from "@/components/Layout/sidebarLayout";
 import TitleBar from "@/components/Layout/TitleBar";
 import TodoView from "@/components/Todo/TodoView";
+import TodoSidebar from "@/components/Todo/TodoSidebar";
 import NoteEditor from "@/components/Editor/NoteEditor";
+import CanvasView from "@/components/Canvas/CanvasView";
 import SettingsModal from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
 import AuthModal from "@/components/Auth/AuthModal";
+import WorkspaceRemovalNotifier from "@/components/Workspace/WorkspaceRemovalNotifier";
+import LoadingText from "@/components/LoadingText";
 import { useTodoStore } from "@/stores/todoStore";
 import { useNoteStore } from "@/stores/noteStore";
 import { useFontStore } from "@/stores/fontStore";
@@ -17,6 +22,8 @@ import type { CustomColors, AppShortcuts, AutoSaveInterval } from "@/stores/sett
 import {
   loadTodos,
   saveTodos,
+  loadTodoLists,
+  saveTodoLists,
   loadNoteList,
   saveNoteIndex,
   loadSavedFonts,
@@ -26,6 +33,8 @@ import {
   loadSettings,
   saveSettings,
   loadIconData,
+  getImageNeedDirectory,
+  resolveCustomBackground,
 } from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
 import { openTileWindow } from "@/utils/tile";
@@ -34,15 +43,17 @@ import { t } from "@/utils/i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import type { Todo, Note, ViewType } from "@/types";
 import TurndownService from "turndown";
 
-const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 400;
 const COLLAPSED_WIDTH = 0;
 const ACTIVITY_BAR_WIDTH = 48;
-const WorkspaceView = lazy(() => import("@/components/Workspace/WorkspaceView"));
+const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
+const WorkspaceView = lazy(loadWorkspaceView);
+type ResizableSidebar = "notebook" | "workspace";
 
 function escapeHtml(text: string): string {
   return text
@@ -86,12 +97,17 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const isDragging = useRef(false);
+  const [workspaceSidebarWidth, setWorkspaceSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
+  const [workspaceSidebarCollapsed, setWorkspaceSidebarCollapsed] = useState(false);
+  const [customBackgroundUrl, setCustomBackgroundUrl] = useState<string | null>(null);
+  const resizingSidebar = useRef<ResizableSidebar | null>(null);
 
   const todos = useTodoStore((s) => s.todos);
-  const loadTodosState = useTodoStore((s) => s.loadTodos);
+  const todoLists = useTodoStore((s) => s.lists);
+  const activeTodoListId = useTodoStore((s) => s.activeListId);
+  const loadTodoData = useTodoStore((s) => s.loadTodoData);
 
   const notes = useNoteStore((s) => s.notes);
   const categories = useNoteStore((s) => s.categories);
@@ -106,10 +122,12 @@ export default function App() {
   const theme = useSettingsStore((s) => s.theme);
   const lang = useSettingsStore((s) => s.lang);
   const customColors = useSettingsStore((s) => s.customColors);
+  const customBackground = useSettingsStore((s) => s.customBackground);
   const savedPresets = useSettingsStore((s) => s.savedPresets);
   const shortcuts = useSettingsStore((s) => s.shortcuts);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
   const stickyOpacity = useSettingsStore((s) => s.stickyOpacity);
+  const showWorkspaceHighlights = useSettingsStore((s) => s.showWorkspaceHighlights);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
   const initializeAuth = useAuthStore((s) => s.initialize);
 
@@ -117,17 +135,29 @@ export default function App() {
     void initializeAuth();
   }, [initializeAuth]);
 
+  // Warm the lightweight workspace shell after the first render. The heavy
+  // collaborative editor is loaded separately only when a document is opened.
+  useEffect(() => {
+    void loadWorkspaceView();
+  }, []);
+
   // Load data on mount
   useEffect(() => {
     const init = async () => {
       try {
-        const [savedTodos, savedNotes, savedFonts, savedSettings] = await Promise.all([
+        await getImageNeedDirectory().catch((error) => {
+          console.warn("Failed to prepare img-need directory:", error);
+          return null;
+        });
+        const [savedTodos, savedTodoLists, savedNotes, savedFonts, savedSettings] = await Promise.all([
           loadTodos<Todo>(),
+          loadTodoLists(),
           loadNoteList(),
           loadSavedFonts(),
           loadSettings(),
         ]);
-        if (savedTodos.length > 0) loadTodosState(savedTodos);
+        const savedLang = (savedSettings as { lang?: string }).lang === "en" ? "en" : "zh";
+        loadTodoData(savedTodos, savedTodoLists, t(savedLang, "defaultTodoList"));
         if (savedNotes.notes.length > 0 || savedNotes.categories.length > 0) {
           loadNotesState(savedNotes.notes as Note[], savedNotes.categories);
         }
@@ -136,10 +166,12 @@ export default function App() {
           theme?: "dark" | "blue" | "yellow" | "green" | "custom";
           lang?: "zh" | "en";
           customColors?: CustomColors | null;
+          customBackground?: string | null;
           savedPresets?: { name: string; colors: CustomColors }[];
           shortcuts?: AppShortcuts;
           autoSaveInterval?: AutoSaveInterval;
           stickyOpacity?: number;
+          showWorkspaceHighlights?: boolean;
         });
 
         // Load custom app icon, fallback to default icon
@@ -177,17 +209,61 @@ export default function App() {
     applyTheme(theme, customColors);
   }, [theme, customColors]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!customBackground) {
+      setCustomBackgroundUrl(null);
+      return;
+    }
+    resolveCustomBackground(customBackground)
+      .then((path) => {
+        if (!cancelled) setCustomBackgroundUrl(path ? convertFileSrc(path) : null);
+      })
+      .catch((error) => {
+        console.error("Failed to resolve custom background:", error);
+        if (!cancelled) setCustomBackgroundUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customBackground]);
+
   // Auto-save settings
   useEffect(() => {
     if (initialized) {
-      saveSettings({ theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval, stickyOpacity });
+      saveSettings({
+        theme,
+        lang,
+        customColors,
+        customBackground,
+        savedPresets,
+        shortcuts,
+        autoSaveInterval,
+        stickyOpacity,
+        showWorkspaceHighlights,
+      });
     }
-  }, [theme, lang, customColors, savedPresets, shortcuts, autoSaveInterval, stickyOpacity, initialized]);
+  }, [
+    theme,
+    lang,
+    customColors,
+    customBackground,
+    savedPresets,
+    shortcuts,
+    autoSaveInterval,
+    stickyOpacity,
+    showWorkspaceHighlights,
+    initialized,
+  ]);
 
   // Auto-save todos
   useEffect(() => {
     if (initialized) saveTodos(todos);
   }, [todos, initialized]);
+
+  useEffect(() => {
+    if (initialized) saveTodoLists({ lists: todoLists, activeListId: activeTodoListId });
+  }, [todoLists, activeTodoListId, initialized]);
 
   // Auto-save note index
   useEffect(() => {
@@ -235,18 +311,19 @@ export default function App() {
     }
   }, [theme, customColors, stickyOpacity, initialized]);
 
-  // Keep translated sidebar actions readable without overriding a wider user-set width.
+  // Keep every sidebar above the shared minimum without overriding a wider user-set width.
   useEffect(() => {
     if (!initialized) return;
-    setSidebarWidth((currentWidth) => Math.max(currentWidth, SIDEBAR_LABEL_MIN_WIDTH[lang]));
+    setSidebarWidth((currentWidth) => Math.max(currentWidth, SIDEBAR_MIN_WIDTH));
+    setWorkspaceSidebarWidth((currentWidth) => Math.max(currentWidth, SIDEBAR_MIN_WIDTH));
   }, [lang, initialized]);
 
   // Sidebar resize drag
   const rafId = useRef<number | null>(null);
   const latestX = useRef(0);
 
-  const handleMouseDown = useCallback(() => {
-    isDragging.current = true;
+  const handleSidebarMouseDown = useCallback((sidebar: ResizableSidebar) => {
+    resizingSidebar.current = sidebar;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
@@ -254,19 +331,23 @@ export default function App() {
   useEffect(() => {
     const applyWidth = () => {
       rafId.current = null;
-      const newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, latestX.current));
-      setSidebarWidth(newWidth);
+      const newWidth = Math.min(MAX_SIDEBAR, Math.max(SIDEBAR_MIN_WIDTH, latestX.current));
+      if (resizingSidebar.current === "workspace") {
+        setWorkspaceSidebarWidth(newWidth);
+      } else if (resizingSidebar.current === "notebook") {
+        setSidebarWidth(newWidth);
+      }
     };
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
+      if (!resizingSidebar.current) return;
       latestX.current = e.clientX - ACTIVITY_BAR_WIDTH;
       if (rafId.current === null) {
         rafId.current = requestAnimationFrame(applyWidth);
       }
     };
     const handleMouseUp = () => {
-      if (!isDragging.current) return;
-      isDragging.current = false;
+      if (!resizingSidebar.current) return;
+      resizingSidebar.current = null;
       if (rafId.current !== null) {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
@@ -281,7 +362,7 @@ export default function App() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, []);
+  }, [lang]);
 
   const handleNewNote = () => {
     const now = new Date().toISOString();
@@ -374,8 +455,28 @@ export default function App() {
     }
   }, [activeNoteId, lang, notes]);
 
+  const activeSidebarCollapsed = currentView === "workspace"
+    ? workspaceSidebarCollapsed
+    : sidebarCollapsed;
+
+  const toggleActiveSidebar = () => {
+    if (currentView === "workspace") {
+      setWorkspaceSidebarCollapsed((collapsed) => !collapsed);
+      return;
+    }
+    setSidebarCollapsed((collapsed) => !collapsed);
+  };
+
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg-primary">
+    <div
+      className={`flex flex-col h-screen w-screen overflow-hidden bg-bg-primary ${customBackgroundUrl ? "app-has-custom-background" : ""}`}
+      style={customBackgroundUrl ? {
+        backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 34%, transparent), color-mix(in srgb, var(--color-bg-primary) 34%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        backgroundSize: "cover",
+      } : undefined}
+    >
       {/* Custom Title Bar */}
       <TitleBar
         currentView={currentView}
@@ -394,45 +495,58 @@ export default function App() {
           currentView={currentView}
           onViewChange={setCurrentView}
           onOpenSettings={() => setSettingsOpen(true)}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          collapsed={activeSidebarCollapsed}
+          onToggleCollapse={toggleActiveSidebar}
         />
-        <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out">
-          <Sidebar
-            currentView={currentView}
-            onViewChange={setCurrentView}
-            onNewNote={handleNewNote}
-            onImportTextNotes={handleImportTextNotes}
-            onExportActiveNote={handleExportActiveNote}
-            collapsed={sidebarCollapsed}
-            width={sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth}
-            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          />
-        </div>
-        {/* Resize Handle */}
-        {!sidebarCollapsed && (
-          <div
-            onMouseDown={handleMouseDown}
-            className="w-1 h-full cursor-col-resize hover:bg-blue-200 active:bg-blue-300
-              transition-colors flex-shrink-0 bg-accent"
-          />
+        {currentView !== "workspace" && currentView !== "canvas" && (
+          <>
+            <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out">
+              {currentView === "todo" ? (
+                <TodoSidebar />
+              ) : (
+                <Sidebar
+                  currentView={currentView}
+                  onViewChange={setCurrentView}
+                  onNewNote={handleNewNote}
+                  collapsed={sidebarCollapsed}
+                  onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                />
+              )}
+            </div>
+            {/* Resize Handle */}
+            {!sidebarCollapsed && (
+              <SidebarResizeHandle onMouseDown={() => handleSidebarMouseDown("notebook")} />
+            )}
+          </>
         )}
         <main className="flex-1 flex flex-col overflow-hidden">
           {currentView === "todo"
             ? <TodoView />
             : currentView === "workspace"
               ? (
-                <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted">{t(lang, "authWorking")}</div>}>
-                  <WorkspaceView onOpenAuth={() => setAuthOpen(true)} />
+                <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted"><LoadingText label={t(lang, "authWorking")} /></div>}>
+                  <WorkspaceView
+                    sidebarCollapsed={workspaceSidebarCollapsed}
+                    sidebarWidth={workspaceSidebarWidth}
+                    onSidebarResizeStart={() => handleSidebarMouseDown("workspace")}
+                    onOpenAuth={() => setAuthOpen(true)}
+                  />
                 </Suspense>
               )
-              : <NoteEditor />}
+              : currentView === "canvas"
+                ? <CanvasView />
+                : <NoteEditor />}
         </main>
       </div>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenAuth={() => setAuthOpen(true)}
+      />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <WorkspaceRemovalNotifier />
     </div>
   );
 }

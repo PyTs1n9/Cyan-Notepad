@@ -1,20 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  Camera,
+  Check,
   Clock,
   Droplets,
   Eye,
   FolderOpen,
   Globe,
+  ImagePlus,
+  KeyRound,
   Keyboard,
+  LogIn,
+  LogOut,
+  Mail,
   Palette,
+  Pencil,
   RotateCcw,
   Save,
+  ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useAuthStore } from "@/stores/authStore";
 import type {
   AppShortcuts,
   AutoSaveInterval,
@@ -29,22 +40,75 @@ import {
   THEME_COLORS,
 } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
+import { isSupabaseConfigured } from "@/utils/supabase";
 import { pauseShortcuts, resumeShortcuts } from "@/utils/shortcutManager";
-import { getDataDirectory, getImageTrashDirectory } from "@/utils/storage";
+import {
+  deleteAvatarCache,
+  deleteCustomBackground,
+  getDataDirectory,
+  getImageDirectory,
+  listAvatarHistory,
+  listCustomBackgroundHistory,
+  loadAvatarCacheDataUrl,
+  saveAvatarCache,
+  saveCustomBackground,
+} from "@/utils/storage";
+import type { StoredImageHistoryItem } from "@/utils/storage";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  onOpenAuth: () => void;
 }
 
-type SettingsSection = "basic" | "theme" | "language";
+type SettingsSection = "basic" | "theme" | "language" | "personal";
+type DisplayHistoryItem = StoredImageHistoryItem & { url: string };
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
+function getUploadImageExtension(file: File): string | null {
+  if (file.type === "image/jpeg") return "jpg";
+  if (file.type === "image/png") return "png";
+  if (file.type === "image/webp") return "webp";
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return extension && ["jpg", "jpeg", "png", "webp"].includes(extension) ? extension : null;
+}
+
+function compressAvatar(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read avatar"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Unable to load avatar"));
+      image.onload = () => {
+        const size = 256;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Canvas is unavailable"));
+          return;
+        }
+        const scale = Math.max(size / image.width, size / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth }) => {
   const {
     theme,
     lang,
     customColors,
+    customBackground,
     savedPresets,
     shortcuts,
     autoSaveInterval,
@@ -52,6 +116,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     setTheme,
     setLang,
     setCustomColors,
+    setCustomBackground,
     savePreset,
     loadPreset,
     deletePreset,
@@ -59,6 +124,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     setAutoSaveInterval,
     setStickyOpacity,
   } = useSettingsStore();
+  const { user, loading: authLoading, error: authError, signOut, updateProfile, updatePassword, clearError } = useAuthStore();
+  const activeAvatarCache = typeof user?.user_metadata?.avatar_cache === "string"
+    ? user.user_metadata.avatar_cache
+    : null;
 
   const [activeSection, setActiveSection] = useState<SettingsSection>("basic");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -66,9 +135,61 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const [recordingField, setRecordingField] = useState<keyof AppShortcuts | null>(null);
   const [dataDirectory, setDataDirectory] = useState<string | null>(null);
   const [imageCacheDirectory, setImageCacheDirectory] = useState<string | null>(null);
+  const [nicknameDraft, setNicknameDraft] = useState("");
+  const [nicknameEditing, setNicknameEditing] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [personalNotice, setPersonalNotice] = useState<string | null>(null);
+  const [personalValidation, setPersonalValidation] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarHistory, setAvatarHistory] = useState<DisplayHistoryItem[]>([]);
+  const [backgroundHistory, setBackgroundHistory] = useState<DisplayHistoryItem[]>([]);
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
+  const [backgroundError, setBackgroundError] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const autoSaveDropdownRef = useRef<HTMLDivElement>(null);
+
+  const refreshAvatarHistory = useCallback(async () => {
+    if (!user) {
+      setAvatarHistory([]);
+      return;
+    }
+    const items = await listAvatarHistory(user.id);
+    setAvatarHistory(items.map((item) => ({ ...item, url: convertFileSrc(item.path) })));
+  }, [user?.id]);
+
+  const refreshBackgroundHistory = useCallback(async () => {
+    const items = await listCustomBackgroundHistory();
+    setBackgroundHistory(items.map((item) => ({ ...item, url: convertFileSrc(item.path) })));
+  }, []);
+
+  useEffect(() => {
+    const metadata = user?.user_metadata as Record<string, unknown> | undefined;
+    const displayName = typeof metadata?.display_name === "string" ? metadata.display_name : "";
+    setNicknameDraft(displayName);
+    setNicknameEditing(false);
+    setPasswordOpen(false);
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setPersonalNotice(null);
+    setPersonalValidation(null);
+  }, [open, user?.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshAvatarHistory().catch((error) => {
+      console.error("Failed to load avatar history:", error);
+    });
+  }, [open, activeAvatarCache, refreshAvatarHistory]);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshBackgroundHistory().catch((error) => {
+      console.error("Failed to load background history:", error);
+    });
+  }, [open, customBackground, refreshBackgroundHistory]);
 
   useEffect(() => {
     if (recordingField) {
@@ -89,7 +210,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
       .catch((error) => {
         console.error("Failed to resolve data directory:", error);
       });
-    getImageTrashDirectory()
+    getImageDirectory()
       .then((path) => {
         if (active) setImageCacheDirectory(path);
       })
@@ -158,7 +279,78 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     }
   }, [shortcuts, setShortcuts]);
 
+  const handleSaveNickname = async () => {
+    const nickname = nicknameDraft.trim();
+    if (!nickname) {
+      setPersonalValidation(t(lang, "personalNicknamePlaceholder"));
+      return;
+    }
+    setPersonalValidation(null);
+    setPersonalNotice(null);
+    clearError();
+    if (await updateProfile({ displayName: nickname })) {
+      setNicknameDraft(nickname);
+      setNicknameEditing(false);
+      setPersonalNotice(t(lang, "personalProfileUpdated"));
+    }
+  };
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAvatarBusy(true);
+    setPersonalNotice(null);
+    clearError();
+    try {
+      const avatarUrl = await compressAvatar(file);
+      const avatarCache = user ? await saveAvatarCache(user.id, avatarUrl) : null;
+      if (await updateProfile({ avatarUrl, avatarCache })) {
+        setPersonalNotice(t(lang, "personalAvatarUpdated"));
+      }
+      await refreshAvatarHistory();
+    } catch (error) {
+      console.error("Failed to update avatar:", error);
+      setPersonalValidation(t(lang, "personalChooseImage"));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleUpdatePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword.length < 6) {
+      setPersonalValidation(t(lang, "authPasswordTooShort"));
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPersonalValidation(t(lang, "personalPasswordMismatch"));
+      return;
+    }
+    setPersonalValidation(null);
+    setPersonalNotice(null);
+    clearError();
+    if (await updatePassword(newPassword)) {
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordOpen(false);
+      setPersonalNotice(t(lang, "personalPasswordUpdated"));
+    }
+  };
+
+  const handleSignOut = async () => {
+    clearError();
+    await signOut();
+  };
+
   if (!open) return null;
+
+  const metadata = user?.user_metadata as Record<string, unknown> | undefined;
+  const avatarUrl = typeof metadata?.avatar_url === "string" ? metadata.avatar_url : null;
+  const displayName = typeof metadata?.display_name === "string" && metadata.display_name.trim()
+    ? metadata.display_name.trim()
+    : user?.email?.split("@")[0] || t(lang, "personal");
+  const initials = displayName.slice(0, 2).toUpperCase();
 
   const themes: {
     value: ThemeType;
@@ -207,6 +399,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     { id: "basic" as const, label: t(lang, "settingsBasic"), icon: SlidersHorizontal },
     { id: "theme" as const, label: t(lang, "settingsTheme"), icon: Palette },
     { id: "language" as const, label: t(lang, "language"), icon: Globe },
+    { id: "personal" as const, label: t(lang, "personal"), icon: UserRound },
   ];
 
   const sectionTitle = sections.find((section) => section.id === activeSection)?.label;
@@ -220,6 +413,72 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
 
   const handleCustomChange = (key: keyof CustomColors, value: string) => {
     setCustomColors({ ...cc, [key]: value });
+  };
+
+  const handleBackgroundChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const extension = getUploadImageExtension(file);
+    if (!extension) {
+      setBackgroundError(t(lang, "backgroundUploadFailed"));
+      return;
+    }
+
+    setBackgroundBusy(true);
+    setBackgroundError(null);
+    try {
+      const filename = await saveCustomBackground(
+        new Uint8Array(await file.arrayBuffer()),
+        extension,
+      );
+      setCustomBackground(filename);
+      await refreshBackgroundHistory();
+    } catch (error) {
+      console.error("Failed to upload custom background:", error);
+      setBackgroundError(t(lang, "backgroundUploadFailed"));
+    } finally {
+      setBackgroundBusy(false);
+    }
+  };
+
+  const handleUseAvatarHistory = async (filename: string) => {
+    if (!user || filename === activeAvatarCache) return;
+    setAvatarBusy(true);
+    setPersonalNotice(null);
+    setPersonalValidation(null);
+    clearError();
+    try {
+      const avatarUrl = await loadAvatarCacheDataUrl(filename, user.id);
+      if (await updateProfile({ avatarUrl, avatarCache: filename })) {
+        setPersonalNotice(t(lang, "personalAvatarUpdated"));
+      }
+    } catch (error) {
+      console.error("Failed to use avatar history:", error);
+      setPersonalValidation(t(lang, "personalChooseImage"));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleDeleteAvatarHistory = async (filename: string) => {
+    if (!user || filename === activeAvatarCache) return;
+    try {
+      await deleteAvatarCache(filename, user.id);
+      setAvatarHistory((items) => items.filter((item) => item.filename !== filename));
+    } catch (error) {
+      console.error("Failed to delete avatar history:", error);
+    }
+  };
+
+  const handleDeleteBackgroundHistory = async (filename: string) => {
+    if (filename === customBackground) return;
+    try {
+      await deleteCustomBackground(filename);
+      setBackgroundHistory((items) => items.filter((item) => item.filename !== filename));
+    } catch (error) {
+      console.error("Failed to delete background history:", error);
+    }
   };
 
   const handleOpenDataDirectory = async () => {
@@ -239,7 +498,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
 
   const handleOpenImageCacheDirectory = async () => {
     try {
-      const path = imageCacheDirectory ?? await getImageTrashDirectory();
+      const path = imageCacheDirectory ?? await getImageDirectory();
       setImageCacheDirectory(path);
       await openPath(path);
     } catch (error) {
@@ -260,6 +519,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     loadPreset(index);
     setDropdownOpen(false);
   };
+
+  const backgroundPreviewUrl = customBackground
+    ? backgroundHistory.find((item) => item.filename === customBackground)?.url ?? null
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -511,7 +774,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                       <Droplets size={16} className="text-accent" />
                       <h3 className="text-sm font-medium text-text-primary">{t(lang, "customPalette")}</h3>
                       {theme === "custom" && (
-                        <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[10px] text-white">
+                        <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-white">
                           {t(lang, "customTheme")}
                         </span>
                       )}
@@ -565,7 +828,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                         >
                           <span className="truncate">{t(lang, "selectPreset")}</span>
                           {savedPresets.length > 0 && (
-                            <span className="rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] text-accent">
+                            <span className="rounded-full bg-accent-light px-1.5 py-0.5 text-[11px] font-semibold text-accent">
                               {savedPresets.length}
                             </span>
                           )}
@@ -619,6 +882,91 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                       </div>
                     </div>
                   </section>
+
+                  <section className="rounded-xl border border-border bg-bg-secondary/35 p-4">
+                    <div className="mb-4 flex items-start gap-2">
+                      <ImagePlus size={16} className="mt-0.5 flex-shrink-0 text-accent" />
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-medium text-text-primary">{t(lang, "customBackground")}</h3>
+                        <p className="mt-1 text-xs leading-relaxed text-text-muted">{t(lang, "customBackgroundHint")}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-[minmax(180px,1fr)_minmax(190px,0.75fr)] sm:items-stretch">
+                      <div className="relative h-28 overflow-hidden rounded-xl border border-border bg-bg-primary">
+                        {backgroundPreviewUrl ? (
+                          <img src={backgroundPreviewUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-text-muted">
+                            <ImagePlus size={28} strokeWidth={1.4} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col justify-center gap-2">
+                        <label className={`flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover ${backgroundBusy ? "cursor-wait opacity-60" : "cursor-pointer"}`}>
+                          <ImagePlus size={14} />
+                          <span>
+                            {backgroundBusy
+                              ? t(lang, "personalSaving")
+                              : t(lang, customBackground ? "replaceBackground" : "chooseBackground")}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={handleBackgroundChange}
+                            disabled={backgroundBusy}
+                            className="sr-only"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setCustomBackground(null)}
+                          disabled={!customBackground || backgroundBusy}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                        >
+                          <X size={14} />
+                          {t(lang, "removeBackground")}
+                        </button>
+                        {backgroundError && (
+                          <p className="text-xs text-danger">{backgroundError}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {backgroundHistory.length > 0 && (
+                      <div className="mt-4 border-t border-border pt-4">
+                        <p className="mb-2 text-xs font-medium text-text-secondary">{t(lang, "backgroundHistory")}</p>
+                        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                          {backgroundHistory.map((item) => {
+                            const active = item.filename === customBackground;
+                            return (
+                              <div key={item.filename} className="group relative min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomBackground(item.filename)}
+                                  title={t(lang, "useHistoryBackground")}
+                                  className={`aspect-[4/3] w-full overflow-hidden rounded-lg border-2 transition-colors cursor-pointer ${active ? "border-accent" : "border-border hover:border-accent/55"}`}
+                                >
+                                  <img src={item.url} alt="" className="h-full w-full object-cover" />
+                                </button>
+                                {!active && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteBackgroundHistory(item.filename)}
+                                    title={t(lang, "deleteHistoryImage")}
+                                    aria-label={t(lang, "deleteHistoryImage")}
+                                    className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-bg-primary text-text-muted opacity-0 shadow-sm transition-opacity hover:text-danger group-hover:opacity-100 cursor-pointer"
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </section>
                 </div>
               )}
 
@@ -638,6 +986,287 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                       <span className="truncate text-sm font-medium">{t(lang, item.labelKey)}</span>
                     </button>
                   ))}
+                </div>
+              )}
+
+              {activeSection === "personal" && (
+                <div className="space-y-4">
+                  {!user ? (
+                    <>
+                      <section className="rounded-xl border border-border bg-bg-secondary/35 p-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent">
+                              <UserRound size={21} />
+                            </div>
+                            <div className="min-w-0">
+                              <h3 className="text-sm font-semibold text-text-primary">
+                                {t(lang, "personalSignInTitle")}
+                              </h3>
+                              <p className="mt-1 max-w-xl text-xs leading-relaxed text-text-muted">
+                                {t(lang, "personalSignInHint")}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={onOpenAuth}
+                            className="flex flex-shrink-0 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover cursor-pointer"
+                          >
+                            <LogIn size={15} />
+                            {t(lang, "personalOpenSignIn")}
+                          </button>
+                        </div>
+                        {!isSupabaseConfigured && (
+                          <p className="mt-4 rounded-lg bg-bg-primary/70 px-3 py-2 text-xs leading-relaxed text-text-muted">
+                            {t(lang, "personalNotConfigured")}
+                          </p>
+                        )}
+                      </section>
+
+                      <section className="rounded-xl border border-border bg-bg-secondary/20 p-4">
+                        <div className="flex items-start gap-3">
+                          <ShieldCheck size={17} className="mt-0.5 flex-shrink-0 text-accent" />
+                          <div>
+                            <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalSecurity")}</h3>
+                            <p className="mt-1 text-xs leading-relaxed text-text-muted">
+                              {t(lang, "personalDataHint")}
+                            </p>
+                          </div>
+                        </div>
+                      </section>
+                    </>
+                  ) : (
+                    <>
+                      <section className="rounded-xl border border-border bg-bg-secondary/35 p-5">
+                        <div className="flex items-center gap-4">
+                          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl bg-accent-light text-accent">
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-lg font-semibold">
+                                {initials}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate text-base font-semibold text-text-primary">{displayName}</h3>
+                              <span className="rounded-full bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent">
+                                {t(lang, "personalSignedIn")}
+                              </span>
+                            </div>
+                            <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs text-text-muted">
+                              <Mail size={13} className="flex-shrink-0" />
+                              <span className="truncate">{user.email}</span>
+                            </p>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/35">
+                        <div className="flex items-center gap-2 p-4">
+                          <UserRound size={16} className="text-accent" />
+                          <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalProfile")}</h3>
+                        </div>
+
+                        <div className="grid gap-3 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] sm:items-center">
+                          <div>
+                            <p className="text-sm font-medium text-text-primary">{t(lang, "personalNickname")}</p>
+                            <p className="mt-1 text-xs text-text-muted">{t(lang, "personalDataHint")}</p>
+                          </div>
+                          {nicknameEditing ? (
+                            <div className="flex min-w-0 items-center gap-2">
+                              <input
+                                type="text"
+                                value={nicknameDraft}
+                                onChange={(event) => setNicknameDraft(event.target.value)}
+                                autoFocus
+                                maxLength={32}
+                                placeholder={t(lang, "personalNicknamePlaceholder")}
+                                className="min-w-0 flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSaveNickname}
+                                disabled={authLoading}
+                                aria-label={t(lang, "personalSaveNickname")}
+                                title={t(lang, "personalSaveNickname")}
+                                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                              >
+                                <Check size={15} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNicknameDraft(displayName);
+                                setNicknameEditing(true);
+                                setPersonalNotice(null);
+                              }}
+                              className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                            >
+                              <span className="truncate">{displayName}</span>
+                              <Pencil size={14} className="flex-shrink-0 text-accent" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid gap-3 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] sm:items-center">
+                          <div>
+                            <p className="text-sm font-medium text-text-primary">{t(lang, "personalChangeAvatar")}</p>
+                            <p className="mt-1 text-xs text-text-muted">{t(lang, "personalAvatarHint")}</p>
+                          </div>
+                          <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover">
+                            <Camera size={14} className="text-accent" />
+                            <span>{avatarBusy ? t(lang, "personalSaving") : t(lang, "personalChooseImage")}</span>
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              onChange={handleAvatarChange}
+                              disabled={avatarBusy || authLoading}
+                              className="sr-only"
+                            />
+                          </label>
+                        </div>
+
+                        {avatarHistory.length > 0 && (
+                          <div className="border-t border-border p-4">
+                            <p className="mb-3 text-xs font-medium text-text-secondary">{t(lang, "avatarHistory")}</p>
+                            <div className="flex flex-wrap gap-3">
+                              {avatarHistory.map((item) => {
+                                const active = item.filename === activeAvatarCache;
+                                return (
+                                  <div key={item.filename} className="group relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleUseAvatarHistory(item.filename)}
+                                      disabled={active || avatarBusy || authLoading}
+                                      title={t(lang, "useHistoryAvatar")}
+                                      className={`h-12 w-12 overflow-hidden rounded-xl border-2 transition-colors ${active ? "border-accent" : "border-border hover:border-accent/55 cursor-pointer"}`}
+                                    >
+                                      <img src={item.url} alt="" className="h-full w-full object-cover" />
+                                    </button>
+                                    {!active && (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleDeleteAvatarHistory(item.filename)}
+                                        title={t(lang, "deleteHistoryImage")}
+                                        aria-label={t(lang, "deleteHistoryImage")}
+                                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-bg-primary text-text-muted opacity-0 shadow-sm transition-opacity hover:text-danger group-hover:opacity-100 cursor-pointer"
+                                      >
+                                        <X size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </section>
+
+                      <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/35">
+                        {!passwordOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPasswordOpen(true);
+                              setPersonalNotice(null);
+                              setPersonalValidation(null);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <KeyRound size={16} className="text-accent" />
+                              <span>{t(lang, "personalChangePassword")}</span>
+                            </span>
+                            <Pencil size={14} className="text-accent" />
+                          </button>
+                        ) : (
+                          <div className="p-4">
+                            <div className="mb-3 flex items-center gap-2">
+                              <KeyRound size={16} className="text-accent" />
+                              <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalSecurity")}</h3>
+                            </div>
+                            <form className="space-y-3" onSubmit={handleUpdatePassword}>
+                              <label className="block">
+                                <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                                  {t(lang, "personalNewPassword")}
+                                </span>
+                                <input
+                                  type="password"
+                                  value={newPassword}
+                                  onChange={(event) => setNewPassword(event.target.value)}
+                                  autoComplete="new-password"
+                                  minLength={6}
+                                  required
+                                  placeholder={t(lang, "authPasswordPlaceholder")}
+                                  className="h-9 w-full rounded-lg border border-border bg-bg-primary px-3 text-sm text-text-primary outline-none focus:border-accent"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                                  {t(lang, "personalConfirmPassword")}
+                                </span>
+                                <input
+                                  type="password"
+                                  value={confirmNewPassword}
+                                  onChange={(event) => setConfirmNewPassword(event.target.value)}
+                                  autoComplete="new-password"
+                                  minLength={6}
+                                  required
+                                  placeholder={t(lang, "authPasswordPlaceholder")}
+                                  className="h-9 w-full rounded-lg border border-border bg-bg-primary px-3 text-sm text-text-primary outline-none focus:border-accent"
+                                />
+                              </label>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPasswordOpen(false)}
+                                  className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover cursor-pointer"
+                                >
+                                  {t(lang, "confirmNo")}
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={authLoading}
+                                  className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                                >
+                                  {authLoading ? t(lang, "personalSaving") : t(lang, "save")}
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+                      </section>
+
+                      {(personalNotice || personalValidation || authError) && (
+                        <p className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${personalValidation || authError ? "bg-danger/10 text-danger" : "bg-accent-light text-accent"}`}>
+                          {personalValidation || authError || personalNotice}
+                        </p>
+                      )}
+
+                      <section className="rounded-xl border border-border bg-bg-secondary/20 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <LogOut size={17} className="mt-0.5 flex-shrink-0 text-text-muted" />
+                            <p className="text-xs leading-relaxed text-text-muted">{t(lang, "personalSignOutHint")}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleSignOut}
+                            disabled={authLoading}
+                            className="flex flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-danger disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                          >
+                            <LogOut size={14} />
+                            {authLoading ? t(lang, "personalSaving") : t(lang, "authSignOut")}
+                          </button>
+                        </div>
+                      </section>
+                    </>
+                  )}
                 </div>
               )}
             </div>

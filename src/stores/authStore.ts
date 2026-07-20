@@ -7,6 +7,12 @@ interface AuthActionResult {
   needsEmailConfirmation?: boolean;
 }
 
+export interface ProfileUpdate {
+  displayName?: string;
+  avatarUrl?: string | null;
+  avatarCache?: string | null;
+}
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -17,10 +23,35 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<AuthActionResult>;
   signUp: (email: string, password: string) => Promise<AuthActionResult>;
   signOut: () => Promise<boolean>;
+  updateProfile: (profile: ProfileUpdate) => Promise<boolean>;
+  updatePassword: (password: string) => Promise<boolean>;
   clearError: () => void;
 }
 
 let authListenerRegistered = false;
+
+async function syncWorkspaceProfile(user: User): Promise<string | null> {
+  if (!supabase) return null;
+
+  const metadata = user.user_metadata as Record<string, unknown>;
+  const metadataName = typeof metadata.display_name === "string"
+    ? metadata.display_name.trim()
+    : "";
+  const displayName = metadataName || user.email?.split("@")[0] || "User";
+  const profileUpdates: { display_name: string; avatar_url?: string | null } = {
+    display_name: displayName,
+  };
+
+  if (typeof metadata.avatar_url === "string" || metadata.avatar_url === null) {
+    profileUpdates.avatar_url = metadata.avatar_url;
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update(profileUpdates)
+    .eq("id", user.id);
+  return error?.message ?? null;
+}
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
@@ -38,12 +69,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({ loading: true, error: null });
     const { data, error } = await supabase.auth.getSession();
+    const sessionUser = data.session?.user ?? null;
+    const profileError = sessionUser ? await syncWorkspaceProfile(sessionUser) : null;
     set({
-      user: data.session?.user ?? null,
+      user: sessionUser,
       session: data.session,
       initialized: true,
       loading: false,
-      error: error?.message ?? null,
+      error: error?.message ?? profileError,
     });
 
     if (!authListenerRegistered) {
@@ -68,7 +101,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ loading: false, error: error.message });
       return { ok: false };
     }
-    set({ user: data.user, session: data.session, loading: false, error: null });
+    const profileError = await syncWorkspaceProfile(data.user);
+    set({ user: data.user, session: data.session, loading: false, error: profileError });
     return { ok: true };
   },
 
@@ -82,11 +116,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const needsEmailConfirmation = !data.session;
+    const profileError = data.session?.user
+      ? await syncWorkspaceProfile(data.session.user)
+      : null;
     set({
       user: data.session?.user ?? null,
       session: data.session,
       loading: false,
-      error: null,
+      error: profileError,
     });
     return { ok: true, needsEmailConfirmation };
   },
@@ -100,6 +137,55 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return false;
     }
     set({ user: null, session: null, loading: false, error: null });
+    return true;
+  },
+
+  updateProfile: async ({ displayName, avatarUrl, avatarCache }) => {
+    if (!supabase) return false;
+    const currentUser = get().user;
+    if (!currentUser) return false;
+
+    set({ loading: true, error: null });
+    const nextMetadata = {
+      ...currentUser.user_metadata,
+      ...(displayName !== undefined ? { display_name: displayName } : {}),
+      ...(avatarUrl !== undefined ? { avatar_url: avatarUrl } : {}),
+      ...(avatarCache !== undefined ? { avatar_cache: avatarCache } : {}),
+    };
+    const { data, error } = await supabase.auth.updateUser({ data: nextMetadata });
+    if (error) {
+      set({ loading: false, error: error.message });
+      return false;
+    }
+
+    const profileUpdates = {
+      ...(displayName !== undefined ? { display_name: displayName } : {}),
+      ...(avatarUrl !== undefined ? { avatar_url: avatarUrl } : {}),
+    };
+    if (Object.keys(profileUpdates).length > 0) {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update(profileUpdates)
+        .eq("id", currentUser.id);
+      if (profileError) {
+        set({ user: data.user, loading: false, error: profileError.message });
+        return false;
+      }
+    }
+
+    set({ user: data.user, loading: false, error: null });
+    return true;
+  },
+
+  updatePassword: async (password) => {
+    if (!supabase || !get().user) return false;
+    set({ loading: true, error: null });
+    const { data, error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      set({ loading: false, error: error.message });
+      return false;
+    }
+    set({ user: data.user, loading: false, error: null });
     return true;
   },
 

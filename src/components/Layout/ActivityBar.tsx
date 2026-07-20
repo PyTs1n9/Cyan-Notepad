@@ -25,13 +25,13 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
     { view: "todo", label: t(lang, "todo"), icon: <CheckSquare size={22} strokeWidth={1.7} /> },
-    { label: t(lang, "imageHost"), icon: <Images size={22} strokeWidth={1.7} />, disabled: true },
     { view: "workspace", label: t(lang, "workspace"), icon: <Users size={22} strokeWidth={1.7} /> },
+    { view: "canvas", label: t(lang, "canvas"), icon: <Images size={22} strokeWidth={1.7} /> },
   ];
 
   return (
-    <aside className="flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-border-chrome bg-bg-activity text-text-chrome">
-      <nav className="flex w-full flex-col items-center gap-1 pt-2" aria-label="Activity bar">
+    <aside className="flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-border bg-bg-sidebar text-text-primary transition-colors">
+      <nav className="flex w-full flex-col items-center gap-1" aria-label="Activity bar">
         {items.map(({ view, label, icon, disabled }) => {
           const active = !disabled && currentView === view;
           return (
@@ -45,12 +45,12 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
               title={label}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              className={`relative flex h-11 w-11 items-center justify-center text-text-chrome/65 transition-colors hover:bg-bg-activity-hover hover:text-text-chrome disabled:cursor-default disabled:opacity-60 ${
-                active ? "bg-bg-activity-active text-text-chrome" : ""
+              className={`relative flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-default disabled:opacity-60 ${
+                active ? "bg-bg-active text-text-primary" : ""
               }`}
             >
-              {active && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent-chrome" />}
-              {icon}
+              {active && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent" />}
+              <span className="inline-flex">{icon}</span>
             </button>
           );
         })}
@@ -62,7 +62,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           onClick={onToggleCollapse}
           title={collapsed ? t(lang, "expandSidebar") : t(lang, "collapseSidebar")}
           aria-label={collapsed ? t(lang, "expandSidebar") : t(lang, "collapseSidebar")}
-          className="flex h-10 w-11 items-center justify-center text-text-chrome/65 transition-colors hover:bg-bg-activity-hover hover:text-text-chrome"
+          className="flex h-10 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           {collapsed ? <PanelLeftOpen size={20} strokeWidth={1.7} /> : <PanelLeftClose size={20} strokeWidth={1.7} />}
         </button>
@@ -71,7 +71,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           onClick={onOpenSettings}
           title={t(lang, "settings")}
           aria-label={t(lang, "settings")}
-          className="flex h-10 w-11 items-center justify-center text-text-chrome/65 transition-colors hover:bg-bg-activity-hover hover:text-text-chrome"
+          className="flex h-10 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <Settings size={20} strokeWidth={1.7} />
         </button>

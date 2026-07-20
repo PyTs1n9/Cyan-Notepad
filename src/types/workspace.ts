@@ -30,4 +30,12 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
 }
 
+export interface WorkspaceRemovalNotification {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  workspaceName: string;
+  createdAt: string;
+}
+
 export type CollaborationStatus = "connecting" | "connected" | "disconnected" | "error";

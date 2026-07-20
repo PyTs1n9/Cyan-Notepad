@@ -589,41 +589,38 @@ const NoteEditor: React.FC = () => {
         </button>
       </div>
 
-      <div className="mx-4 mb-3 mt-2 flex-1 flex flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/70">
+      <div className="app-work-area-overlay mx-4 mb-3 mt-2 flex-1 flex flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/65">
         {/* Note Title */}
         <div className="px-5 sm:px-6 pt-4 pb-3 border-b border-border bg-bg-primary/80">
-        <input
-          type="text"
-          value={activeNote.title}
-          onChange={(e) => updateNote(activeNote.id, { title: e.target.value })}
-          placeholder={t(lang, "noteTitlePlaceholder")}
-          className="w-full text-2xl font-bold text-text-primary bg-transparent border-none outline-none
-            placeholder:text-text-muted/50"
-        />
-        <div className="flex items-center gap-2 mt-2 text-xs text-text-muted">
-          <span>{t(lang, "createdAt")} {new Date(activeNote.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
-          <span>·</span>
-          <span>{t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
-          {/* Save Status Indicator */}
-          <span>·</span>
-          <span className={isDirty ? "text-amber-500" : showSaveStatus ? "text-green-500" : "text-text-muted"}>
-            {isDirty ? t(lang, "unsaved") : t(lang, "saved")}
-          </span>
-          <span>·</span>
-          <span>{tWithParams(lang, "wordCount", { count: wordCountNum })}</span>
-          {activeNote.tags.length > 0 && (
-            <>
+          <div className="flex items-center gap-4">
+            <input
+              type="text"
+              value={activeNote.title}
+              onChange={(e) => updateNote(activeNote.id, { title: e.target.value })}
+              placeholder={t(lang, "noteTitlePlaceholder")}
+              className="min-w-0 flex-1 text-2xl font-bold text-text-primary bg-transparent border-none outline-none
+                placeholder:text-text-muted/50"
+            />
+            <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-text-muted">
+              <span>{t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
+              {/* Save Status Indicator */}
               <span>·</span>
-              <div className="flex gap-1">
-                {activeNote.tags.map((tag) => (
-                  <span key={tag} className="px-1.5 py-0.5 rounded-full bg-accent-light text-accent">
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            </>
+              <span className={isDirty ? "text-amber-500" : showSaveStatus ? "text-green-500" : "text-text-muted"}>
+                {isDirty ? t(lang, "unsaved") : t(lang, "saved")}
+              </span>
+              <span>·</span>
+              <span>{tWithParams(lang, "wordCount", { count: wordCountNum })}</span>
+            </div>
+          </div>
+          {activeNote.tags.length > 0 && (
+            <div className="mt-2 flex gap-1 text-xs">
+              {activeNote.tags.map((tag) => (
+                <span key={tag} className="px-1.5 py-0.5 rounded-full bg-accent-light text-accent">
+                  #{tag}
+                </span>
+              ))}
+            </div>
           )}
-        </div>
         </div>
 
         {/* Editor Content */}
@@ -657,23 +654,27 @@ const NoteEditor: React.FC = () => {
                 ref={previewRef}
                 onScroll={handlePreviewScroll}
                 onClick={handleExternalLinkClick}
-                className="flex-1 px-5 sm:px-6 py-4 overflow-y-auto prose max-w-none text-text-primary
-                  [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-4
-                  [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3
-                  [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mb-2 [&_h3]:mt-2
-                  [&_p]:mb-2 [&_p]:leading-relaxed
-                  [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-2
-                  [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-2
-                  [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4
-                  [&_blockquote]:italic [&_blockquote]:text-text-secondary
-                  [&_hr]:border-border [&_hr]:my-4
-                  [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
-                  [&_strong]:font-bold [&_em]:italic [&_u]:underline [&_s]:line-through
-                  [&_a]:text-accent [&_a]:underline
-                  [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs
-                  [&_pre]:bg-bg-secondary [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:mb-2 [&_pre]:overflow-x-auto"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
+                className="flex-1 overflow-y-auto px-5 py-4 sm:px-6"
+              >
+                <div
+                  className="prose mx-auto w-full max-w-[820px] text-text-primary
+                    [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-4
+                    [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3
+                    [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mb-2 [&_h3]:mt-2
+                    [&_p]:mb-2 [&_p]:leading-relaxed
+                    [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-2
+                    [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-2
+                    [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4
+                    [&_blockquote]:italic [&_blockquote]:text-text-secondary
+                    [&_hr]:border-border [&_hr]:my-4
+                    [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
+                    [&_strong]:font-bold [&_em]:italic [&_u]:underline [&_s]:line-through
+                    [&_a]:text-accent [&_a]:underline
+                    [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs
+                    [&_pre]:bg-bg-secondary [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:mb-2 [&_pre]:overflow-x-auto"
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              </div>
             </div>
           )}
         </div>

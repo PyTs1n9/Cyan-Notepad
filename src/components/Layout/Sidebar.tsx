@@ -1,7 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import {
-  FileDown,
-  FileUp,
+  FileText,
   Plus,
   Tag,
   Trash2,
@@ -19,16 +18,12 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import { deleteNoteFile } from "@/utils/storage";
 import type { Note, NoteCategory, ViewType } from "@/types";
-import { SIDEBAR_LABEL_MIN_WIDTH } from "@/components/Layout/sidebarLayout";
 
 interface SidebarProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
   onNewNote: () => void;
-  onImportTextNotes: () => void;
-  onExportActiveNote: () => void;
   collapsed: boolean;
-  width: number;
   onToggleCollapse: () => void;
 }
 
@@ -36,10 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   onViewChange,
   onNewNote,
-  onImportTextNotes,
-  onExportActiveNote,
   collapsed,
-  width,
   onToggleCollapse,
 }) => {
   const {
@@ -66,7 +58,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
+  const [dragOverCategoryPosition, setDragOverCategoryPosition] = useState<"before" | "after" | "inside" | null>(null);
   const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
+  const [dragOverNotePosition, setDragOverNotePosition] = useState<"before" | "after" | null>(null);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [deleteConfirmNote, setDeleteConfirmNote] = useState<Note | null>(null);
@@ -74,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const categoryListRef = useRef<HTMLDivElement>(null);
   const dragNodeRef = useRef<HTMLElement | null>(null);
   const dragOverNoteIdRef = useRef<string | null>(null);
+  const dragOverNotePositionRef = useRef<"before" | "after">("before");
 
   const allTags = Array.from(new Set(notes.flatMap((n) => n.tags)));
   const orderedCategories = useMemo(
@@ -90,11 +85,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     scrollbarGutter: "stable",
   } satisfies React.CSSProperties;
   const renderRailDivider = () => <div className="my-1 h-px w-8 bg-border" aria-hidden="true" />;
-  const showActionLabels = !collapsed && width >= SIDEBAR_LABEL_MIN_WIDTH[lang];
-  const labeledActionClass = showActionLabels ? "justify-center gap-1.5" : "justify-center px-0";
-  const renderActionLabel = (label: string) =>
-    showActionLabels ? <span className="whitespace-nowrap">{label}</span> : null;
-
   const renderSectionDivider = () => (
     <div className="px-3 py-2" aria-hidden="true">
       <div className="flex items-center gap-1.5">
@@ -115,25 +105,28 @@ const Sidebar: React.FC<SidebarProps> = ({
     dragNodeRef.current?.remove();
     dragNodeRef.current = null;
     setDragOverCategoryId(null);
+    setDragOverCategoryPosition(null);
     setDragOverNoteId(null);
+    setDragOverNotePosition(null);
     dragOverNoteIdRef.current = null;
+    dragOverNotePositionRef.current = "before";
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
   };
 
-  const setNoteDragTarget = (noteId: string | null) => {
+  const setNoteDragTarget = (noteId: string | null, position: "before" | "after" = "before") => {
     dragOverNoteIdRef.current = noteId;
+    dragOverNotePositionRef.current = position;
     setDragOverNoteId(noteId);
+    setDragOverNotePosition(noteId ? position : null);
   };
 
-  const getDropTarget = (clientX: number, clientY: number) => {
-    const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-    const categoryElement = element?.closest<HTMLElement>("[data-category-id]");
-    const noteElement = element?.closest<HTMLElement>("[data-note-id]");
-    return {
-      categoryId: categoryElement?.dataset.categoryId,
-      noteId: noteElement?.dataset.noteId,
-    };
+  const setCategoryDragTarget = (
+    categoryId: string | null,
+    position: "before" | "after" | "inside" | null,
+  ) => {
+    setDragOverCategoryId(categoryId);
+    setDragOverCategoryPosition(position);
   };
 
   const getCategoryIdAtPoint = (clientX: number, clientY: number) => {
@@ -152,19 +145,55 @@ const Sidebar: React.FC<SidebarProps> = ({
     return target?.dataset.categoryId;
   };
 
-  const getNoteIdAtPoint = (clientX: number, clientY: number, draggedNoteId: string) => {
-    const noteElements = Array.from(document.querySelectorAll<HTMLElement>("[data-note-id]"));
-    const target = noteElements.find((element) => {
-      if (element.dataset.noteId === draggedNoteId) return false;
+  const getCategoryDropTarget = (_clientX: number, clientY: number, draggedCategoryId?: string) => {
+    const viewport = categoryListRef.current?.getBoundingClientRect();
+    if (viewport && (_clientX < viewport.left || _clientX > viewport.right)) {
+      return { id: null, position: null as "before" | "after" | null };
+    }
+    const categoryElements = Array.from(
+      categoryListRef.current?.querySelectorAll<HTMLElement>("[data-category-id]") ?? [],
+    ).filter((element) => {
+      const id = element.dataset.categoryId;
+      return id && id !== "all" && id !== UNCATEGORIZED_CATEGORY_ID && id !== draggedCategoryId;
+    });
+    const target = categoryElements.find((element) => {
       const rect = element.getBoundingClientRect();
-      return (
-        clientX >= rect.left &&
-        clientX <= rect.right &&
-        clientY >= rect.top &&
-        clientY <= rect.bottom
+      return clientY >= rect.top && clientY <= rect.bottom;
+    }) ?? categoryElements.find((element) => clientY < element.getBoundingClientRect().top + element.getBoundingClientRect().height / 2)
+      ?? categoryElements[categoryElements.length - 1];
+    if (!target) return { id: null, position: null as "before" | "after" | null };
+    const rect = target.getBoundingClientRect();
+    return {
+      id: target.dataset.categoryId ?? null,
+      position: clientY >= rect.top + rect.height / 2 ? "after" : "before",
+    } as const;
+  };
+
+  const getNoteDropTarget = (_clientX: number, clientY: number, draggedNoteId: string) => {
+    const viewport = listRef.current?.getBoundingClientRect();
+    if (viewport && (_clientX < viewport.left || _clientX > viewport.right)) {
+      return { id: null, position: null as "before" | "after" | null };
+    }
+    const draggedNote = notes.find((item) => item.id === draggedNoteId);
+    const noteElements = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>("[data-note-id]") ?? [],
+    ).filter((element) => {
+      const note = notes.find((item) => item.id === element.dataset.noteId);
+      return element.dataset.noteId !== draggedNoteId && Boolean(
+        note && !note.pinned && (note.categoryId ?? null) === (draggedNote?.categoryId ?? null),
       );
     });
-    return target?.dataset.noteId;
+    const target = noteElements.find((element) => {
+      const rect = element.getBoundingClientRect();
+      return clientY >= rect.top && clientY <= rect.bottom;
+    }) ?? noteElements.find((element) => clientY < element.getBoundingClientRect().top + element.getBoundingClientRect().height / 2)
+      ?? noteElements[noteElements.length - 1];
+    if (!target) return { id: null, position: null as "before" | "after" | null };
+    const rect = target.getBoundingClientRect();
+    return {
+      id: target.dataset.noteId ?? null,
+      position: clientY >= rect.top + rect.height / 2 ? "after" : "before",
+    } as const;
   };
 
   const getCategoryTitle = (categoryId: string | null) => {
@@ -237,45 +266,32 @@ const Sidebar: React.FC<SidebarProps> = ({
       if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) {
         moved = true;
       }
-      const target = getDropTarget(moveEvent.clientX, moveEvent.clientY);
-      const categoryId = getCategoryIdAtPoint(moveEvent.clientX, moveEvent.clientY) ?? target.categoryId;
-      setDragOverCategoryId(categoryId ?? null);
+      const categoryId = getCategoryIdAtPoint(moveEvent.clientX, moveEvent.clientY);
       if (categoryId) {
+        setCategoryDragTarget(categoryId, "inside");
         setNoteDragTarget(null);
         return;
       }
 
-      let nextNoteId =
-        getNoteIdAtPoint(moveEvent.clientX, moveEvent.clientY, note.id) ??
-        (target.noteId && target.noteId !== note.id ? target.noteId : null);
-      if (!nextNoteId && listRef.current) {
-        const children = Array.from(listRef.current.children) as HTMLElement[];
-        const hovered = children.find((child) => {
-          if (child.dataset.noteId === note.id) return false;
-          const rect = child.getBoundingClientRect();
-          const mid = rect.top + rect.height / 2;
-          return moveEvent.clientY < mid;
-        });
-        nextNoteId = hovered?.dataset.noteId ?? children[children.length - 1]?.dataset.noteId ?? null;
-        if (nextNoteId === note.id) nextNoteId = null;
-      }
-      setNoteDragTarget(nextNoteId);
+      setCategoryDragTarget(null, null);
+      const noteTarget = getNoteDropTarget(moveEvent.clientX, moveEvent.clientY, note.id);
+      setNoteDragTarget(noteTarget.id, noteTarget.position ?? "before");
     };
 
     const onUp = (upEvent: MouseEvent) => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       if (moved) {
-        const target = getDropTarget(upEvent.clientX, upEvent.clientY);
-        const categoryId = getCategoryIdAtPoint(upEvent.clientX, upEvent.clientY) ?? target.categoryId;
+        const categoryId = getCategoryIdAtPoint(upEvent.clientX, upEvent.clientY);
         if (categoryId !== undefined) {
           confirmMoveNoteToCategory(note.id, categoryId === "all" ? null : categoryId);
         } else {
-          const targetNoteId =
-            getNoteIdAtPoint(upEvent.clientX, upEvent.clientY, note.id) ??
-            (target.noteId && target.noteId !== note.id ? target.noteId : dragOverNoteIdRef.current);
+          const noteTarget = getNoteDropTarget(upEvent.clientX, upEvent.clientY, note.id);
+          const targetNoteId = noteTarget.id ?? dragOverNoteIdRef.current;
           const targetNote = notes.find((item) => item.id === targetNoteId);
-          if (targetNote && !targetNote.pinned) reorderNotes(note.id, targetNote.id);
+          if (targetNote && !targetNote.pinned) {
+            reorderNotes(note.id, targetNote.id, noteTarget.position ?? dragOverNotePositionRef.current);
+          }
         }
       }
       resetDragState();
@@ -322,28 +338,21 @@ const Sidebar: React.FC<SidebarProps> = ({
       if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) {
         moved = true;
       }
-      const target = getDropTarget(moveEvent.clientX, moveEvent.clientY);
-      const categoryId = getCategoryIdAtPoint(moveEvent.clientX, moveEvent.clientY) ?? target.categoryId;
-      setDragOverCategoryId(
-        categoryId && categoryId !== "all" && categoryId !== UNCATEGORIZED_CATEGORY_ID ? categoryId : null,
-      );
+      const categoryTarget = getCategoryDropTarget(moveEvent.clientX, moveEvent.clientY, category.id);
+      setCategoryDragTarget(categoryTarget.id, categoryTarget.position);
     };
 
     const onUp = (upEvent: MouseEvent) => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       if (moved) {
-        const target = getDropTarget(upEvent.clientX, upEvent.clientY);
-        const categoryId = getCategoryIdAtPoint(upEvent.clientX, upEvent.clientY) ?? target.categoryId;
-        if (
-          categoryId &&
-          categoryId !== "all" &&
-          categoryId !== UNCATEGORIZED_CATEGORY_ID &&
-          categoryId !== category.id
-        ) {
+        const categoryTarget = getCategoryDropTarget(upEvent.clientX, upEvent.clientY, category.id);
+        if (categoryTarget.id && categoryTarget.id !== category.id) {
           const fromIndex = orderedCategories.findIndex((item) => item.id === category.id);
-          const toIndex = orderedCategories.findIndex((item) => item.id === categoryId);
-          if (fromIndex >= 0 && toIndex >= 0) reorderCategories(fromIndex, toIndex);
+          const toIndex = orderedCategories.findIndex((item) => item.id === categoryTarget.id);
+          if (fromIndex >= 0 && toIndex >= 0) {
+            reorderCategories(fromIndex, toIndex, categoryTarget.position ?? "before");
+          }
         }
       }
       resetDragState();
@@ -356,15 +365,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleAddCategory = () => {
     setNewCategoryName("");
     setIsCategoryDialogOpen(true);
-  };
-
-  const handleMergedImport = () => {
-    onImportTextNotes();
-  };
-
-  const handleExportFile = () => {
-    if (!activeNoteId) return;
-    onExportActiveNote();
   };
 
   const closeCategoryDialog = () => {
@@ -420,6 +420,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const id = options.uncategorized ? UNCATEGORIZED_CATEGORY_ID : category?.id ?? null;
     const isActive = activeCategoryId === id;
     const isDragOver = dragOverCategoryId === (id ?? "all");
+    const showCategoryLine = isDragOver && (dragOverCategoryPosition === "before" || dragOverCategoryPosition === "after");
     const noteCount = options.uncategorized
       ? notes.filter((note) => !note.categoryId).length
       : id
@@ -431,12 +432,19 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div
         key={id ?? "all"}
         data-category-id={id ?? "all"}
-        className={`group relative rounded-lg ${isDragOver ? "bg-accent-light" : ""}`}
+        className={`group relative rounded-lg ${isDragOver && dragOverCategoryPosition === "inside" ? "drag-target-inside" : ""}`}
       >
+        {showCategoryLine && (
+          <span
+            aria-hidden="true"
+            className={`drag-insertion-line drag-insertion-line--${dragOverCategoryPosition}`}
+          />
+        )}
         <button
           onClick={() => setActiveCategoryId(id)}
-          className={`w-full h-7 flex items-center gap-2 px-3 rounded-lg text-xs transition-colors cursor-pointer
-            ${isActive ? "bg-bg-active text-text-primary" : "text-text-secondary hover:bg-bg-hover"}`}
+          data-flat-row-button
+          className={`w-full h-7 flex items-center gap-2 px-3 rounded-lg border text-xs cursor-pointer
+            ${isActive ? "flat-active-row border-accent/20 text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-hover"}`}
         >
           {category ? (
             <span
@@ -471,7 +479,15 @@ const Sidebar: React.FC<SidebarProps> = ({
           ) : (
             <span className="truncate flex-1 text-left">{title}</span>
           )}
-          <span className="text-[10px] text-text-muted flex-shrink-0">{noteCount}</span>
+          <span
+            className={`inline-flex h-[18px] min-w-[18px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none tabular-nums transition-colors
+              ${isActive
+                ? "bg-accent text-white"
+                : "border border-border/70 bg-bg-primary/70 text-text-muted group-hover:border-accent/25 group-hover:bg-accent-light group-hover:text-accent"}
+              ${category ? "group-hover:hidden" : ""}`}
+          >
+            {noteCount}
+          </span>
         </button>
         {category && editingCategoryId !== category.id && (
           <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5">
@@ -512,14 +528,21 @@ const Sidebar: React.FC<SidebarProps> = ({
               <div
                 key={note.id}
                 data-note-id={note.id}
-                className={`group relative mb-0.5 rounded-lg ${isDragOver ? "bg-accent-light" : ""}`}
+                className={`group relative mb-0.5 rounded-lg ${isDragOver ? "bg-accent-light/35" : ""}`}
               >
+                {isDragOver && dragOverNotePosition && (
+                  <span
+                    aria-hidden="true"
+                    className={`drag-insertion-line drag-insertion-line--${dragOverNotePosition}`}
+                  />
+                )}
                 <button
                   onClick={() => handleSelectNote(note.id)}
-                  className={`w-full text-left pl-3 pr-16 py-2 rounded-lg text-sm transition-colors cursor-pointer
-                    ${activeNoteId === note.id ? "bg-bg-active text-text-primary" : "text-text-secondary hover:bg-bg-hover"}`}
+                  data-flat-row-button
+                  className={`flex h-11 w-full items-center text-left pl-3 pr-16 rounded-lg border text-sm cursor-pointer
+                    ${activeNoteId === note.id ? "flat-active-row border-accent/20 text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-hover"}`}
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     {!note.pinned && (
                       <span
                         onClick={(e) => e.stopPropagation()}
@@ -531,10 +554,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                       </span>
                     )}
                     {note.pinned && <Pin size={12} className="text-accent flex-shrink-0" />}
-                    <div className="truncate font-medium">{note.title || t(lang, "untitled")}</div>
-                  </div>
-                  <div className="text-xs text-text-muted mt-0.5 pl-5">
-                    {new Date(note.updatedAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}
+                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg ${
+                      activeNoteId === note.id ? "bg-accent text-white" : "bg-bg-primary/70 text-text-muted"
+                    }`}>
+                      <FileText size={13} />
+                    </span>
+                    <div className="min-w-0 truncate font-medium">{note.title || t(lang, "untitled")}</div>
                   </div>
                 </button>
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
@@ -577,7 +602,31 @@ const Sidebar: React.FC<SidebarProps> = ({
   );
 
   return (
-    <aside className="w-full h-full bg-bg-sidebar flex flex-col border-r border-border">
+    <aside className="app-interactive-surface w-full h-full bg-bg-sidebar flex flex-col">
+      {!collapsed && (
+        <div className="border-b border-border bg-gradient-to-b from-accent-light/35 to-transparent px-3 pb-3 pt-4">
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold text-text-primary">{t(lang, "notepad")}</h2>
+              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-text-muted">
+                <span className="inline-flex items-center gap-1">
+                  <FileText size={11} />
+                  <span className="tabular-nums">{notes.length} {t(lang, "notes")}</span>
+                </span>
+                <span className="h-1 w-1 rounded-full bg-border" />
+                <span className="inline-flex min-w-0 items-center gap-1">
+                  <Tag size={11} />
+                  <span className="truncate tabular-nums">{allTags.length} {t(lang, "tags")}</span>
+                </span>
+              </div>
+            </div>
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-accent/15 bg-accent-light text-accent shadow-sm shadow-accent/5">
+              <FileText size={17} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={collapsed ? "flex flex-col items-center px-2 py-2" : "px-2 pt-2 pb-1.5"}>
         {collapsed ? (
           <>
@@ -610,63 +659,46 @@ const Sidebar: React.FC<SidebarProps> = ({
           </>
         ) : (
           <>
-            <div className="flex items-center gap-2 px-1 pb-2">
-              <div className="flex-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-secondary whitespace-nowrap">
-                {t(lang, "explorer")}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => {
                   onNewNote();
                   onViewChange("note");
                 }}
-                className={`${actionBase} ${actionSecondary} h-9 px-2 text-sm min-w-0 ${labeledActionClass}`}
+                className="flat-create-trigger group flex min-h-12 w-full items-center gap-2.5 rounded-xl border border-border px-2.5 text-left text-sm font-medium text-text-primary hover:border-accent/40 hover:bg-bg-hover/45"
                 title={t(lang, "newNote")}
                 aria-label={t(lang, "newNote")}
               >
-                <Plus size={15} className="flex-shrink-0" />
-                {renderActionLabel(t(lang, "newNote"))}
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent transition-transform duration-200 group-hover:rotate-90">
+                  <Plus size={16} strokeWidth={2.5} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block leading-tight">{t(lang, "newNote")}</span>
+                </span>
+                <span className="mr-0.5 h-1.5 w-1.5 rounded-full bg-accent opacity-45 transition-opacity duration-200 group-hover:opacity-100" />
               </button>
               <button
                 onClick={handleAddCategory}
-                className={`${actionBase} ${actionSecondary} h-9 px-2 text-sm min-w-0 ${labeledActionClass}`}
+                className="flat-create-trigger group flex min-h-12 w-full items-center gap-2.5 rounded-xl border border-border px-2.5 text-left text-sm font-medium text-text-primary hover:border-accent/40 hover:bg-bg-hover/45"
                 title={t(lang, "newCategory")}
                 aria-label={t(lang, "newCategory")}
               >
-                <FolderPlus size={15} className="flex-shrink-0" />
-                {renderActionLabel(t(lang, "newCategory"))}
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent transition-transform duration-200 group-hover:rotate-90">
+                  <FolderPlus size={16} strokeWidth={2.5} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block leading-tight">{t(lang, "newCategory")}</span>
+                </span>
+                <span className="mr-0.5 h-1.5 w-1.5 rounded-full bg-accent opacity-45 transition-opacity duration-200 group-hover:opacity-100" />
               </button>
-              <div className="col-span-2 grid grid-cols-2 gap-1 min-w-0">
-                <button
-                  onClick={handleMergedImport}
-                  className={`${actionBase} ${actionSecondary} h-9 min-w-0 px-2 text-sm font-medium ${labeledActionClass}`}
-                  title={t(lang, "importNote")}
-                  aria-label={t(lang, "importNote")}
-                >
-                  <FileUp size={15} className="flex-shrink-0" />
-                  {renderActionLabel(t(lang, "importNote"))}
-                </button>
-                <button
-                  onClick={handleExportFile}
-                  disabled={!activeNoteId}
-                  className={`${actionBase} ${actionSecondary} h-9 min-w-0 px-2 text-sm font-medium ${labeledActionClass}
-                    ${activeNoteId ? "" : "opacity-50 cursor-not-allowed hover:bg-transparent hover:text-text-secondary"}`}
-                  title={t(lang, "exportFile")}
-                  aria-label={t(lang, "exportFile")}
-                >
-                  <FileDown size={15} className="flex-shrink-0" />
-                  {renderActionLabel(t(lang, "exportFile"))}
-                </button>
-              </div>
             </div>
+            {renderSectionDivider()}
           </>
         )}
       </div>
 
       {!collapsed && (
-        <div className="px-2 mt-2">
-          {renderSectionDivider()}
+        <div className="px-2">
           <div
             className="overflow-y-scroll pr-1 [scrollbar-gutter:stable]"
             style={categoryViewportStyle}
@@ -711,9 +743,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {isCategoryDialogOpen && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-4">
+        <div className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-4">
           <div
-            className="w-full max-w-[320px] rounded-lg border border-border bg-bg-primary shadow-xl"
+            className="app-modal-panel w-full max-w-[320px] rounded-xl border border-border bg-bg-primary shadow-xl"
             role="dialog"
             aria-modal="true"
           >
@@ -762,11 +794,11 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {deleteConfirmNote && (
         <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center px-4"
+          className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center px-4"
           style={{ backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 42%))" }}
         >
           <div
-            className="w-full max-w-[320px] overflow-hidden rounded-lg border border-border bg-bg-secondary shadow-xl"
+            className="app-modal-panel w-full max-w-[320px] overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-xl"
             role="dialog"
             aria-modal="true"
           >

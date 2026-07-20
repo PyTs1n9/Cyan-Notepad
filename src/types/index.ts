@@ -1,5 +1,6 @@
 export interface Todo {
   id: string;
+  listId: string;
   title: string;
   completed: boolean;
   priority: "low" | "medium" | "high";
@@ -8,6 +9,19 @@ export interface Todo {
   category?: string;
   createdAt: string;
   order: number;
+}
+
+export interface TodoList {
+  id: string;
+  name: string;
+  pinned: boolean;
+  order: number;
+  createdAt: string;
+}
+
+export interface TodoListData {
+  lists: TodoList[];
+  activeListId: string | null;
 }
 
 export interface Note {
@@ -35,4 +49,13 @@ export interface AppFont {
   path: string;
 }
 
-export type ViewType = "todo" | "note" | "workspace";
+export type ViewType = "todo" | "note" | "canvas" | "workspace";
+
+export type {
+  CanvasBoard,
+  CanvasDocument,
+  CanvasImageItem,
+  CanvasItem,
+  CanvasTextItem,
+  CanvasViewport,
+} from "./canvas";

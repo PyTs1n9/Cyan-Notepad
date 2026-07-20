@@ -2,13 +2,18 @@
 
 ## 1. 初始化 Supabase
 
-在 Supabase SQL Editor 中完整执行：
+在 Supabase SQL Editor 中按顺序完整执行：
 
 ```text
 supabase/migrations/202607190001_workspaces.sql
+supabase/migrations/202607190002_service_role_grants.sql
+supabase/migrations/202607190003_workspace_mutation_rpcs.sql
+supabase/migrations/202607190004_realtime_workspaces.sql
+supabase/migrations/202607200001_realtime_profiles.sql
+supabase/migrations/202607200002_sync_auth_profiles.sql
 ```
 
-该迁移会创建用户资料、工作台、成员、文档、Yjs 状态表、邀请码函数、Realtime publication 和 RLS 策略。
+这些迁移会创建用户资料、工作台、成员、文档、Yjs 状态表、邀请码函数、Realtime publication 和 RLS 策略，并让昵称、头像变更实时刷新到工作台。
 
 ## 2. 本地启动协作服务
 
