@@ -76,3 +76,4 @@ replaceRequired(
 );
 
 console.log(`Version set to v${version}`);
+
