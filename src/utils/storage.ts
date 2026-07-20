@@ -1,5 +1,4 @@
 import {
-  copyFile,
   readTextFile,
   writeTextFile,
   writeFile,
@@ -11,7 +10,7 @@ import {
   rename,
   stat,
 } from "@tauri-apps/plugin-fs";
-import { appDataDir, dirname, executableDir, join, resourceDir } from "@tauri-apps/api/path";
+import { executableDir, join, resourceDir } from "@tauri-apps/api/path";
 import type { Note, NoteCategory, TodoListData } from "@/types";
 
 const TODOS_FILE = "todos.json";
@@ -43,150 +42,34 @@ async function ensureDirectory(path: string): Promise<void> {
   }
 }
 
-async function hasEntries(path: string): Promise<boolean> {
-  try {
-    return (await readDir(path)).length > 0;
-  } catch {
-    return false;
-  }
-}
-
-async function assertWritable(path: string): Promise<void> {
-  await ensureDirectory(path);
-  const probe = await join(path, `.write-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  await writeTextFile(probe, "");
-  await remove(probe);
-}
-
-async function copyDirectory(source: string, target: string): Promise<void> {
-  await ensureDirectory(target);
-  const entries = await readDir(source);
-  for (const entry of entries) {
-    if (!entry.name) continue;
-    const sourcePath = await join(source, entry.name);
-    const targetPath = await join(target, entry.name);
-    if (entry.isDirectory) {
-      await copyDirectory(sourcePath, targetPath);
-    } else if (entry.isFile) {
-      await copyFile(sourcePath, targetPath);
-    }
-  }
-}
-
-async function verifyDirectory(source: string, target: string): Promise<void> {
-  const entries = await readDir(source);
-  for (const entry of entries) {
-    if (!entry.name) continue;
-    const sourcePath = await join(source, entry.name);
-    const targetPath = await join(target, entry.name);
-    if (entry.isDirectory) {
-      if (!(await exists(targetPath))) {
-        throw new Error(`Missing migrated directory: ${targetPath}`);
-      }
-      await verifyDirectory(sourcePath, targetPath);
-    } else if (entry.isFile) {
-      if (!(await exists(targetPath))) {
-        throw new Error(`Missing migrated file: ${targetPath}`);
-      }
-      const [sourceInfo, targetInfo] = await Promise.all([stat(sourcePath), stat(targetPath)]);
-      if (sourceInfo.size !== targetInfo.size) {
-        throw new Error(`Migrated file size mismatch: ${entry.name}`);
-      }
-    }
-  }
-}
-
-async function migrateLegacyData(source: string, target: string): Promise<void> {
-  if (source.toLowerCase() === target.toLowerCase()) return;
-  if (!(await hasEntries(source)) || (await hasEntries(target))) return;
-
-  const parent = await dirname(target);
-  const staging = await join(parent, `.data-migration-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  try {
-    await copyDirectory(source, staging);
-    await verifyDirectory(source, staging);
-    // The target was empty when migration started. Replacing it only after
-    // verification prevents a partial copy from becoming the active store.
-    await remove(target, { recursive: true });
-    await rename(staging, target);
-    try {
-      await remove(source, { recursive: true });
-    } catch (error) {
-      console.warn("Migrated data, but could not remove the legacy data directory:", error);
-    }
-  } catch (error) {
-    try {
-      if (await exists(staging)) await remove(staging, { recursive: true });
-    } catch {
-      // Keep the original migration error; the legacy directory remains intact.
-    }
-    throw error;
-  }
-}
-
 async function resolveLocalProjectDataDirectory(): Promise<string | null> {
-  try {
-    const resources = (await resourceDir()).replace(/\\/g, "/").replace(/\/+$/, "");
-    const match = resources.match(/^(.*)\/src-tauri\/target\/(?:debug|release)(?:\/.*)?$/i);
-    return match ? await join(match[1], DATA_DIR_NAME) : null;
-  } catch {
-    return null;
+  const candidates = await Promise.allSettled([resourceDir(), executableDir()]);
+  for (const candidate of candidates) {
+    if (candidate.status !== "fulfilled") continue;
+    const path = candidate.value.replace(/\\/g, "/").replace(/\/+$/, "");
+    const match = path.match(/^(.*)\/src-tauri\/target\/(?:debug|release)(?:\/.*)?$/i);
+    if (match) return join(match[1], DATA_DIR_NAME);
   }
+  return null;
 }
 
 async function resolveDataDirectory(): Promise<string> {
-  const fallback = await join(await appDataDir(), DATA_DIR_NAME);
-
   if (!import.meta.env.PROD) {
-    // Tauri dev runs keep their data alongside the project instead of sharing
-    // the installed app's AppData directory.
+    // Tauri dev runs use the repository's data directory.
     const localProjectData = await resolveLocalProjectDataDirectory();
     if (localProjectData) {
-      try {
-        await assertWritable(localProjectData);
-        return localProjectData;
-      } catch (error) {
-        console.warn("Project data directory is not writable; using AppData:", error);
-      }
+      await ensureDirectory(localProjectData);
+      return localProjectData;
     }
-
-    // Frontend-only development has no local Tauri resource path.
-    await ensureDirectory(fallback);
-    return fallback;
   }
 
-  // Tile windows are intentionally read-only. They can use an already-created
-  // install data directory, but must not run the write probe or migration.
-  if (new URLSearchParams(window.location.search).get("tile") === "1") {
-    try {
-      const installData = await join(await executableDir(), DATA_DIR_NAME);
-      if (await exists(installData)) return installData;
-    } catch {
-      // Fall through to the legacy AppData location.
-    }
-    try {
-      await ensureDirectory(fallback);
-    } catch {
-      // The main window will create the directory when it starts.
-    }
-    return fallback;
-  }
-
-  try {
-    const installData = await join(await executableDir(), DATA_DIR_NAME);
-    await assertWritable(installData);
-    try {
-      await migrateLegacyData(fallback, installData);
-    } catch (error) {
-      console.warn("Could not migrate legacy data to the install directory; using AppData:", error);
-      return fallback;
-    }
-    return installData;
-  } catch (error) {
-    console.warn("Install directory is not writable; using AppData:", error);
-    await ensureDirectory(fallback);
-    return fallback;
-  }
+  // The executable directory is the single source of truth for installed builds.
+  // Never silently switch to AppData, otherwise an existing portable data folder
+  // appears to have been lost.
+  const installData = await join(await executableDir(), DATA_DIR_NAME);
+  const isReadOnlyTile = new URLSearchParams(window.location.search).get("tile") === "1";
+  if (!isReadOnlyTile) await ensureDirectory(installData);
+  return installData;
 }
 
 async function getDataRoot(): Promise<string> {

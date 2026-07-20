@@ -20,6 +20,7 @@
       "identifier": "fs:scope",
       "allow": [
         { "path": "$APPDATA/**" },
+        { "path": "$EXE/**" },
         { "path": "$RESOURCE/**" }
       ]
     }

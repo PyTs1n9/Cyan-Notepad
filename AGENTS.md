@@ -93,10 +93,11 @@ Shared types live in `src/types/index.ts`.
 
 All persistence goes through `src/utils/storage.ts`, which wraps `@tauri-apps/plugin-fs`.
 
-Data is stored under:
+Installed builds store data beside the executable. Tauri development builds use
+the repository root. Both resolve to a `data` directory with this structure:
 
 ```text
-%APPDATA%/com.cyan-notepad.app/data/
+<install-or-project-directory>/data/
 ├── todos.json
 ├── fonts.json
 ├── settings.json
@@ -105,6 +106,9 @@ Data is stored under:
     ├── index.json
     └── <uuid>.md
 ```
+
+Do not silently fall back to `%APPDATA%`: the install/project `data` directory is
+the single source of truth so portable data remains attached to the app folder.
 
 Important details:
 - `notes/index.json` stores metadata only: `id`, `title`, `tags`, `createdAt`, `updatedAt`.
