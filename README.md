@@ -8,9 +8,9 @@
 
 # Cyan Notepad 青の记事本
 
-记事本本体12MB，轻量级桌面应用<br>
+记事本仅 <strong><em><font color="#1f6feb">12MB</font></em></strong>，轻量级桌面应用<br>
 本地优先的MD记事、待办、画布与在线协作工作台<br>
-基于 Tauri v2 + React 19 + TypeScript 构建
+基于 **Tauri v2 + React 19 + TypeScript** 构建
 
 [反馈问题](https://github.com/PyTs1n9/Cyan-Notepad/issues) · [更新日志](https://github.com/PyTs1n9/Cyan-Notepad/releases)<br>
 [快速开始](#快速开始) · [在线工作台部署](#在线工作台部署) · [从源码构建](#从源码构建)
