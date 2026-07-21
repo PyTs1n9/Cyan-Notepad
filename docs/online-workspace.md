@@ -15,6 +15,16 @@ supabase/migrations/202607200002_sync_auth_profiles.sql
 
 这些迁移会创建用户资料、工作台、成员、文档、Yjs 状态表、邀请码函数、Realtime publication 和 RLS 策略，并让昵称、头像变更实时刷新到工作台。
 
+### 配置密码恢复回调
+
+在 Supabase Dashboard 打开 `Authentication → URL Configuration`，将下面的地址加入 Redirect URLs：
+
+```text
+cyan-notepad://auth/recovery
+```
+
+桌面应用会注册 `cyan-notepad://` 协议。用户点击找回密码邮件后，Supabase 会把恢复会话交回 Cyan Notepad，由应用显示新密码窗口并完成修改。若未加入白名单，Supabase 会回退到 Site URL，链接可能仍然打开网站而不是应用。
+
 ## 2. 本地启动协作服务
 
 复制 `collab-server/.env.example` 为 `collab-server/.env`，填写 Supabase 的服务器 Secret key（或旧版 `service_role` key）。该密钥不能提交到 Git，也不能放进 EXE。

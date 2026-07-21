@@ -1,5 +1,5 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 
 // Track open sticky windows (key: noteId, value: window label)
 const openStickies = new Map<string, string>();
@@ -73,9 +73,8 @@ export async function closeStickyNote(noteId: string): Promise<void> {
   const label = openStickies.get(noteId);
   if (!label) return;
   try {
-    const win = new WebviewWindow(label);
-    await win.close();
-    openStickies.delete(noteId);
+    // Let the sticky window flush any pending debounced edit before closing.
+    await emitTo(label, "sticky:request-close", { noteId });
   } catch {
     // Window already doesn't exist
     openStickies.delete(noteId);

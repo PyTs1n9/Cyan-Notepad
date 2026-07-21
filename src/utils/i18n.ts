@@ -77,6 +77,27 @@ type TranslationKeys = {
   authCheckEmail: string;
   authWorking: string;
   authAutoSigningIn: string;
+  authRememberPassword: string;
+  authAutoLogin: string;
+  authForgotPassword: string;
+  authForgotPasswordTitle: string;
+  authForgotPasswordHint: string;
+  authSendResetEmail: string;
+  authResendResetEmail: string;
+  authChangeResetEmail: string;
+  authResetEmailRequired: string;
+  authResetEmailSent: string;
+  authManualRecoveryHint: string;
+  authRecoveryLinkPlaceholder: string;
+  authVerifyRecoveryLink: string;
+  authRecoveryLinkRequired: string;
+  authResetPasswordTitle: string;
+  authResetPasswordHint: string;
+  authNewPassword: string;
+  authSetNewPassword: string;
+  authRecoveryLinkInvalid: string;
+  authPasswordResetSuccess: string;
+  authPasswordResetDone: string;
   authNotConfigured: string;
   authNotConfiguredHint: string;
   workspace: string;
@@ -396,6 +417,27 @@ const zh: TranslationKeys = {
   authCheckEmail: "注册成功，请打开邮箱完成验证后再登录。",
   authWorking: "处理中...",
   authAutoSigningIn: "正在自动登录",
+  authRememberPassword: "记住密码",
+  authAutoLogin: "自动登录",
+  authForgotPassword: "找回密码",
+  authForgotPasswordTitle: "找回密码",
+  authForgotPasswordHint: "输入注册邮箱，我们会向该邮箱发送密码恢复链接。",
+  authSendResetEmail: "发送重置邮件",
+  authResendResetEmail: "重新发送",
+  authChangeResetEmail: "更换邮箱",
+  authResetEmailRequired: "请先输入用于找回密码的邮箱",
+  authResetEmailSent: "密码重置邮件已发送，请复制邮件中的重置链接。",
+  authManualRecoveryHint: "在邮件中右键复制“重置密码”按钮的链接，粘贴到这里即可继续。",
+  authRecoveryLinkPlaceholder: "粘贴完整的密码恢复链接",
+  authVerifyRecoveryLink: "验证链接并继续",
+  authRecoveryLinkRequired: "请先粘贴邮件中的密码恢复链接",
+  authResetPasswordTitle: "设置新密码",
+  authResetPasswordHint: "恢复链接已验证，请设置新的登录密码。",
+  authNewPassword: "新密码",
+  authSetNewPassword: "确认修改密码",
+  authRecoveryLinkInvalid: "恢复链接无效或已过期，请重新发送找回密码邮件。",
+  authPasswordResetSuccess: "密码修改成功",
+  authPasswordResetDone: "完成",
   authNotConfigured: "登录服务尚未配置",
   authNotConfiguredHint: "请在 .env.local 中填写 Supabase Project URL 和 publishable/anon key，然后重新启动应用。",
   workspace: "工作台",
@@ -715,6 +757,27 @@ const en: TranslationKeys = {
   authCheckEmail: "Account created. Check your email to confirm it before signing in.",
   authWorking: "Working...",
   authAutoSigningIn: "Signing in automatically",
+  authRememberPassword: "Remember password",
+  authAutoLogin: "Auto login",
+  authForgotPassword: "Forgot password?",
+  authForgotPasswordTitle: "Recover password",
+  authForgotPasswordHint: "Enter your account email and we will send a password recovery link.",
+  authSendResetEmail: "Send reset email",
+  authResendResetEmail: "Resend",
+  authChangeResetEmail: "Change email",
+  authResetEmailRequired: "Enter your account email first",
+  authResetEmailSent: "Reset email sent. Copy the reset link from the email.",
+  authManualRecoveryHint: "Right-click the reset-password button in the email, copy its link, and paste it here.",
+  authRecoveryLinkPlaceholder: "Paste the full password recovery link",
+  authVerifyRecoveryLink: "Verify link and continue",
+  authRecoveryLinkRequired: "Paste the password recovery link from the email first",
+  authResetPasswordTitle: "Set a new password",
+  authResetPasswordHint: "The recovery link is verified. Enter your new password.",
+  authNewPassword: "New password",
+  authSetNewPassword: "Update password",
+  authRecoveryLinkInvalid: "This recovery link is invalid or expired. Request a new reset email.",
+  authPasswordResetSuccess: "Password updated successfully",
+  authPasswordResetDone: "Done",
   authNotConfigured: "Sign-in is not configured",
   authNotConfiguredHint: "Add the Supabase Project URL and publishable/anon key to .env.local, then restart the app.",
   workspace: "Workspace",

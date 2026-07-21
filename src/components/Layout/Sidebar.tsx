@@ -76,6 +76,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     [categories],
   );
   const visibleNotes = getFilteredNotes();
+  const currentCategoryNoteCount = activeCategoryId === UNCATEGORIZED_CATEGORY_ID
+    ? notes.filter((note) => !note.categoryId).length
+    : activeCategoryId
+      ? notes.filter((note) => note.categoryId === activeCategoryId).length
+      : notes.length;
   const actionBase = "flex items-center justify-center rounded-lg transition-colors cursor-pointer";
   const actionCollapsed = "w-10 h-10 shrink-0";
   const actionSecondary =
@@ -615,8 +620,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </span>
                 <span className="h-1 w-1 rounded-full bg-border" />
                 <span className="inline-flex min-w-0 items-center gap-1">
-                  <Tag size={11} />
-                  <span className="truncate tabular-nums">{allTags.length} {t(lang, "tags")}</span>
+                  <FolderOpen size={11} />
+                  <span className="truncate">
+                    {getCategoryTitle(activeCategoryId)} · <span className="tabular-nums">{currentCategoryNoteCount}</span>
+                  </span>
                 </span>
               </div>
             </div>

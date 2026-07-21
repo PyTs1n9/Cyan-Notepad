@@ -14,6 +14,7 @@ import { Save, Pin, Code, Eye, Columns2, Undo2, Redo2 } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
+import LoadingText from "@/components/LoadingText";
 
 type MarkdownViewMode = "source" | "preview" | "split";
 const MAX_EDITOR_HISTORY = 200;
@@ -39,6 +40,18 @@ const turndownService = new TurndownService({
   emDelimiter: "*",
   bulletListMarker: "-",
   hr: "---",
+});
+// contentEditable creates a <div> for a normal Enter press. Turndown treats
+// block elements as paragraphs by default, which turns one Enter into two
+// Markdown newlines. Keep normal div lines single-spaced while preserving an
+// intentionally empty div as a blank line.
+turndownService.addRule("contentEditableLine", {
+  filter: "div",
+  replacement: (content, node) => {
+    const element = node as HTMLElement;
+    const isEmptyLine = !element.textContent && element.querySelector("br");
+    return isEmptyLine ? "\n\n" : `\n${content}\n`;
+  },
 });
 // Keep images as markdown
 turndownService.addRule("img", {
@@ -75,6 +88,7 @@ const NoteEditor: React.FC = () => {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [showSaveStatus, setShowSaveStatus] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState(16);
   const [stickyOpen, setStickyOpen] = useState(false);
@@ -84,6 +98,7 @@ const NoteEditor: React.FC = () => {
   const EDITOR_FONT_SIZE_STEP = 1;
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const isSavingRef = useRef(false);
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
 
@@ -125,16 +140,23 @@ const NoteEditor: React.FC = () => {
   // Save function: persists current content to disk and notifies sticky windows
   const doSave = useCallback(async () => {
     const noteId = activeNoteIdRef.current;
-    if (!noteId) return;
+    if (!noteId || isSavingRef.current) return;
     const contentToSave = getCurrentEditorContent();
-    await saveNoteContent(noteId, contentToSave);
-    await cleanupUnusedImageAttachments();
-    setIsDirty(false);
-    // Notify open sticky windows to update
-    emit("sticky:note-updated", { noteId, content: contentToSave });
-    // Brief flash of "saved" status
-    setShowSaveStatus(true);
-    setTimeout(() => setShowSaveStatus(false), 2000);
+    isSavingRef.current = true;
+    setIsSaving(true);
+    try {
+      await saveNoteContent(noteId, contentToSave);
+      await cleanupUnusedImageAttachments();
+      setIsDirty(false);
+      // Notify open sticky windows to update
+      emit("sticky:note-updated", { noteId, content: contentToSave });
+      // Brief flash of "saved" status
+      setShowSaveStatus(true);
+      setTimeout(() => setShowSaveStatus(false), 2000);
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
+    }
   }, [getCurrentEditorContent]);
 
   // Track previous activeNoteId to detect switches
@@ -559,15 +581,22 @@ const NoteEditor: React.FC = () => {
         {/* Save Button */}
         <button
           onClick={doSave}
-          disabled={!isDirty}
+          disabled={!isDirty || isSaving}
+          aria-busy={isSaving}
           className={`flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
             ${isDirty
               ? "bg-accent text-white hover:bg-accent-hover"
               : "bg-bg-secondary text-text-muted cursor-not-allowed opacity-60"}`}
           title={t(lang, "save")}
         >
-          <Save size={12} />
-          <span>{t(lang, "save")}</span>
+          {isSaving ? (
+            <LoadingText label={t(lang, "save")} variant="bounce" />
+          ) : (
+            <>
+              <Save size={12} />
+              <span>{t(lang, "save")}</span>
+            </>
+          )}
         </button>
         <button
           onClick={() => {

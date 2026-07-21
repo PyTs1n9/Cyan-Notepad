@@ -57,6 +57,7 @@ import type { StoredImageHistoryItem } from "@/utils/storage";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import AvatarCropper from "@/components/Settings/AvatarCropper";
+import LoadingText from "@/components/LoadingText";
 
 interface SettingsModalProps {
   open: boolean;
@@ -120,6 +121,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
   const [backgroundHistory, setBackgroundHistory] = useState<DisplayHistoryItem[]>([]);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
+  const [personalAction, setPersonalAction] = useState<"nickname" | "password" | "signOut" | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const autoSaveDropdownRef = useRef<HTMLDivElement>(null);
@@ -267,10 +269,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     setPersonalValidation(null);
     setPersonalNotice(null);
     clearError();
-    if (await updateProfile({ displayName: nickname })) {
-      setNicknameDraft(nickname);
-      setNicknameEditing(false);
-      setPersonalNotice(t(lang, "personalProfileUpdated"));
+    setPersonalAction("nickname");
+    try {
+      if (await updateProfile({ displayName: nickname })) {
+        setNicknameDraft(nickname);
+        setNicknameEditing(false);
+        setPersonalNotice(t(lang, "personalProfileUpdated"));
+      }
+    } finally {
+      setPersonalAction(null);
     }
   };
 
@@ -320,17 +327,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     setPersonalValidation(null);
     setPersonalNotice(null);
     clearError();
-    if (await updatePassword(newPassword)) {
-      setNewPassword("");
-      setConfirmNewPassword("");
-      setPasswordOpen(false);
-      setPersonalNotice(t(lang, "personalPasswordUpdated"));
+    setPersonalAction("password");
+    try {
+      if (await updatePassword(newPassword)) {
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setPasswordOpen(false);
+        setPersonalNotice(t(lang, "personalPasswordUpdated"));
+      }
+    } finally {
+      setPersonalAction(null);
     }
   };
 
   const handleSignOut = async () => {
     clearError();
-    await signOut();
+    setPersonalAction("signOut");
+    try {
+      await signOut();
+    } finally {
+      setPersonalAction(null);
+    }
   };
 
   if (!open) return null;
@@ -890,11 +907,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                       <div className="flex flex-col justify-center gap-2">
                         <label className={`flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover ${backgroundBusy ? "cursor-wait opacity-60" : "cursor-pointer"}`}>
                           <ImagePlus size={14} />
-                          <span>
-                            {backgroundBusy
-                              ? t(lang, "personalSaving")
-                              : t(lang, customBackground ? "replaceBackground" : "chooseBackground")}
-                          </span>
+                          {backgroundBusy
+                            ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
+                            : <span>{t(lang, customBackground ? "replaceBackground" : "chooseBackground")}</span>}
                           <input
                             type="file"
                             accept="image/png,image/jpeg,image/webp"
@@ -1074,12 +1089,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                               <button
                                 type="button"
                                 onClick={handleSaveNickname}
-                                disabled={authLoading}
+                                disabled={authLoading || personalAction !== null}
+                                aria-busy={personalAction === "nickname"}
                                 aria-label={t(lang, "personalSaveNickname")}
                                 title={t(lang, "personalSaveNickname")}
-                                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                                className="flex h-9 min-w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent px-2 text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                               >
-                                <Check size={15} />
+                                {personalAction === "nickname"
+                                  ? <LoadingText label={t(lang, "personalSaving")} className="text-[10px]" variant="bounce" />
+                                  : <Check size={15} />}
                               </button>
                             </div>
                           ) : (
@@ -1105,7 +1123,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                           </div>
                           <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover">
                             <Camera size={14} className="text-accent" />
-                            <span>{avatarBusy ? t(lang, "personalSaving") : t(lang, "personalChooseImage")}</span>
+                            {avatarBusy
+                              ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
+                              : <span>{t(lang, "personalChooseImage")}</span>}
                             <input
                               type="file"
                               accept="image/png,image/jpeg,image/webp"
@@ -1216,10 +1236,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                                 </button>
                                 <button
                                   type="submit"
-                                  disabled={authLoading}
+                                  disabled={authLoading || personalAction !== null}
+                                  aria-busy={personalAction === "password"}
                                   className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                                 >
-                                  {authLoading ? t(lang, "personalSaving") : t(lang, "save")}
+                                  {personalAction === "password"
+                                    ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
+                                    : t(lang, "save")}
                                 </button>
                               </div>
                             </form>
@@ -1242,11 +1265,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                           <button
                             type="button"
                             onClick={handleSignOut}
-                            disabled={authLoading}
+                            disabled={authLoading || personalAction !== null}
+                            aria-busy={personalAction === "signOut"}
                             className="flex flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-danger disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                           >
                             <LogOut size={14} />
-                            {authLoading ? t(lang, "personalSaving") : t(lang, "authSignOut")}
+                            {personalAction === "signOut"
+                              ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
+                              : t(lang, "authSignOut")}
                           </button>
                         </div>
                       </section>

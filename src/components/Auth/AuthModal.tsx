@@ -3,6 +3,12 @@ import { Eye, EyeOff, LogIn, LogOut, Mail, ShieldCheck, UserPlus, X } from "luci
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { isSupabaseConfigured } from "@/utils/supabase";
+import {
+  loadLoginPreferences,
+  loadSavedLoginCredentials,
+  saveLoginCredentials,
+  saveLoginPreferenceSelection,
+} from "@/utils/authPreferences";
 import { t } from "@/utils/i18n";
 import LoadingText from "@/components/LoadingText";
 
@@ -15,23 +21,54 @@ type AuthMode = "signIn" | "signUp";
 
 export default function AuthModal({ open, onClose }: AuthModalProps) {
   const lang = useSettingsStore((state) => state.lang);
-  const { user, loading, error, signIn, signUp, signOut, clearError } = useAuthStore();
+  const {
+    user,
+    loading,
+    error,
+    signIn,
+    signUp,
+    openPasswordRecovery,
+    signOut,
+    clearError,
+  } = useAuthStore();
   const [mode, setMode] = useState<AuthMode>("signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     clearError();
+    setMode("signIn");
     setValidationError(null);
     setNotice(null);
     setShowPassword(false);
     setShowConfirmPassword(false);
+    setConfirmPassword("");
+
+    const preferences = loadLoginPreferences();
+    setRememberPassword(preferences.rememberPassword);
+    setAutoLogin(preferences.autoLogin);
+    let cancelled = false;
+    if (preferences.rememberPassword) {
+      void loadSavedLoginCredentials().then((credentials) => {
+        if (cancelled || !credentials) return;
+        setEmail(credentials.email);
+        setPassword(credentials.password);
+      });
+    } else {
+      setEmail("");
+      setPassword("");
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [open, clearError]);
 
   useEffect(() => {
@@ -75,6 +112,14 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       : await signUp(email.trim(), password);
 
     if (!result.ok) return;
+    if (mode === "signIn") {
+      if (rememberPassword) {
+        const saved = await saveLoginCredentials(email.trim(), password, autoLogin);
+        if (!saved) saveLoginPreferenceSelection(false, false);
+      } else {
+        saveLoginPreferenceSelection(false, false);
+      }
+    }
     if (result.needsEmailConfirmation) {
       setNotice(t(lang, "authCheckEmail"));
       setPassword("");
@@ -83,6 +128,28 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       setShowConfirmPassword(false);
       return;
     }
+    onClose();
+  };
+
+  const handleRememberPasswordChange = (checked: boolean) => {
+    setRememberPassword(checked);
+    const nextAutoLogin = checked ? autoLogin : false;
+    setAutoLogin(nextAutoLogin);
+    if (!checked) saveLoginPreferenceSelection(false, false);
+  };
+
+  const handleAutoLoginChange = (checked: boolean) => {
+    const nextRememberPassword = checked || rememberPassword;
+    setRememberPassword(nextRememberPassword);
+    setAutoLogin(checked);
+    if (!checked) saveLoginPreferenceSelection(nextRememberPassword, false);
+  };
+
+  const handleForgotPassword = () => {
+    clearError();
+    setValidationError(null);
+    setNotice(null);
+    openPasswordRecovery(email.trim());
     onClose();
   };
 
@@ -148,7 +215,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                 className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-danger disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <LogOut size={15} />
-                {loading ? <LoadingText label={t(lang, "authWorking")} /> : t(lang, "authSignOut")}
+                {loading ? <LoadingText label={t(lang, "authWorking")} variant="bounce" /> : t(lang, "authSignOut")}
               </button>
             </div>
           ) : (
@@ -243,6 +310,41 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                   </div>
                 )}
 
+                {mode === "signIn" && (
+                  <div className="flex items-center justify-between gap-3 pt-0.5 text-xs">
+                    <div className="flex min-w-0 items-center gap-3 text-text-secondary">
+                      <label className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={rememberPassword}
+                          onChange={(event) => handleRememberPasswordChange(event.target.checked)}
+                          disabled={loading}
+                          className="h-3.5 w-3.5 cursor-pointer accent-accent disabled:cursor-not-allowed"
+                        />
+                        <span>{t(lang, "authRememberPassword")}</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={autoLogin}
+                          onChange={(event) => handleAutoLoginChange(event.target.checked)}
+                          disabled={loading}
+                          className="h-3.5 w-3.5 cursor-pointer accent-accent disabled:cursor-not-allowed"
+                        />
+                        <span>{t(lang, "authAutoLogin")}</span>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={loading}
+                      className="flex-shrink-0 text-accent transition-colors hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {t(lang, "authForgotPassword")}
+                    </button>
+                  </div>
+                )}
+
                 {(validationError || error) && (
                   <p className="text-xs leading-relaxed text-danger">{validationError || error}</p>
                 )}
@@ -259,7 +361,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                 >
                   {mode === "signUp" && !loading ? <UserPlus size={15} /> : <LogIn size={15} />}
                   {loading
-                    ? <LoadingText label={t(lang, "authWorking")} />
+                    ? <LoadingText label={t(lang, "authWorking")} variant="bounce" />
                     : t(lang, mode === "signIn" ? "authSignIn" : "authSignUp")}
                 </button>
               </form>

@@ -1,9 +1,12 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    Manager,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    Manager,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
+use tauri_plugin_deep_link::DeepLinkExt;
+
+mod credentials;
 
 // Global flag: whether we are truly quitting the app
 static QUITTING: AtomicBool = AtomicBool::new(false);
@@ -25,6 +28,7 @@ fn quit_app(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main_window(app);
         }))
@@ -38,8 +42,15 @@ pub fn run() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![quit_app])
+        .invoke_handler(tauri::generate_handler![
+            quit_app,
+            credentials::encrypt_login_credentials,
+            credentials::decrypt_login_credentials,
+        ])
         .setup(|app| {
+            #[cfg(desktop)]
+            app.deep_link().register("cyan-notepad")?;
+
             // Create tray menu
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -79,7 +90,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Intercept main window close → hide to tray
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if !QUITTING.load(Ordering::Relaxed) {
+                if window.label() == "main" && !QUITTING.load(Ordering::Relaxed) {
                     api.prevent_close();
                     let _ = window.hide();
                 }

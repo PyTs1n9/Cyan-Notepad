@@ -29,6 +29,13 @@
       }
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["cyan-notepad"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "nsis",

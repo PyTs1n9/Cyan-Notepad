@@ -35,6 +35,8 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   const [stickyOpacity, setStickyOpacity] = useState(DEFAULT_STICKY_OPACITY);
   const editorRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const isDirtyRef = useRef(false);
   const isComposingRef = useRef(false);
   // Track whether we initiated a save (to ignore our own echo event)
   const selfSaveRef = useRef(false);
@@ -125,20 +127,46 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     };
   }, [noteId]);
 
+  const saveDirtyContent = useCallback(async () => {
+    if (savePromiseRef.current) {
+      await savePromiseRef.current;
+    }
+    if (!isDirtyRef.current || !editorRef.current) return;
+
+    const content = editorRef.current.innerHTML;
+    isDirtyRef.current = false;
+    const savePromise = (async () => {
+      try {
+        await saveNoteContent(noteId, content);
+        await cleanupUnusedImageAttachments();
+        // Notify main editor only when the sticky note was actually edited.
+        selfSaveRef.current = true;
+        await emit("sticky:note-saved", { noteId, content });
+      } catch (error) {
+        isDirtyRef.current = true;
+        throw error;
+      }
+    })();
+    savePromiseRef.current = savePromise;
+    try {
+      await savePromise;
+    } finally {
+      if (savePromiseRef.current === savePromise) {
+        savePromiseRef.current = null;
+      }
+    }
+  }, [noteId]);
+
   // Debounced auto-save with event emission
   const scheduleAutoSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      if (editorRef.current) {
-        const content = editorRef.current.innerHTML;
-        await saveNoteContent(noteId, content);
-        await cleanupUnusedImageAttachments();
-        // Notify main editor about the change
-        selfSaveRef.current = true;
-        emit("sticky:note-saved", { noteId, content });
-      }
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveDirtyContent().catch((error) => {
+        console.error("Failed to auto-save sticky note:", error);
+      });
     }, 800);
-  }, [noteId]);
+  }, [saveDirtyContent]);
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -148,6 +176,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   }, []);
 
   const handleInput = () => {
+    isDirtyRef.current = true;
     if (!isComposingRef.current) {
       scheduleAutoSave();
     }
@@ -159,6 +188,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
 
   const handleCompositionEnd = () => {
     isComposingRef.current = false;
+    isDirtyRef.current = true;
     scheduleAutoSave();
   };
 
@@ -175,22 +205,36 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     [],
   );
 
-  // Close: save content, notify main window, and destroy window
+  // Close: flush real edits, notify main window, and destroy window.
+  // Do not rewrite untouched rendered HTML: doing so converts Markdown on the
+  // main editor side and can insert an extra blank line between every block.
   const closeSticky = useCallback(async () => {
     try {
-      if (editorRef.current) {
-        const content = editorRef.current.innerHTML;
-        await saveNoteContent(noteId, content);
-        await cleanupUnusedImageAttachments();
-        emit("sticky:note-saved", { noteId, content });
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
       }
+      await saveDirtyContent();
       // Notify main window to clear tracking before destroying
-      emit("sticky:closed", { noteId });
+      await emit("sticky:closed", { noteId });
       await appWindow.close();
     } catch (e) {
       console.error("Failed to close sticky:", e);
     }
-  }, [appWindow, noteId]);
+  }, [appWindow, noteId, saveDirtyContent]);
+
+  // The main editor's pin button uses the same safe close path as this
+  // window's close button, so a pending debounced edit cannot be lost.
+  useEffect(() => {
+    const unlisten = listen<{ noteId: string }>("sticky:request-close", (event) => {
+      if (event.payload.noteId === noteId) {
+        void closeSticky();
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [closeSticky, noteId]);
 
 
 

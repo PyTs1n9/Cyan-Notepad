@@ -9,6 +9,7 @@ import { t } from "@/utils/i18n";
 import { dispatchPortalAction, type PortalAction } from "@/utils/portalActions";
 import type { ViewType } from "@/types";
 import UserAvatar from "@/components/UserAvatar";
+import LoadingText from "@/components/LoadingText";
 import {
   CheckSquare,
   CirclePlus,
@@ -551,7 +552,9 @@ export default function TitleBar({
                   className="flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border border-danger/35 bg-danger/10 px-2.5 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <LogOut size={13} />
-                  {authLoading ? t(lang, "authWorking") : t(lang, "authSignOut")}
+                  {authLoading
+                    ? <LoadingText label={t(lang, "authWorking")} variant="bounce" />
+                    : t(lang, "authSignOut")}
                 </button>
               </div>
             </div>

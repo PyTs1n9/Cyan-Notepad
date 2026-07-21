@@ -12,6 +12,7 @@ import SettingsModal from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
 import UpdateModal from "@/components/Settings/UpdateModal";
 import AuthModal from "@/components/Auth/AuthModal";
+import PasswordRecoveryModal from "@/components/Auth/PasswordRecoveryModal";
 import WorkspaceRemovalNotifier from "@/components/Workspace/WorkspaceRemovalNotifier";
 import LoadingText from "@/components/LoadingText";
 import { useTodoStore } from "@/stores/todoStore";
@@ -43,12 +44,14 @@ import { applyShortcuts } from "@/utils/shortcutManager";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
 import type { LatestRelease } from "@/utils/updateChecker";
+import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { listen, emit } from "@tauri-apps/api/event";
+import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
+import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Todo, Note, ViewType } from "@/types";
 import TurndownService from "turndown";
 
@@ -58,6 +61,7 @@ const ACTIVITY_BAR_WIDTH = 48;
 const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
 const WorkspaceView = lazy(loadWorkspaceView);
 type ResizableSidebar = "notebook" | "workspace";
+const handledPasswordRecoveryUrls = new Set<string>();
 
 function escapeHtml(text: string): string {
   return text
@@ -140,10 +144,48 @@ export default function App() {
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
   const initializeAuth = useAuthStore((s) => s.initialize);
   const autoLoginLoading = useAuthStore((s) => s.autoLoginLoading);
+  const handlePasswordRecoveryUrl = useAuthStore((s) => s.handlePasswordRecoveryUrl);
 
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let disposed = false;
+    let unlisten: UnlistenFn | null = null;
+    const handleUrls = (urls: string[]) => {
+      for (const url of urls) {
+        if (!url.toLowerCase().startsWith(PASSWORD_RECOVERY_REDIRECT_URL)) continue;
+        if (handledPasswordRecoveryUrls.has(url)) continue;
+        handledPasswordRecoveryUrls.add(url);
+        setAuthOpen(false);
+        void handlePasswordRecoveryUrl(url);
+      }
+    };
+
+    const initializeDeepLinks = async () => {
+      const stopListening = await onOpenUrl(handleUrls);
+      if (disposed) {
+        stopListening();
+        return;
+      }
+      unlisten = stopListening;
+      const urls = await getCurrent();
+      if (!disposed && urls) handleUrls(urls);
+    };
+
+    void initializeDeepLinks()
+      .catch((error) => {
+        console.error("Failed to initialize password recovery deep links:", error);
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [handlePasswordRecoveryUrl]);
 
   // Warm the lightweight workspace shell after the first render. The heavy
   // collaborative editor is loaded separately only when a document is opened.
@@ -659,6 +701,7 @@ export default function App() {
         />
       )}
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <PasswordRecoveryModal />
       <WorkspaceRemovalNotifier />
       {autoLoginLoading && (
         <div className="pointer-events-none fixed inset-x-0 top-12 z-[100] flex justify-center px-4">

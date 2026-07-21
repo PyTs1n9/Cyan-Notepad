@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, LoaderCircle, Move, ZoomIn, ZoomOut, X } from "lucide-react";
 import type { LangType } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
+import LoadingText from "@/components/LoadingText";
 
 const VIEWPORT_SIZE = 320;
 const CROP_SIZE = 236;
@@ -306,10 +307,17 @@ export default function AvatarCropper({
             type="button"
             onClick={() => void handleConfirm()}
             disabled={!imageSize || imageFailed || saving}
+            aria-busy={saving}
             className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
-            {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />}
-            {saving ? t(lang, "personalSaving") : t(lang, "avatarCropConfirm")}
+            {saving ? (
+              <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
+            ) : (
+              <>
+                <Check size={15} />
+                {t(lang, "avatarCropConfirm")}
+              </>
+            )}
           </button>
         </footer>
       </section>

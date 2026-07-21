@@ -279,6 +279,7 @@ export default function WorkspaceView({
   const [deleting, setDeleting] = useState(false);
   const [memberRemovalConfirmation, setMemberRemovalConfirmation] = useState<MemberRemovalConfirmation | null>(null);
   const [removingMember, setRemovingMember] = useState(false);
+  const [leavingWorkspace, setLeavingWorkspace] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState("");
   const [savingWorkspaceName, setSavingWorkspaceName] = useState(false);
@@ -482,12 +483,17 @@ export default function WorkspaceView({
   };
 
   const handleLeaveOrDelete = async () => {
-    if (!activeWorkspace || !user) return;
+    if (!activeWorkspace || !user || leavingWorkspace) return;
     if (activeWorkspace.role === "owner") {
       setDeleteConfirmation({ kind: "workspace", id: activeWorkspace.id, title: activeWorkspace.name });
       return;
     }
-    if (await leaveWorkspace(activeWorkspace.id, user.id)) setManageOpen(false);
+    setLeavingWorkspace(true);
+    try {
+      if (await leaveWorkspace(activeWorkspace.id, user.id)) setManageOpen(false);
+    } finally {
+      setLeavingWorkspace(false);
+    }
   };
 
   const confirmDelete = async () => {
@@ -521,7 +527,7 @@ export default function WorkspaceView({
     : dialog === "newDocument" || dialog === "renameDocument"
       ? t(lang, "cloudDocumentName")
       : t(lang, "workspaceName");
-  const isNewDocumentSubmitting = dialog === "newDocument" && (submittingDialog || creatingDocument);
+  const isDialogSubmitting = submittingDialog || (dialog === "newDocument" && creatingDocument);
   const DialogIcon = dialog === "joinWorkspace"
     ? UserPlus
     : dialog === "newDocument"
@@ -892,7 +898,7 @@ export default function WorkspaceView({
                 aria-busy={submittingDialog || (dialog === "newDocument" && creatingDocument)}
                 className="h-8 rounded-lg bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isNewDocumentSubmitting
+                {isDialogSubmitting
                   ? <LoadingText label={dialogTitle} variant="bounce" />
                   : dialogTitle}
               </button>
@@ -1081,10 +1087,18 @@ export default function WorkspaceView({
               <button
                 type="button"
                 onClick={() => void handleLeaveOrDelete()}
+                disabled={leavingWorkspace}
+                aria-busy={leavingWorkspace}
                 className="flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-xs text-danger transition-colors hover:bg-danger/10 sm:justify-start"
               >
-                {activeWorkspace.role === "owner" ? <Trash2 size={13} /> : <LogOut size={13} />}
-                {t(lang, activeWorkspace.role === "owner" ? "deleteWorkspace" : "leaveWorkspace")}
+                {leavingWorkspace ? (
+                  <LoadingText label={t(lang, "leaveWorkspace")} variant="bounce" />
+                ) : (
+                  <>
+                    {activeWorkspace.role === "owner" ? <Trash2 size={13} /> : <LogOut size={13} />}
+                    {t(lang, activeWorkspace.role === "owner" ? "deleteWorkspace" : "leaveWorkspace")}
+                  </>
+                )}
               </button>
               <button
                 type="button"
@@ -1151,7 +1165,9 @@ export default function WorkspaceView({
                 aria-busy={deleting}
                 className="h-8 cursor-pointer rounded-lg bg-danger px-3 text-sm text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {t(lang, "confirmYes")}
+                {deleting
+                  ? <LoadingText label={t(lang, "confirmYes")} variant="bounce" />
+                  : t(lang, "confirmYes")}
               </button>
             </div>
           </div>
@@ -1205,7 +1221,9 @@ export default function WorkspaceView({
                 aria-busy={removingMember}
                 className="h-8 cursor-pointer rounded-lg bg-danger px-3 text-sm text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {t(lang, "confirmYes")}
+                {removingMember
+                  ? <LoadingText label={t(lang, "confirmYes")} variant="bounce" />
+                  : t(lang, "confirmYes")}
               </button>
             </div>
           </div>
