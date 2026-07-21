@@ -38,12 +38,11 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 
 ### 📚 Markdown 记事本
 
-- 提供「源码」「预览」「分屏」三种 Markdown 视图，实时滚动同步
-- 支持包含Markdown编辑器的磁贴
-- 支持 GitHub Flavored Markdown、标题、列表、任务列表、引用、代码块、分隔线、链接和图片。
-- 支持导入 `.md` / `.markdown` / `.txt`，并将当前笔记导出为 Markdown 或文本文件。
-- 粘贴本地图片时会保存为应用附件，并在预览中解析本地附件、文件路径和网络图片。
-- 自定义自动保存和 Ctrl+S 手动保存
+- 1️⃣ 提供「源码」「预览」「分屏」三种 Markdown 视图，实时滚动同步
+- 2️⃣ 支持包含Markdown编辑器的磁贴
+- 3️⃣ 支持导入 `.md` / `.markdown` / `.txt`，并将当前笔记导出为 Markdown 或文本文件
+- 4️⃣ 自定义自动保存和 Ctrl+S 手动保存
+- 5️⃣ 粘贴本地图片时会保存为应用附件，并在预览中解析本地附件、文件路径和网络图片
 
 <p align="center">
   <img src="./src-tauri/icons/test01.webp" width="600" alt="Cyan Notepad 图标">
@@ -51,9 +50,9 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 
 ### 🗓️ 待办清单
 
-- 支持创建多个任务清单，清单内任务隔离
-- 任务支持低 / 中 / 高三档优先级
-- 任务支持截止日期日历选择
+- 1️⃣ 支持创建多个任务清单，清单内任务隔离
+- 2️⃣ 任务支持低 / 中 / 高三档优先级
+- 3️⃣ 任务支持截止日期日历选择
 
 <p align="center">
   <img src="./src-tauri/icons/test02.webp" width="600" alt="Cyan Notepad 图标">
@@ -61,10 +60,10 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 
 ### 🎨 自由画布
 
-- 支持创建多个本地画布
-- 支持粘贴、拖放或选择本地图片，也可以添加多行文本。
-- 支持将当前画布导出为 PNG、JPEG 或 SVG。
-- 画布内容和图片资源保存在本地，目前不参与在线工作台的实时协作。
+- 1️⃣ 支持创建多个本地画布
+- 2️⃣ 支持粘贴、拖放或选择本地图片，也可以添加多行文本。
+- 3️⃣ 支持将当前画布导出为 PNG、JPEG 或 SVG。
+- 4️⃣ 画布内容和图片资源保存在本地，目前不参与在线工作台的实时协作。
 
 <p align="center">
   <img src="./src-tauri/icons/test03.webp" width="600" alt="Cyan Notepad 图标">
@@ -72,12 +71,11 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 
 ### 💻 在线工作台与实时协作
 
-- 支持 Supabase 邮箱注册、登录、退出、密码修改，以及昵称和头像管理
-- 可创建工作台或通过邀请码加入工作台，并设置新成员默认角色
-- 提供 `owner`、`editor`、`viewer` 三种角色；所有者可以管理成员、调整角色、重新生成邀请码、重命名或删除工作台。
-- 实时编辑Markdown内容，实时显示在线用户，实时框选用户高光内容
-- 成员资料、头像变更和被移出工作台的通知会通过 Supabase Realtime 刷新。
-- 完整的数据库迁移、协作服务和 Render 部署说明见 [在线工作台部署](docs/online-workspace.md)。
+- 1️⃣ 支持 Supabase 邮箱注册、登录、退出、密码修改，以及昵称和头像管理
+- 2️⃣ 可创建工作台或通过邀请码加入工作台，并设置新成员默认角色
+- 3️⃣ 实时编辑Markdown内容，实时显示在线用户，实时框选用户高光内容
+- 4️⃣ 成员资料、头像变更和被移出工作台的通知会通过 Supabase Realtime 刷新。
+- 5️⃣ 完整的数据库迁移、协作服务和 Render 部署说明见 [在线工作台部署](docs/online-workspace.md)。
 
 <p align="center">
   <img src="./src-tauri/icons/test04.webp" width="600" alt="Cyan Notepad 图标">
@@ -85,12 +83,11 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 
 ### 💎 个性化与系统集成
 
-- 提供预设并支持自定义颜色主题
-- 支持自定义背景
-- 支持中文 / English 即时切换
-- 提供 VS Code 样式活动栏，可折叠侧边栏
-- 自定义全局快捷键（默认 `Ctrl+Space` 显示/隐藏主窗口）
-- 关于窗口检查 GitHub 最新版本和 Releases 下载入口。
+- 1️⃣ 提供预设并支持自定义颜色主题，支持自定义背景
+- 2️⃣ 支持中文 / English 即时切换
+- 3️⃣ 提供 VS Code 样式活动栏，可折叠侧边栏
+- 4️⃣ 自定义全局快捷键（默认 `Ctrl+Space` 显示/隐藏主窗口）
+- 5️⃣ 关于窗口检查 GitHub 最新版本和 Releases 下载入口。
 
 <p align="center">
   <img src="./src-tauri/icons/test05.webp" width="600" alt="Cyan Notepad 图标">
