@@ -46,7 +46,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 自定义自动保存和 Ctrl+S 手动保存
 
 <p align="center">
-  <img src="./src-tauri/icons/test01.png" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test01.webp" width="600" alt="Cyan Notepad 图标">
 </p>
 
 ### 🗓️ 待办清单
@@ -56,7 +56,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 任务支持截止日期日历选择
 
 <p align="center">
-  <img src="./src-tauri/icons/test02.png" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test02.webp" width="600" alt="Cyan Notepad 图标">
 </p>
 
 ### 🎨 自由画布
@@ -67,7 +67,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 画布内容和图片资源保存在本地，目前不参与在线工作台的实时协作。
 
 <p align="center">
-  <img src="./src-tauri/icons/test03.png" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test03.webp" width="600" alt="Cyan Notepad 图标">
 </p>
 
 ### 💻 在线工作台与实时协作
@@ -80,7 +80,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 完整的数据库迁移、协作服务和 Render 部署说明见 [在线工作台部署](docs/online-workspace.md)。
 
 <p align="center">
-  <img src="./src-tauri/icons/test04.png" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test04.webp" width="600" alt="Cyan Notepad 图标">
 </p>
 
 ### 💎 个性化与系统集成
@@ -93,7 +93,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 关于窗口检查 GitHub 最新版本和 Releases 下载入口。
 
 <p align="center">
-  <img src="./src-tauri/icons/test05.png" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test05.webp" width="600" alt="Cyan Notepad 图标">
 </p>
 
 ## 快速开始
