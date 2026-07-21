@@ -54,6 +54,8 @@ interface SettingsState {
   autoSaveInterval: AutoSaveInterval;
   stickyOpacity: number;
   showWorkspaceHighlights: boolean;
+  alwaysOnTop: boolean;
+  updateReminderDisabledForVersion: string | null;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
@@ -65,6 +67,8 @@ interface SettingsState {
   setAutoSaveInterval: (interval: AutoSaveInterval) => void;
   setStickyOpacity: (opacity: number) => void;
   setShowWorkspaceHighlights: (show: boolean) => void;
+  setAlwaysOnTop: (alwaysOnTop: boolean) => void;
+  setUpdateReminderDisabledForVersion: (version: string | null) => void;
   loadSettings: (settings: {
     theme?: ThemeType;
     lang?: LangType;
@@ -75,6 +79,8 @@ interface SettingsState {
     autoSaveInterval?: AutoSaveInterval;
     stickyOpacity?: number;
     showWorkspaceHighlights?: boolean;
+    alwaysOnTop?: boolean;
+    updateReminderDisabledForVersion?: string | null;
   }) => void;
 }
 
@@ -88,6 +94,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   autoSaveInterval: 0,
   stickyOpacity: DEFAULT_STICKY_OPACITY,
   showWorkspaceHighlights: true,
+  alwaysOnTop: false,
+  updateReminderDisabledForVersion: null,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -129,6 +137,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setShowWorkspaceHighlights: (showWorkspaceHighlights) => set({ showWorkspaceHighlights }),
 
+  setAlwaysOnTop: (alwaysOnTop) => set({ alwaysOnTop }),
+
+  setUpdateReminderDisabledForVersion: (updateReminderDisabledForVersion) => set({ updateReminderDisabledForVersion }),
+
   loadSettings: (settings) =>
     set({
       theme: settings.theme || "blue",
@@ -140,5 +152,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       autoSaveInterval: settings.autoSaveInterval || 0,
       stickyOpacity: normalizeStickyOpacity(settings.stickyOpacity),
       showWorkspaceHighlights: settings.showWorkspaceHighlights ?? true,
+      alwaysOnTop: settings.alwaysOnTop === true,
+      updateReminderDisabledForVersion: typeof settings.updateReminderDisabledForVersion === "string"
+        ? settings.updateReminderDisabledForVersion
+        : null,
     }),
 }));

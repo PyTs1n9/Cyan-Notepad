@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
 import Sidebar from "@/components/Layout/Sidebar";
 import ActivityBar from "@/components/Layout/ActivityBar";
 import SidebarResizeHandle from "@/components/Layout/SidebarResizeHandle";
@@ -10,6 +10,7 @@ import NoteEditor from "@/components/Editor/NoteEditor";
 import CanvasView from "@/components/Canvas/CanvasView";
 import SettingsModal from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
+import UpdateModal from "@/components/Settings/UpdateModal";
 import AuthModal from "@/components/Auth/AuthModal";
 import WorkspaceRemovalNotifier from "@/components/Workspace/WorkspaceRemovalNotifier";
 import LoadingText from "@/components/LoadingText";
@@ -39,6 +40,9 @@ import {
 import { applyTheme } from "@/utils/theme";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
+import { openInDefaultBrowser } from "@/utils/externalLinks";
+import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
+import type { LatestRelease } from "@/utils/updateChecker";
 import { t } from "@/utils/i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
@@ -96,12 +100,14 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<LatestRelease | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workspaceSidebarWidth, setWorkspaceSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [workspaceSidebarCollapsed, setWorkspaceSidebarCollapsed] = useState(false);
   const [customBackgroundUrl, setCustomBackgroundUrl] = useState<string | null>(null);
+  const appRootRef = useRef<HTMLDivElement>(null);
   const resizingSidebar = useRef<ResizableSidebar | null>(null);
 
   const todos = useTodoStore((s) => s.todos);
@@ -128,8 +134,12 @@ export default function App() {
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
   const stickyOpacity = useSettingsStore((s) => s.stickyOpacity);
   const showWorkspaceHighlights = useSettingsStore((s) => s.showWorkspaceHighlights);
+  const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
+  const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
+  const setUpdateReminderDisabledForVersion = useSettingsStore((s) => s.setUpdateReminderDisabledForVersion);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
   const initializeAuth = useAuthStore((s) => s.initialize);
+  const autoLoginLoading = useAuthStore((s) => s.autoLoginLoading);
 
   useEffect(() => {
     void initializeAuth();
@@ -172,6 +182,8 @@ export default function App() {
           autoSaveInterval?: AutoSaveInterval;
           stickyOpacity?: number;
           showWorkspaceHighlights?: boolean;
+          alwaysOnTop?: boolean;
+          updateReminderDisabledForVersion?: string | null;
         });
 
         // Load custom app icon, fallback to default icon
@@ -204,10 +216,46 @@ export default function App() {
     init();
   }, []); // eslint-disable-line
 
+  // Check the latest GitHub release once after persisted settings are loaded.
+  useEffect(() => {
+    if (!initialized) return;
+
+    let cancelled = false;
+    const disabledForVersion = useSettingsStore.getState().updateReminderDisabledForVersion;
+    if (disabledForVersion && disabledForVersion !== APP_VERSION) {
+      useSettingsStore.getState().setUpdateReminderDisabledForVersion(null);
+    }
+
+    fetchLatestRelease()
+      .then((release) => {
+        if (
+          !cancelled
+          && disabledForVersion !== APP_VERSION
+          && isVersionNewer(release.version, APP_VERSION)
+        ) {
+          setAvailableUpdate(release);
+        }
+      })
+      .catch((error) => {
+        console.warn("Automatic update check failed:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialized]);
+
   // Apply theme class to document
   useEffect(() => {
     applyTheme(theme, customColors);
   }, [theme, customColors]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    void getCurrentWindow().setAlwaysOnTop(alwaysOnTop).catch((error) => {
+      console.error("Failed to update always-on-top state:", error);
+    });
+  }, [alwaysOnTop, initialized]);
 
   useEffect(() => {
     let cancelled = false;
@@ -241,6 +289,8 @@ export default function App() {
         autoSaveInterval,
         stickyOpacity,
         showWorkspaceHighlights,
+        alwaysOnTop,
+        updateReminderDisabledForVersion,
       });
     }
   }, [
@@ -253,6 +303,8 @@ export default function App() {
     autoSaveInterval,
     stickyOpacity,
     showWorkspaceHighlights,
+    alwaysOnTop,
+    updateReminderDisabledForVersion,
     initialized,
   ]);
 
@@ -320,49 +372,77 @@ export default function App() {
 
   // Sidebar resize drag
   const rafId = useRef<number | null>(null);
-  const latestX = useRef(0);
+  const latestSidebarWidth = useRef(SIDEBAR_MIN_WIDTH);
 
-  const handleSidebarMouseDown = useCallback((sidebar: ResizableSidebar) => {
+  const handleSidebarPointerDown = useCallback((sidebar: ResizableSidebar) => {
     resizingSidebar.current = sidebar;
+    latestSidebarWidth.current = sidebar === "workspace" ? workspaceSidebarWidth : sidebarWidth;
+    appRootRef.current?.classList.add("sidebar-resizing");
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
-  }, []);
+  }, [sidebarWidth, workspaceSidebarWidth]);
 
   useEffect(() => {
     const applyWidth = () => {
       rafId.current = null;
-      const newWidth = Math.min(MAX_SIDEBAR, Math.max(SIDEBAR_MIN_WIDTH, latestX.current));
-      if (resizingSidebar.current === "workspace") {
-        setWorkspaceSidebarWidth(newWidth);
-      } else if (resizingSidebar.current === "notebook") {
-        setSidebarWidth(newWidth);
-      }
+      const sidebar = resizingSidebar.current;
+      if (!sidebar) return;
+      const property = sidebar === "workspace" ? "--workspace-sidebar-width" : "--notebook-sidebar-width";
+      appRootRef.current?.style.setProperty(property, `${latestSidebarWidth.current}px`);
     };
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (event: PointerEvent) => {
       if (!resizingSidebar.current) return;
-      latestX.current = e.clientX - ACTIVITY_BAR_WIDTH;
+      latestSidebarWidth.current = Math.min(
+        MAX_SIDEBAR,
+        Math.max(SIDEBAR_MIN_WIDTH, event.clientX - ACTIVITY_BAR_WIDTH),
+      );
       if (rafId.current === null) {
         rafId.current = requestAnimationFrame(applyWidth);
       }
     };
-    const handleMouseUp = () => {
-      if (!resizingSidebar.current) return;
-      resizingSidebar.current = null;
+    const finishResize = () => {
+      const sidebar = resizingSidebar.current;
+      if (!sidebar) return;
       if (rafId.current !== null) {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
       }
+      const width = latestSidebarWidth.current;
+      const property = sidebar === "workspace" ? "--workspace-sidebar-width" : "--notebook-sidebar-width";
+      appRootRef.current?.style.setProperty(property, `${width}px`);
+      resizingSidebar.current = null;
+      if (sidebar === "workspace") {
+        setWorkspaceSidebarWidth(width);
+      } else {
+        setSidebarWidth(width);
+      }
+      appRootRef.current?.classList.remove("sidebar-resizing");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    const handlePointerUp = (event: PointerEvent) => {
+      if (resizingSidebar.current) {
+        latestSidebarWidth.current = Math.min(
+          MAX_SIDEBAR,
+          Math.max(SIDEBAR_MIN_WIDTH, event.clientX - ACTIVITY_BAR_WIDTH),
+        );
+      }
+      finishResize();
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", finishResize);
+    window.addEventListener("blur", finishResize);
     return () => {
       if (rafId.current !== null) cancelAnimationFrame(rafId.current);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", finishResize);
+      window.removeEventListener("blur", finishResize);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
-  }, [lang]);
+  }, []);
 
   const handleNewNote = () => {
     const now = new Date().toISOString();
@@ -467,15 +547,37 @@ export default function App() {
     setSidebarCollapsed((collapsed) => !collapsed);
   };
 
+  const handleUpdateNow = useCallback(async () => {
+    if (!availableUpdate) return;
+    try {
+      const opened = await openInDefaultBrowser(availableUpdate.url);
+      if (opened) setAvailableUpdate(null);
+    } catch (error) {
+      console.error("Failed to open update page:", error);
+    }
+  }, [availableUpdate]);
+
+  const handleNeverRemindUpdate = useCallback(() => {
+    setUpdateReminderDisabledForVersion(APP_VERSION);
+    setAvailableUpdate(null);
+  }, [setUpdateReminderDisabledForVersion]);
+
+  const appStyle = {
+    "--notebook-sidebar-width": `${sidebarWidth}px`,
+    "--workspace-sidebar-width": `${workspaceSidebarWidth}px`,
+    ...(customBackgroundUrl ? {
+      backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 34%, transparent), color-mix(in srgb, var(--color-bg-primary) 34%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
+      backgroundPosition: "center",
+      backgroundRepeat: "no-repeat",
+      backgroundSize: "cover",
+    } : {}),
+  } as CSSProperties;
+
   return (
     <div
+      ref={appRootRef}
       className={`flex flex-col h-screen w-screen overflow-hidden bg-bg-primary ${customBackgroundUrl ? "app-has-custom-background" : ""}`}
-      style={customBackgroundUrl ? {
-        backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 34%, transparent), color-mix(in srgb, var(--color-bg-primary) 34%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-        backgroundSize: "cover",
-      } : undefined}
+      style={appStyle}
     >
       {/* Custom Title Bar */}
       <TitleBar
@@ -500,7 +602,10 @@ export default function App() {
         />
         {currentView !== "workspace" && currentView !== "canvas" && (
           <>
-            <div style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth }} className="h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out">
+            <div
+              style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : "var(--notebook-sidebar-width)" }}
+              className="sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+            >
               {currentView === "todo" ? (
                 <TodoSidebar />
               ) : (
@@ -515,7 +620,7 @@ export default function App() {
             </div>
             {/* Resize Handle */}
             {!sidebarCollapsed && (
-              <SidebarResizeHandle onMouseDown={() => handleSidebarMouseDown("notebook")} />
+              <SidebarResizeHandle onPointerDown={() => handleSidebarPointerDown("notebook")} />
             )}
           </>
         )}
@@ -527,8 +632,7 @@ export default function App() {
                 <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted"><LoadingText label={t(lang, "authWorking")} /></div>}>
                   <WorkspaceView
                     sidebarCollapsed={workspaceSidebarCollapsed}
-                    sidebarWidth={workspaceSidebarWidth}
-                    onSidebarResizeStart={() => handleSidebarMouseDown("workspace")}
+                    onSidebarResizeStart={() => handleSidebarPointerDown("workspace")}
                     onOpenAuth={() => setAuthOpen(true)}
                   />
                 </Suspense>
@@ -545,8 +649,27 @@ export default function App() {
         onOpenAuth={() => setAuthOpen(true)}
       />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      {availableUpdate && (
+        <UpdateModal
+          currentVersion={APP_VERSION}
+          latestVersion={availableUpdate.version}
+          onUpdateNow={handleUpdateNow}
+          onUpdateLater={() => setAvailableUpdate(null)}
+          onNeverRemind={handleNeverRemindUpdate}
+        />
+      )}
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <WorkspaceRemovalNotifier />
+      {autoLoginLoading && (
+        <div className="pointer-events-none fixed inset-x-0 top-12 z-[100] flex justify-center px-4">
+          <div
+            className="rounded-lg border border-border bg-bg-secondary/95 px-4 py-2 text-sm font-medium text-text-primary shadow-lg backdrop-blur-sm"
+            role="status"
+          >
+            <LoadingText label={t(lang, "authAutoSigningIn")} variant="bounce" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

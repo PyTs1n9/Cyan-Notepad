@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { LogIn, LogOut, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
+import { Eye, EyeOff, LogIn, LogOut, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { isSupabaseConfigured } from "@/utils/supabase";
@@ -20,6 +20,8 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -28,6 +30,8 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
     clearError();
     setValidationError(null);
     setNotice(null);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
   }, [open, clearError]);
 
   useEffect(() => {
@@ -45,6 +49,8 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
     setMode(nextMode);
     setPassword("");
     setConfirmPassword("");
+    setShowPassword(false);
+    setShowConfirmPassword(false);
     setValidationError(null);
     setNotice(null);
     clearError();
@@ -73,6 +79,8 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       setNotice(t(lang, "authCheckEmail"));
       setPassword("");
       setConfirmPassword("");
+      setShowPassword(false);
+      setShowConfirmPassword(false);
       return;
     }
     onClose();
@@ -178,35 +186,61 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                     className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
                   />
                 </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                <div>
+                  <label htmlFor="auth-password" className="mb-1.5 block text-xs font-medium text-text-secondary">
                     {t(lang, "authPassword")}
-                  </span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete={mode === "signIn" ? "current-password" : "new-password"}
-                    required
-                    placeholder={t(lang, "authPasswordPlaceholder")}
-                    className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
-                  />
-                </label>
-                {mode === "signUp" && (
-                  <label className="block">
-                    <span className="mb-1.5 block text-xs font-medium text-text-secondary">
-                      {t(lang, "authConfirmPassword")}
-                    </span>
+                  </label>
+                  <div className="relative">
                     <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                      autoComplete="new-password"
+                      id="auth-password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      autoComplete={mode === "signIn" ? "current-password" : "new-password"}
                       required
                       placeholder={t(lang, "authPasswordPlaceholder")}
-                      className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
+                      className="auth-password-input h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 pr-10 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
                     />
-                  </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((visible) => !visible)}
+                      aria-label={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
+                      aria-pressed={showPassword}
+                      title={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
+                      className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                {mode === "signUp" && (
+                  <div>
+                    <label htmlFor="auth-confirm-password" className="mb-1.5 block text-xs font-medium text-text-secondary">
+                      {t(lang, "authConfirmPassword")}
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="auth-confirm-password"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        autoComplete="new-password"
+                        required
+                        placeholder={t(lang, "authPasswordPlaceholder")}
+                        className="auth-password-input h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 pr-10 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((visible) => !visible)}
+                        aria-label={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
+                        aria-pressed={showConfirmPassword}
+                        title={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
+                        className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                      >
+                        {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {(validationError || error) && (

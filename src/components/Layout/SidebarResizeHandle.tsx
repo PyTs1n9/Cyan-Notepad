@@ -1,28 +1,39 @@
-import { useEffect, useState, type MouseEventHandler } from "react";
+import { useEffect, useState, type PointerEventHandler } from "react";
 
 interface SidebarResizeHandleProps {
-  onMouseDown: MouseEventHandler<HTMLDivElement>;
+  onPointerDown: () => void;
 }
 
-export default function SidebarResizeHandle({ onMouseDown }: SidebarResizeHandleProps) {
+export default function SidebarResizeHandle({ onPointerDown }: SidebarResizeHandleProps) {
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     if (!dragging) return;
     const stopDragging = () => setDragging(false);
-    window.addEventListener("mouseup", stopDragging);
-    return () => window.removeEventListener("mouseup", stopDragging);
+    window.addEventListener("pointerup", stopDragging);
+    window.addEventListener("pointercancel", stopDragging);
+    window.addEventListener("blur", stopDragging);
+    return () => {
+      window.removeEventListener("pointerup", stopDragging);
+      window.removeEventListener("pointercancel", stopDragging);
+      window.removeEventListener("blur", stopDragging);
+    };
   }, [dragging]);
+
+  const handlePointerDown: PointerEventHandler<HTMLDivElement> = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+    onPointerDown();
+  };
 
   return (
     <div
       role="separator"
       aria-orientation="vertical"
-      onMouseDown={(event) => {
-        setDragging(true);
-        onMouseDown(event);
-      }}
-      className="group relative h-full w-2 flex-shrink-0 cursor-col-resize bg-border"
+      onPointerDown={handlePointerDown}
+      className="group relative h-full w-2 flex-shrink-0 touch-none cursor-col-resize bg-border"
     >
       <span
         aria-hidden="true"

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
-import { isSupabaseConfigured, supabase } from "@/utils/supabase";
+import { hasStoredAuthSession, isSupabaseConfigured, supabase } from "@/utils/supabase";
 
 interface AuthActionResult {
   ok: boolean;
@@ -18,6 +18,7 @@ interface AuthState {
   session: Session | null;
   initialized: boolean;
   loading: boolean;
+  autoLoginLoading: boolean;
   error: string | null;
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<AuthActionResult>;
@@ -58,16 +59,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   initialized: false,
   loading: false,
+  autoLoginLoading: false,
   error: null,
 
   initialize: async () => {
     if (get().initialized || get().loading) return;
     if (!isSupabaseConfigured || !supabase) {
-      set({ initialized: true, loading: false });
+      set({ initialized: true, loading: false, autoLoginLoading: false });
       return;
     }
 
-    set({ loading: true, error: null });
+    set({
+      loading: true,
+      autoLoginLoading: hasStoredAuthSession(),
+      error: null,
+    });
     const { data, error } = await supabase.auth.getSession();
     const sessionUser = data.session?.user ?? null;
     const profileError = sessionUser ? await syncWorkspaceProfile(sessionUser) : null;
@@ -76,6 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       session: data.session,
       initialized: true,
       loading: false,
+      autoLoginLoading: false,
       error: error?.message ?? profileError,
     });
 
@@ -87,6 +94,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           session,
           initialized: true,
           loading: false,
+          autoLoginLoading: false,
           error: null,
         });
       });

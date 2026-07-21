@@ -69,11 +69,14 @@ type TranslationKeys = {
   authEmail: string;
   authPassword: string;
   authConfirmPassword: string;
+  authShowPassword: string;
+  authHidePassword: string;
   authPasswordPlaceholder: string;
   authPasswordTooShort: string;
   authPasswordMismatch: string;
   authCheckEmail: string;
   authWorking: string;
+  authAutoSigningIn: string;
   authNotConfigured: string;
   authNotConfiguredHint: string;
   workspace: string;
@@ -225,6 +228,15 @@ type TranslationKeys = {
   personalSaveNickname: string;
   personalChangeAvatar: string;
   personalAvatarHint: string;
+  avatarCropTitle: string;
+  avatarCropHint: string;
+  avatarCropDragHint: string;
+  avatarCropZoom: string;
+  avatarCropZoomIn: string;
+  avatarCropZoomOut: string;
+  avatarCropCancel: string;
+  avatarCropConfirm: string;
+  avatarCropLoadFailed: string;
   avatarHistory: string;
   useHistoryAvatar: string;
   useHistoryBackground: string;
@@ -248,6 +260,8 @@ type TranslationKeys = {
   exportFile: string;
   collapseSidebar: string;
   expandSidebar: string;
+  enableAlwaysOnTop: string;
+  disableAlwaysOnTop: string;
   saved: string;
   unsaved: string;
   save: string;
@@ -296,6 +310,13 @@ type TranslationKeys = {
   newVersion: string;
   downloadUpdate: string;
   checkUpdateFailed: string;
+  updateAvailableTitle: string;
+  updateAvailableMessage: string;
+  currentVersion: string;
+  latestVersion: string;
+  updateNow: string;
+  updateLater: string;
+  neverRemind: string;
 };
 
 const zh: TranslationKeys = {
@@ -367,11 +388,14 @@ const zh: TranslationKeys = {
   authEmail: "邮箱",
   authPassword: "密码",
   authConfirmPassword: "确认密码",
+  authShowPassword: "显示密码",
+  authHidePassword: "隐藏密码",
   authPasswordPlaceholder: "至少 6 位密码",
   authPasswordTooShort: "密码至少需要 6 位",
   authPasswordMismatch: "两次输入的密码不一致",
   authCheckEmail: "注册成功，请打开邮箱完成验证后再登录。",
   authWorking: "处理中...",
+  authAutoSigningIn: "正在自动登录",
   authNotConfigured: "登录服务尚未配置",
   authNotConfiguredHint: "请在 .env.local 中填写 Supabase Project URL 和 publishable/anon key，然后重新启动应用。",
   workspace: "工作台",
@@ -522,7 +546,16 @@ const zh: TranslationKeys = {
   personalChangeNickname: "更换昵称",
   personalSaveNickname: "保存昵称",
   personalChangeAvatar: "更换头像",
-  personalAvatarHint: "支持 JPG、PNG，建议使用 256×256 像素图片；历史头像保存在 img-need 中。",
+  personalAvatarHint: "支持 JPG、PNG、WebP；选择后可拖动、缩放并裁剪圆形头像。",
+  avatarCropTitle: "编辑头像",
+  avatarCropHint: "拖动图片调整位置，缩放后让需要的内容完整落在圆形区域内。",
+  avatarCropDragHint: "拖动调整位置",
+  avatarCropZoom: "缩放头像",
+  avatarCropZoomIn: "放大",
+  avatarCropZoomOut: "缩小",
+  avatarCropCancel: "取消",
+  avatarCropConfirm: "使用此头像",
+  avatarCropLoadFailed: "无法读取这张图片，请选择 JPG、PNG 或 WebP 文件。",
   avatarHistory: "历史头像",
   useHistoryAvatar: "使用这个头像",
   useHistoryBackground: "使用这个背景",
@@ -546,6 +579,8 @@ const zh: TranslationKeys = {
   exportFile: "导出文件",
   collapseSidebar: "收起边栏",
   expandSidebar: "展开边栏",
+  enableAlwaysOnTop: "开启全局置顶",
+  disableAlwaysOnTop: "关闭全局置顶",
   saved: "已保存",
   unsaved: "未保存",
   save: "保存",
@@ -594,6 +629,13 @@ const zh: TranslationKeys = {
   newVersion: "发现新版本 v{version}",
   downloadUpdate: "下载更新",
   checkUpdateFailed: "检查更新失败",
+  updateAvailableTitle: "发现新版本",
+  updateAvailableMessage: "Cyan Notepad v{version} 已发布，是否立即更新？",
+  currentVersion: "当前版本",
+  latestVersion: "最新版本",
+  updateNow: "立刻更新",
+  updateLater: "稍后更新",
+  neverRemind: "不再提醒",
 };
 
 const en: TranslationKeys = {
@@ -665,11 +707,14 @@ const en: TranslationKeys = {
   authEmail: "Email",
   authPassword: "Password",
   authConfirmPassword: "Confirm Password",
+  authShowPassword: "Show password",
+  authHidePassword: "Hide password",
   authPasswordPlaceholder: "At least 6 characters",
   authPasswordTooShort: "Password must be at least 6 characters",
   authPasswordMismatch: "The passwords do not match",
   authCheckEmail: "Account created. Check your email to confirm it before signing in.",
   authWorking: "Working...",
+  authAutoSigningIn: "Signing in automatically",
   authNotConfigured: "Sign-in is not configured",
   authNotConfiguredHint: "Add the Supabase Project URL and publishable/anon key to .env.local, then restart the app.",
   workspace: "Workspace",
@@ -820,7 +865,16 @@ const en: TranslationKeys = {
   personalChangeNickname: "Change nickname",
   personalSaveNickname: "Save nickname",
   personalChangeAvatar: "Change avatar",
-  personalAvatarHint: "JPG or PNG, ideally 256×256 pixels. Avatar history is stored in img-need.",
+  personalAvatarHint: "JPG, PNG, or WebP. Drag, zoom, and crop after choosing an image.",
+  avatarCropTitle: "Edit avatar",
+  avatarCropHint: "Drag to reposition, then zoom until the content you want fits inside the circle.",
+  avatarCropDragHint: "Drag to reposition",
+  avatarCropZoom: "Avatar zoom",
+  avatarCropZoomIn: "Zoom in",
+  avatarCropZoomOut: "Zoom out",
+  avatarCropCancel: "Cancel",
+  avatarCropConfirm: "Use this avatar",
+  avatarCropLoadFailed: "This image could not be opened. Choose a JPG, PNG, or WebP file.",
   avatarHistory: "Avatar History",
   useHistoryAvatar: "Use this avatar",
   useHistoryBackground: "Use this background",
@@ -844,6 +898,8 @@ const en: TranslationKeys = {
   exportFile: "Export File",
   collapseSidebar: "Collapse",
   expandSidebar: "Expand",
+  enableAlwaysOnTop: "Keep window on top",
+  disableAlwaysOnTop: "Stop keeping window on top",
   saved: "Saved",
   unsaved: "Unsaved",
   save: "Save",
@@ -892,6 +948,13 @@ const en: TranslationKeys = {
   newVersion: "New version v{version}",
   downloadUpdate: "Download Update",
   checkUpdateFailed: "Update check failed",
+  updateAvailableTitle: "Update available",
+  updateAvailableMessage: "Cyan Notepad v{version} is available. Update now?",
+  currentVersion: "Current version",
+  latestVersion: "Latest version",
+  updateNow: "Update now",
+  updateLater: "Later",
+  neverRemind: "Don't remind again",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

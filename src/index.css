@@ -131,6 +131,11 @@
   }
 }
 
+.auth-password-input::-ms-reveal,
+.auth-password-input::-ms-clear {
+  display: none;
+}
+
 .app-has-custom-background .workspace-surface {
   background-color: transparent;
 }
@@ -383,6 +388,11 @@
 
 .sidebar-resize-guide--active {
   box-shadow: 0 0 9px color-mix(in srgb, var(--color-accent) 80%, transparent);
+}
+
+.sidebar-resizing .sidebar-width-shell {
+  transition: none !important;
+  will-change: width;
 }
 
 /* Sticky Note Mode — transparent semi-compact layout */

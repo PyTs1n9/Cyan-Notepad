@@ -3,10 +3,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2, QrCode } from "lucide-react";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
-
-const GITHUB_URL = "https://github.com/PyTs1n9/Cyan-Notepad";
-const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/Cyan-Notepad/releases/latest";
-const APP_VERSION = "0.3.2";
+import { APP_VERSION, fetchLatestRelease, GITHUB_RELEASES_URL, GITHUB_URL, isVersionNewer } from "@/utils/updateChecker";
 const SPONSOR_IMAGES = Object.entries(
   import.meta.glob("@/assets/sponsors/*.{jpg,jpeg,png,webp,gif,svg}", {
     eager: true,
@@ -35,20 +32,16 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
   const lang = useSettingsStore((s) => s.lang);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
   const [latestVersion, setLatestVersion] = useState("");
-  const [releaseUrl, setReleaseUrl] = useState(GITHUB_URL + "/releases");
+  const [releaseUrl, setReleaseUrl] = useState(GITHUB_RELEASES_URL);
   const [sponsorOpen, setSponsorOpen] = useState(false);
 
   const checkUpdate = useCallback(async () => {
     setUpdateStatus("checking");
     try {
-      const res = await fetch(GITHUB_API_LATEST);
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
-      const tag = (data.tag_name || "").replace(/^v/, "");
-      if (!tag) throw new Error("No version");
-      setLatestVersion(tag);
-      if (data.html_url) setReleaseUrl(data.html_url);
-      setUpdateStatus(tag === APP_VERSION ? "upToDate" : "newVersion");
+      const release = await fetchLatestRelease();
+      setLatestVersion(release.version);
+      setReleaseUrl(release.url);
+      setUpdateStatus(isVersionNewer(release.version, APP_VERSION) ? "newVersion" : "upToDate");
     } catch {
       setUpdateStatus("error");
     }

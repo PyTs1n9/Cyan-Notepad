@@ -69,11 +69,5 @@ replaceRequired(
   (_match, before, after) => `${before}${version}${after}`,
 );
 
-replaceRequired(
-  "src/components/Settings/AboutModal.tsx",
-  /(const APP_VERSION = ")[^"]+(";)/,
-  (_match, before, after) => `${before}${version}${after}`,
-);
-
 console.log(`Version set to v${version}`);
 

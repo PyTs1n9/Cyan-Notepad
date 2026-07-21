@@ -56,6 +56,7 @@ import {
 import type { StoredImageHistoryItem } from "@/utils/storage";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
+import AvatarCropper from "@/components/Settings/AvatarCropper";
 
 interface SettingsModalProps {
   open: boolean;
@@ -72,35 +73,6 @@ function getUploadImageExtension(file: File): string | null {
   if (file.type === "image/webp") return "webp";
   const extension = file.name.split(".").pop()?.toLowerCase();
   return extension && ["jpg", "jpeg", "png", "webp"].includes(extension) ? extension : null;
-}
-
-function compressAvatar(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Unable to read avatar"));
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error("Unable to load avatar"));
-      image.onload = () => {
-        const size = 256;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const context = canvas.getContext("2d");
-        if (!context) {
-          reject(new Error("Canvas is unavailable"));
-          return;
-        }
-        const scale = Math.max(size / image.width, size / image.height);
-        const width = image.width * scale;
-        const height = image.height * scale;
-        context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
-      };
-      image.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth }) => {
@@ -143,6 +115,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
   const [personalNotice, setPersonalNotice] = useState<string | null>(null);
   const [personalValidation, setPersonalValidation] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
   const [avatarHistory, setAvatarHistory] = useState<DisplayHistoryItem[]>([]);
   const [backgroundHistory, setBackgroundHistory] = useState<DisplayHistoryItem[]>([]);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
@@ -175,6 +148,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     setConfirmNewPassword("");
     setPersonalNotice(null);
     setPersonalValidation(null);
+    setAvatarCropFile(null);
   }, [open, user?.id]);
 
   useEffect(() => {
@@ -227,12 +201,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     if (!open) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      if (avatarCropFile) {
+        if (!avatarBusy) setAvatarCropFile(null);
+        return;
+      }
+      onClose();
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, avatarBusy, avatarCropFile]);
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -295,18 +274,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     }
   };
 
-  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (!getUploadImageExtension(file)) {
+      setPersonalValidation(t(lang, "avatarCropLoadFailed"));
+      return;
+    }
+    setPersonalNotice(null);
+    setPersonalValidation(null);
+    setAvatarCropFile(file);
+  };
+
+  const handleAvatarCropConfirm = async (avatarUrl: string) => {
     setAvatarBusy(true);
     setPersonalNotice(null);
+    setPersonalValidation(null);
     clearError();
     try {
-      const avatarUrl = await compressAvatar(file);
       const avatarCache = user ? await saveAvatarCache(user.id, avatarUrl) : null;
       if (await updateProfile({ avatarUrl, avatarCache })) {
         setPersonalNotice(t(lang, "personalAvatarUpdated"));
+        setAvatarCropFile(null);
       }
       await refreshAvatarHistory();
     } catch (error) {
@@ -1035,7 +1025,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                     <>
                       <section className="rounded-xl border border-border bg-bg-secondary/35 p-5">
                         <div className="flex items-center gap-4">
-                          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl bg-accent-light text-accent">
+                          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-full bg-accent-light text-accent">
                             {avatarUrl ? (
                               <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                             ) : (
@@ -1139,7 +1129,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                                       onClick={() => void handleUseAvatarHistory(item.filename)}
                                       disabled={active || avatarBusy || authLoading}
                                       title={t(lang, "useHistoryAvatar")}
-                                      className={`h-12 w-12 overflow-hidden rounded-xl border-2 transition-colors ${active ? "border-accent" : "border-border hover:border-accent/55 cursor-pointer"}`}
+                                      className={`h-12 w-12 overflow-hidden rounded-full border-2 transition-colors ${active ? "border-accent" : "border-border hover:border-accent/55 cursor-pointer"}`}
                                     >
                                       <img src={item.url} alt="" className="h-full w-full object-cover" />
                                     </button>
@@ -1268,6 +1258,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
           </main>
         </div>
       </section>
+
+      {avatarCropFile && (
+        <AvatarCropper
+          file={avatarCropFile}
+          lang={lang}
+          saving={avatarBusy}
+          onCancel={() => setAvatarCropFile(null)}
+          onConfirm={handleAvatarCropConfirm}
+        />
+      )}
     </div>
   );
 };

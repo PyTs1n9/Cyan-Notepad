@@ -30,7 +30,6 @@ import UserAvatar from "@/components/UserAvatar";
 
 interface WorkspaceViewProps {
   sidebarCollapsed: boolean;
-  sidebarWidth: number;
   onSidebarResizeStart: () => void;
   onOpenAuth: () => void;
 }
@@ -237,7 +236,6 @@ function isMissingSchemaError(error: string): boolean {
 
 export default function WorkspaceView({
   sidebarCollapsed,
-  sidebarWidth,
   onSidebarResizeStart,
   onOpenAuth,
 }: WorkspaceViewProps) {
@@ -597,12 +595,12 @@ export default function WorkspaceView({
   return (
     <div className="workspace-surface app-interactive-surface flex min-h-0 flex-1 bg-bg-primary">
       <div
-        style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
-        className="h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+        style={{ width: sidebarCollapsed ? 0 : "var(--workspace-sidebar-width)" }}
+        className="sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
       >
         <aside
           className="flex h-full flex-shrink-0 flex-col bg-bg-sidebar"
-          style={{ width: sidebarWidth }}
+          style={{ width: "var(--workspace-sidebar-width)" }}
         >
           <div className="border-b border-border bg-gradient-to-b from-accent-light/35 to-transparent px-3 pb-3 pt-4">
             <div className="mb-3 flex items-center justify-between gap-3 px-1">
@@ -755,7 +753,7 @@ export default function WorkspaceView({
         </aside>
       </div>
       {!sidebarCollapsed && (
-        <SidebarResizeHandle onMouseDown={onSidebarResizeStart} />
+        <SidebarResizeHandle onPointerDown={onSidebarResizeStart} />
       )}
 
       <section className="app-work-area-overlay flex min-w-0 flex-1 flex-col">

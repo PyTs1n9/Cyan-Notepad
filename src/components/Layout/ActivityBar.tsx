@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Settings, Users } from "lucide-react";
+import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Settings, Users } from "lucide-react";
 import type { ViewType } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
@@ -21,6 +21,8 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   onToggleCollapse,
 }) => {
   const lang = useSettingsStore((s) => s.lang);
+  const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
+  const setAlwaysOnTop = useSettingsStore((s) => s.setAlwaysOnTop);
 
   const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
@@ -74,6 +76,19 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           className="flex h-10 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <Settings size={20} strokeWidth={1.7} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setAlwaysOnTop(!alwaysOnTop)}
+          title={t(lang, alwaysOnTop ? "disableAlwaysOnTop" : "enableAlwaysOnTop")}
+          aria-label={t(lang, alwaysOnTop ? "disableAlwaysOnTop" : "enableAlwaysOnTop")}
+          aria-pressed={alwaysOnTop}
+          className={`relative flex h-10 w-11 items-center justify-center transition-colors hover:bg-bg-hover hover:text-text-primary ${
+            alwaysOnTop ? "bg-bg-active text-accent" : "text-text-muted"
+          }`}
+        >
+          {alwaysOnTop && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent" />}
+          <Pin size={20} strokeWidth={1.7} />
         </button>
       </div>
     </aside>
