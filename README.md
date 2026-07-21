@@ -8,7 +8,7 @@
 
 # Cyan Notepad 青の记事本
 
-记事本本体12MB，轻量级桌面应用
+记事本本体12MB，轻量级桌面应用<br>
 本地优先的MD记事、待办、画布与在线协作工作台<br>
 基于 Tauri v2 + React 19 + TypeScript 构建
 
