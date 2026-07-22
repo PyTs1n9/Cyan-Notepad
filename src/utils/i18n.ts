@@ -386,6 +386,9 @@ type TranslationKeys = {
   version: string;
   author: string;
   sourceCode: string;
+  personalBlog: string;
+  qqDiscussionGroup: string;
+  copyQqGroupNumber: string;
   friendSponsor: string;
   minimize: string;
   maximize: string;
@@ -816,6 +819,9 @@ const zh: TranslationKeys = {
   version: "版本",
   author: "作者",
   sourceCode: "源代码",
+  personalBlog: "个人博客",
+  qqDiscussionGroup: "QQ 讨论群",
+  copyQqGroupNumber: "复制 QQ 群号",
   friendSponsor: "友情赞助",
   minimize: "最小化",
   maximize: "最大化",
@@ -1246,6 +1252,9 @@ const en: TranslationKeys = {
   version: "Version",
   author: "Author",
   sourceCode: "Source Code",
+  personalBlog: "Personal Blog",
+  qqDiscussionGroup: "QQ Discussion Group",
+  copyQqGroupNumber: "Copy QQ group number",
   friendSponsor: "Friend Sponsor",
   minimize: "Minimize",
   maximize: "Maximize",

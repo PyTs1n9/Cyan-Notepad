@@ -1,9 +1,13 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
-import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2, QrCode } from "lucide-react";
+import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2, QrCode, Copy, Check } from "lucide-react";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { APP_VERSION, fetchLatestRelease, GITHUB_RELEASES_URL, GITHUB_URL, isVersionNewer } from "@/utils/updateChecker";
+
+const BLOG_URL = "https://pyts1n9.github.io/";
+const QQ_GROUP_NUMBER = "902898359";
+
 const SPONSOR_IMAGES = Object.entries(
   import.meta.glob("@/assets/sponsors/*.{jpg,jpeg,png,webp,gif,svg}", {
     eager: true,
@@ -21,7 +25,7 @@ const SPONSOR_IMAGES = Object.entries(
   }))
   .sort((a, b) => a.label.localeCompare(b.label));
 
-type UpdateStatus = "idle" | "checking" | "upToDate" | "newVersion" | "error";
+type UpdateStatus = "checking" | "upToDate" | "newVersion" | "error";
 
 interface AboutModalProps {
   open: boolean;
@@ -30,22 +34,44 @@ interface AboutModalProps {
 
 export default function AboutModal({ open, onClose }: AboutModalProps) {
   const lang = useSettingsStore((s) => s.lang);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("checking");
   const [latestVersion, setLatestVersion] = useState("");
   const [releaseUrl, setReleaseUrl] = useState(GITHUB_RELEASES_URL);
   const [sponsorOpen, setSponsorOpen] = useState(false);
+  const [qqCopied, setQqCopied] = useState(false);
+  const updateRequestId = useRef(0);
 
   const checkUpdate = useCallback(async () => {
+    const requestId = ++updateRequestId.current;
     setUpdateStatus("checking");
     try {
       const release = await fetchLatestRelease();
+      if (requestId !== updateRequestId.current) return;
       setLatestVersion(release.version);
       setReleaseUrl(release.url);
       setUpdateStatus(isVersionNewer(release.version, APP_VERSION) ? "newVersion" : "upToDate");
     } catch {
+      if (requestId !== updateRequestId.current) return;
       setUpdateStatus("error");
     }
   }, []);
+
+  useEffect(() => {
+    if (open) {
+      void checkUpdate();
+      return;
+    }
+
+    updateRequestId.current += 1;
+    setUpdateStatus("checking");
+    setQqCopied(false);
+  }, [open, checkUpdate]);
+
+  useEffect(() => {
+    if (!qqCopied) return;
+    const timeoutId = window.setTimeout(() => setQqCopied(false), 1600);
+    return () => window.clearTimeout(timeoutId);
+  }, [qqCopied]);
 
   const openReleasePage = useCallback(() => {
     openInDefaultBrowser(releaseUrl);
@@ -53,6 +79,19 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
 
   const openGitHubPage = useCallback(() => {
     openInDefaultBrowser(GITHUB_URL);
+  }, []);
+
+  const openBlogPage = useCallback(() => {
+    openInDefaultBrowser(BLOG_URL);
+  }, []);
+
+  const copyQqGroupNumber = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(QQ_GROUP_NUMBER);
+      setQqCopied(true);
+    } catch {
+      setQqCopied(false);
+    }
   }, []);
 
   if (!open) return null;
@@ -74,9 +113,11 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
 
         {/* App icon area */}
         <div className="flex flex-col items-center text-center">
-          <div className="w-16 h-16 rounded-2xl bg-accent/15 flex items-center justify-center mb-4">
-            <span className="text-3xl font-bold text-accent">C</span>
-          </div>
+          <img
+            src="/default-icon.png"
+            alt="Cyan Notepad"
+            className="w-16 h-16 rounded-2xl object-cover mb-4"
+          />
 
           {/* App name - clickable GitHub link */}
           <button
@@ -96,15 +137,6 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
 
         {/* Update check area */}
         <div className="mt-4 px-3 py-2.5 rounded-lg bg-bg-primary">
-          {updateStatus === "idle" && (
-            <button
-              onClick={checkUpdate}
-              className="w-full flex items-center justify-between text-sm hover:text-accent transition-colors"
-            >
-              <span className="text-text-muted">{t(lang, "checkUpdate")}</span>
-              <RefreshCw size={14} className="text-text-muted" />
-            </button>
-          )}
           {updateStatus === "checking" && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-muted">{t(lang, "checkingUpdate")}</span>
@@ -161,6 +193,31 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             <span className="text-accent text-xs flex items-center gap-1">
               GitHub
               <ExternalLink size={12} />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openBlogPage}
+            className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-hover transition-colors cursor-pointer"
+          >
+            <span className="text-text-muted">{t(lang, "personalBlog")}</span>
+            <span className="text-accent text-xs flex items-center gap-1">
+              pyts1n9.github.io
+              <ExternalLink size={12} />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void copyQqGroupNumber()}
+            title={t(lang, "copyQqGroupNumber")}
+            className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-hover transition-colors cursor-pointer"
+          >
+            <span className="text-text-muted">{t(lang, "qqDiscussionGroup")}</span>
+            <span className="text-accent text-xs flex items-center gap-1">
+              {QQ_GROUP_NUMBER}
+              {qqCopied ? <Check size={12} /> : <Copy size={12} />}
             </span>
           </button>
 
