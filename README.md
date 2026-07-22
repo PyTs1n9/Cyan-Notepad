@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="./src-tauri/icons/icon.png" width="155" alt="Cyan Notepad 图标">
+<img src="./src-tauri/icons/icon.ico" width="155" alt="Cyan Notepad 图标">
 
 # Cyan Notepad 青の记事本
 
