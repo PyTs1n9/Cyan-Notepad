@@ -1,6 +1,6 @@
 [package]
 name = "cyan-notepad"
-version = "0.4.0"
+version = "0.4.1"
 description = "Cyan Notepad - A lightweight note-taking app built with Tauri"
 authors = ["PyTs1N9"]
 edition = "2021"

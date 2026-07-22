@@ -52,10 +52,18 @@ jobs:
           releaseName: 'Cyan Notepad v__VERSION__'
           releaseBody: |
             ## 公告：
-            - QQ讨论群：  902898359
+            ## 新增 | New
+
+            ## 改进 | Improved
+
+            ## 修复 | Fixed
+
+            ## 删除 | Removed
+
+            ## 问题 | IssuesQQ群：  902898359
             - 问题反馈邮箱：34339329934@qq.com
-            - v0.4 为最终版本，后续将不再更新，建议使用 v0.4 版本
-            - 如有严重bug可按模板提出issues，会merge到v0.4.x中
+            - v0.4.1 为最终版本，后续将不再更新，建议使用 v0.4.1 版本。
+            - 如果有严重bug，会修复于v0.4.x版本中。
 
             ## 下载 | Download
 
