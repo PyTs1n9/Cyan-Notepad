@@ -4,11 +4,11 @@
 
 <div align="center">
 
-<img src="./src-tauri/icons/icon.png" width="120" alt="Cyan Notepad 图标">
+<img src="./src-tauri/icons/icon.png" width="155" alt="Cyan Notepad 图标">
 
 # Cyan Notepad 青の记事本
 
-记事本仅 <strong><em><font color="#1f6feb">12MB</font></em></strong>，轻量级桌面应用<br>
+记事本仅 <strong><em><font color="#1f6feb">13MB</font></em></strong>，轻量级桌面应用<br>
 QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br>
 本地优先的MD记事、待办、画布与在线协作工作台<br>
 基于 **Tauri v2 + React 19 + TypeScript** 构建
@@ -33,7 +33,7 @@ QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br
 
 Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 记事、待办清单、自由画布、桌面便签和可选的在线协作空间放在同一个应用中：本地内容无需登录即可使用，联网工作台则用于跨设备保存和多人协作。
 
-当前版本为 **v0.3.5**。本地数据默认保存在应用数据目录；启用在线工作台后，账户、工作台元数据和云文档会通过你配置的 Supabase 与协作服务同步。
+当前版本为 **v0.4**。本地数据默认保存在应用数据目录；启用在线工作台后，账户、工作台元数据和云文档会通过你配置的 Supabase 与协作服务同步。
 
 ## 功能特点
 
