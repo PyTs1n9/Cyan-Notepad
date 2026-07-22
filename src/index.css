@@ -153,6 +153,47 @@
   background-color: transparent;
 }
 
+.canvas-rich-text-content,
+.canvas-rich-text-editor {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.canvas-rich-text-content--centered {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+.canvas-rich-text-content :where(p, h1, h2, h3, blockquote),
+.canvas-rich-text-editor :where(p, h1, h2, h3, blockquote) {
+  margin: 0;
+}
+
+.canvas-rich-text-content :where(p + p, h1 + p, h2 + p, h3 + p),
+.canvas-rich-text-editor :where(p + p, h1 + p, h2 + p, h3 + p) {
+  margin-top: 0.35em;
+}
+
+.canvas-rich-text-content h1,
+.canvas-rich-text-editor h1 { font-size: 1.7em; font-weight: 700; line-height: 1.15; }
+.canvas-rich-text-content h2,
+.canvas-rich-text-editor h2 { font-size: 1.4em; font-weight: 650; line-height: 1.2; }
+.canvas-rich-text-content h3,
+.canvas-rich-text-editor h3 { font-size: 1.18em; font-weight: 600; line-height: 1.25; }
+.canvas-rich-text-content :where(ul, ol),
+.canvas-rich-text-editor :where(ul, ol) { margin: 0.25em 0; padding-left: 1.4em; }
+.canvas-rich-text-content ul,
+.canvas-rich-text-editor ul { list-style: disc; }
+.canvas-rich-text-content ol,
+.canvas-rich-text-editor ol { list-style: decimal; }
+.canvas-rich-text-content blockquote,
+.canvas-rich-text-editor blockquote { border-left: 3px solid var(--color-accent); padding-left: 0.6em; color: var(--color-text-secondary); }
+.canvas-rich-text-content mark,
+.canvas-rich-text-editor mark { border-radius: 0.18em; padding: 0 0.12em; }
+.canvas-rich-text-editor .ProseMirror { min-height: 100%; }
+
 /* Canvas switcher — compact when idle, expressive when opened. */
 .canvas-switcher {
   isolation: isolate;
@@ -735,6 +776,192 @@ body.sticky-body {
   .app-modal-panel {
     animation: none;
   }
+}
+
+/* Theme-aware Markdown fenced code blocks. */
+.markdown-preview {
+  line-height: 1.7;
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview li,
+.markdown-preview blockquote {
+  margin-block: 0;
+  line-height: inherit;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 1.5em;
+}
+
+.markdown-code-block {
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--color-bg-secondary) 90%, var(--color-bg-primary));
+  padding: 0;
+  box-shadow: inset 0 1px color-mix(in srgb, white 16%, transparent);
+  line-height: 1.7;
+  tab-size: 4;
+}
+
+.markdown-code-language {
+  position: sticky;
+  left: 0;
+  display: flex;
+  height: 2.2667em;
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  background: color-mix(in srgb, var(--color-bg-active) 36%, var(--color-bg-secondary));
+  color: color-mix(in srgb, var(--color-accent) 72%, var(--color-text-primary));
+  padding: 0 1em;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1;
+  user-select: none;
+}
+
+.markdown-code-block > code.markdown-code {
+  display: block;
+  min-width: max-content;
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--color-text-primary);
+  padding: 0.85em 1em !important;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 1em;
+  line-height: 1.7;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-name,
+.hljs-type,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: var(--color-success);
+}
+
+.hljs-number,
+.hljs-meta,
+.hljs-built_in,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--color-warning);
+}
+
+.hljs-regexp,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-deletion {
+  color: var(--color-danger);
+}
+
+.hljs-params,
+.hljs-punctuation,
+.hljs-operator {
+  color: var(--color-text-secondary);
+}
+
+.hljs-subst {
+  color: inherit;
+}
+
+.hljs-addition {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+}
+
+.hljs-deletion {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}
+
+.markdown-blank-lines {
+  display: block;
+  height: calc(var(--markdown-blank-line-count, 0) * 1lh);
+  min-height: 0;
+  pointer-events: none;
+}
+
+/* GFM task lists: remove the ordinary list marker and use theme-aware checks. */
+ul:has(> li > .markdown-task-checkbox),
+ul:has(> li > p:first-child > .markdown-task-checkbox) {
+  list-style: none;
+  padding-left: 1.5rem;
+}
+
+li:has(> .markdown-task-checkbox),
+li:has(> p:first-child > .markdown-task-checkbox) {
+  margin-left: 0 !important;
+  list-style: none;
+}
+
+.markdown-task-checkbox {
+  display: inline-grid;
+  width: 1rem;
+  height: 1rem;
+  margin: 0 0.5rem 0 0;
+  place-content: center;
+  vertical-align: -0.14rem;
+  appearance: none;
+  border: 1.5px solid color-mix(in srgb, var(--color-text-muted) 75%, var(--color-border));
+  border-radius: 0.28rem;
+  background: color-mix(in srgb, var(--color-bg-primary) 88%, var(--color-bg-secondary));
+  opacity: 1;
+}
+
+.markdown-task-checkbox::before {
+  width: 0.28rem;
+  height: 0.52rem;
+  border: solid var(--color-bg-primary);
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: translateY(-0.05rem) rotate(45deg) scale(0);
+  transition: transform 120ms ease;
+}
+
+.markdown-task-checkbox:checked {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-text-primary));
+  background: color-mix(in srgb, var(--color-accent) 45%, var(--color-text-primary));
+}
+
+.markdown-task-checkbox:checked::before {
+  transform: translateY(-0.05rem) rotate(45deg) scale(1);
+}
+
+li:has(> .markdown-task-checkbox:checked),
+li:has(> p:first-child > .markdown-task-checkbox:checked) {
+  color: var(--color-text-muted);
 }
 
 .sticky-mode {

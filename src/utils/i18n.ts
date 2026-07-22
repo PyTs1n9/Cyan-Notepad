@@ -7,8 +7,23 @@ type TranslationKeys = {
   canvas: string;
   canvasSelect: string;
   canvasPan: string;
+  canvasInsert: string;
+  canvasDraw: string;
+  canvasArrange: string;
+  canvasView: string;
+  canvasStyle: string;
   canvasAddImage: string;
   canvasAddText: string;
+  canvasDoodlePen: string;
+  canvasDoodleEraser: string;
+  canvasDoodleColor: string;
+  canvasDoodleWidth: string;
+  canvasEraserShape: string;
+  canvasEraserCircle: string;
+  canvasEraserSquare: string;
+  canvasEraserSize: string;
+  canvasEraserOpacity: string;
+  canvasClearDoodles: string;
   canvasZoomOut: string;
   canvasZoomIn: string;
   canvasResetZoom: string;
@@ -38,6 +53,43 @@ type TranslationKeys = {
   canvasDeleteCanvas: string;
   canvasOpenList: string;
   canvasCloseList: string;
+  canvasNodeText: string;
+  canvasShapeRectangle: string;
+  canvasShapeRounded: string;
+  canvasShapeEllipse: string;
+  canvasShapeDiamond: string;
+  canvasConnectorStraight: string;
+  canvasConnectorOrthogonal: string;
+  canvasDuplicate: string;
+  canvasAlignHorizontal: string;
+  canvasAlignVertical: string;
+  canvasShapeFill: string;
+  canvasShapeStroke: string;
+  canvasFill: string;
+  canvasStroke: string;
+  canvasTextStyle: string;
+  canvasParagraph: string;
+  canvasFontSize: string;
+  canvasFontFamily: string;
+  canvasDefaultFont: string;
+  canvasBold: string;
+  canvasItalic: string;
+  canvasUnderline: string;
+  canvasStrike: string;
+  canvasHighlight: string;
+  canvasTextColor: string;
+  canvasBulletList: string;
+  canvasOrderedList: string;
+  canvasQuote: string;
+  canvasAlignLeft: string;
+  canvasAlignCenter: string;
+  canvasAlignRight: string;
+  canvasDone: string;
+  canvasOpenTile: string;
+  canvasTile: string;
+  canvasTileLoading: string;
+  canvasPinTile: string;
+  canvasUnpinTile: string;
   explorer: string;
   newNote: string;
   importMd: string;
@@ -112,7 +164,6 @@ type TranslationKeys = {
   renameWorkspace: string;
   saveWorkspaceName: string;
   inviteCode: string;
-  inviteCodeHint: string;
   inviteRole: string;
   manageWorkspace: string;
   shareWorkspace: string;
@@ -123,6 +174,27 @@ type TranslationKeys = {
   newCloudDocumentHint: string;
   renameCloudDocument: string;
   cloudDocumentName: string;
+  cloudDocumentDraft: string;
+  cloudDocumentScheduled: string;
+  cloudDocumentPublished: string;
+  manageCloudDocumentPublication: string;
+  publishCloudDocumentNow: string;
+  scheduleCloudDocument: string;
+  rescheduleCloudDocument: string;
+  cancelScheduledPublish: string;
+  scheduledPublishTime: string;
+  scheduledPublishHour: string;
+  scheduledPublishMinute: string;
+  previousMonth: string;
+  nextMonth: string;
+  scheduledPublishFuture: string;
+  cloudDocumentPublishUnsynced: string;
+  cloudDocumentPublicationHint: string;
+  cloudDocumentPublishedHint: string;
+  unpublishCloudDocument: string;
+  cloudDocumentUnpublishWarning: string;
+  confirmUnpublishCloudDocument: string;
+  keepCloudDocumentPublished: string;
   workspaceDocuments: string;
   noWorkspaces: string;
   noCloudDocuments: string;
@@ -145,8 +217,26 @@ type TranslationKeys = {
   collaborationDisconnected: string;
   collaborationError: string;
   collaborationNotConfigured: string;
+  collaborationNetworkGood: string;
+  collaborationNetworkFair: string;
+  collaborationNetworkSlow: string;
+  collaborationNetworkUnstable: string;
+  collaborationNetworkHistory: string;
+  collaborationNetworkCurrent: string;
+  collaborationNetworkMinimum: string;
+  collaborationNetworkMaximum: string;
+  collaborationNetworkAverage: string;
+  collaborationNetworkP95: string;
+  collaborationSyncBacklog: string;
+  collaborationNetworkThresholds: string;
+  collaborationNetworkWaiting: string;
+  collaborationLocalProtection: string;
+  collaborationSyncPending: string;
+  collaborationLocalFallback: string;
   onlineUsers: string;
   userHighlights: string;
+  synchronizedScroll: string;
+  independentScroll: string;
   readOnly: string;
   cloudSavedRealtime: string;
   workspaceBackendNotReady: string;
@@ -346,8 +436,23 @@ const zh: TranslationKeys = {
   canvas: "画布",
   canvasSelect: "选择",
   canvasPan: "平移",
+  canvasInsert: "插入",
+  canvasDraw: "绘制",
+  canvasArrange: "排列",
+  canvasView: "视图",
+  canvasStyle: "样式",
   canvasAddImage: "添加图片",
   canvasAddText: "添加文字",
+  canvasDoodlePen: "涂鸦笔",
+  canvasDoodleEraser: "涂鸦橡皮擦",
+  canvasDoodleColor: "画笔颜色",
+  canvasDoodleWidth: "画笔粗细",
+  canvasEraserShape: "橡皮擦形状",
+  canvasEraserCircle: "圆形",
+  canvasEraserSquare: "方形",
+  canvasEraserSize: "橡皮擦大小",
+  canvasEraserOpacity: "橡皮擦透明度",
+  canvasClearDoodles: "清空本页涂鸦",
   canvasZoomOut: "缩小",
   canvasZoomIn: "放大",
   canvasResetZoom: "重置缩放",
@@ -360,14 +465,14 @@ const zh: TranslationKeys = {
   canvasSaved: "已保存",
   canvasSaving: "保存中…",
   canvasEmpty: "画布还是空的",
-  canvasPasteHint: "粘贴截图、拖入图片，或使用工具栏添加文字",
+  canvasPasteHint: "粘贴截图、拖入图片，或用工具栏添加文字与结构节点",
   canvasLoading: "正在加载画布…",
   canvasGuideTitle: "画布使用说明",
-  canvasGuideSelect: "选择：拖动对象，拖拽右下角调整大小",
+  canvasGuideSelect: "选择：拖动对象，Shift 多选；拖拽右下角调整大小",
   canvasGuidePan: "平移：选择“平移”工具，或按住空格拖动",
-  canvasGuideAdd: "添加：粘贴/拖入图片，或点击“添加图片”和“添加文字”",
+  canvasGuideAdd: "添加：插入图片、文字或结构节点；连接工具依次点击两个节点",
   canvasGuideZoom: "缩放：按住 Ctrl/Cmd + 滚轮缩放画布；选中图片调整图片大小，选中文字调整字号",
-  canvasGuideEdit: "编辑：双击文字进入编辑；Delete 删除，Ctrl/Cmd+Z 撤销",
+  canvasGuideEdit: "编辑：双击文字或节点打开富文本工具栏；选中对象后可用 Ctrl/Cmd+X、C、V 剪切、复制和粘贴",
   canvasGuideOverview: "小地图：右下角查看所有对象位置与当前视口，点击对象可居中跟踪",
   canvasOverview: "画布总览",
   canvasNew: "新建画布",
@@ -377,6 +482,43 @@ const zh: TranslationKeys = {
   canvasDeleteCanvas: "删除画布",
   canvasOpenList: "展开画布列表",
   canvasCloseList: "收起画布列表",
+  canvasNodeText: "节点",
+  canvasShapeRectangle: "矩形节点",
+  canvasShapeRounded: "圆角节点",
+  canvasShapeEllipse: "椭圆节点",
+  canvasShapeDiamond: "判断节点",
+  canvasConnectorStraight: "直线箭头",
+  canvasConnectorOrthogonal: "折线箭头",
+  canvasDuplicate: "复制所选对象",
+  canvasAlignHorizontal: "水平居中对齐",
+  canvasAlignVertical: "垂直居中对齐",
+  canvasShapeFill: "节点填充色",
+  canvasShapeStroke: "边框或连线颜色",
+  canvasFill: "填充",
+  canvasStroke: "描边",
+  canvasTextStyle: "文字样式",
+  canvasParagraph: "正文",
+  canvasFontSize: "字号",
+  canvasFontFamily: "字体",
+  canvasDefaultFont: "默认字体",
+  canvasBold: "粗体",
+  canvasItalic: "斜体",
+  canvasUnderline: "下划线",
+  canvasStrike: "删除线",
+  canvasHighlight: "高亮",
+  canvasTextColor: "文字颜色",
+  canvasBulletList: "无序列表",
+  canvasOrderedList: "有序列表",
+  canvasQuote: "引用",
+  canvasAlignLeft: "左对齐",
+  canvasAlignCenter: "居中对齐",
+  canvasAlignRight: "右对齐",
+  canvasDone: "完成",
+  canvasOpenTile: "创建画布磁贴",
+  canvasTile: "画布磁贴",
+  canvasTileLoading: "正在加载画布磁贴…",
+  canvasPinTile: "置顶磁贴",
+  canvasUnpinTile: "取消置顶",
   todo: "待办事项",
   notepad: "记事本",
   newNote: "新建笔记",
@@ -452,7 +594,6 @@ const zh: TranslationKeys = {
   renameWorkspace: "修改工作台名称",
   saveWorkspaceName: "保存名称",
   inviteCode: "邀请码",
-  inviteCodeHint: "将邀请码发送给其他用户即可加入",
   inviteRole: "新成员权限",
   manageWorkspace: "管理工作台",
   shareWorkspace: "分享工作台",
@@ -460,13 +601,34 @@ const zh: TranslationKeys = {
   copied: "已复制",
   regenerateInvite: "更换邀请码",
   newCloudDocument: "新建云文档",
-  newCloudDocumentHint: "在当前工作台开始协作",
+  newCloudDocumentHint: "创建草稿并在当前工作台协作",
   renameCloudDocument: "修改文档名",
   cloudDocumentName: "文档名称",
+  cloudDocumentDraft: "草稿",
+  cloudDocumentScheduled: "定时",
+  cloudDocumentPublished: "已发布",
+  manageCloudDocumentPublication: "发布设置",
+  publishCloudDocumentNow: "立即发布",
+  scheduleCloudDocument: "定时发布",
+  rescheduleCloudDocument: "修改发布时间",
+  cancelScheduledPublish: "取消定时",
+  scheduledPublishTime: "发布时间",
+  scheduledPublishHour: "小时",
+  scheduledPublishMinute: "分钟",
+  previousMonth: "上个月",
+  nextMonth: "下个月",
+  scheduledPublishFuture: "请选择未来的发布时间",
+  cloudDocumentPublishUnsynced: "请等待当前修改同步完成后再发布",
+  cloudDocumentPublicationHint: "发布前仅所有者和编辑者可见；发布后访客也可查看。",
+  cloudDocumentPublishedHint: "文档当前已对访客开放。下架后会转回草稿，仅所有者和编辑者可见。",
+  unpublishCloudDocument: "下架为草稿",
+  cloudDocumentUnpublishWarning: "下架后访客将立即失去访问权限，已打开文档的访客也会被断开。确定继续吗？",
+  confirmUnpublishCloudDocument: "确认下架",
+  keepCloudDocumentPublished: "暂不下架",
   workspaceDocuments: "协作文档",
   noWorkspaces: "还没有工作台，创建或加入一个吧",
   noCloudDocuments: "工作台中还没有文档",
-  noCloudDocumentsReadOnly: "你在此工作台中为访客，仅可查看已有文档",
+  noCloudDocumentsReadOnly: "你在此工作台中为访客，仅可查看已发布文档",
   workspaceMembers: "工作台成员",
   roleOwner: "所有者",
   roleEditor: "可编辑",
@@ -485,8 +647,26 @@ const zh: TranslationKeys = {
   collaborationDisconnected: "离线编辑",
   collaborationError: "协作连接失败",
   collaborationNotConfigured: "尚未配置协作服务器地址",
+  collaborationNetworkGood: "网络良好",
+  collaborationNetworkFair: "网络一般",
+  collaborationNetworkSlow: "网络较慢",
+  collaborationNetworkUnstable: "网络不稳定",
+  collaborationNetworkHistory: "网络历史波动",
+  collaborationNetworkCurrent: "当前",
+  collaborationNetworkMinimum: "最低",
+  collaborationNetworkMaximum: "最高",
+  collaborationNetworkAverage: "平均",
+  collaborationNetworkP95: "P95",
+  collaborationSyncBacklog: "同步积压",
+  collaborationNetworkThresholds: "检测阈值",
+  collaborationNetworkWaiting: "等待采样",
+  collaborationLocalProtection: "本地保护",
+  collaborationSyncPending: "等待同步",
+  collaborationLocalFallback: "修改已安全保存在本机，连接恢复后会自动同步",
   onlineUsers: "在线",
   userHighlights: "用户高光",
+  synchronizedScroll: "同步滚动",
+  independentScroll: "独立滚动",
   readOnly: "只读",
   cloudSavedRealtime: "修改会实时保存",
   workspaceBackendNotReady: "工作台数据库尚未初始化，请先在 Supabase SQL Editor 中执行项目提供的迁移脚本。",
@@ -686,8 +866,23 @@ const en: TranslationKeys = {
   canvas: "Canvas",
   canvasSelect: "Select",
   canvasPan: "Pan",
+  canvasInsert: "Insert",
+  canvasDraw: "Draw",
+  canvasArrange: "Arrange",
+  canvasView: "View",
+  canvasStyle: "Style",
   canvasAddImage: "Add image",
   canvasAddText: "Add text",
+  canvasDoodlePen: "Doodle pen",
+  canvasDoodleEraser: "Doodle eraser",
+  canvasDoodleColor: "Pen color",
+  canvasDoodleWidth: "Pen width",
+  canvasEraserShape: "Eraser shape",
+  canvasEraserCircle: "Circle",
+  canvasEraserSquare: "Square",
+  canvasEraserSize: "Eraser size",
+  canvasEraserOpacity: "Eraser opacity",
+  canvasClearDoodles: "Clear page doodles",
   canvasZoomOut: "Zoom out",
   canvasZoomIn: "Zoom in",
   canvasResetZoom: "Reset zoom",
@@ -700,14 +895,14 @@ const en: TranslationKeys = {
   canvasSaved: "Saved",
   canvasSaving: "Saving…",
   canvasEmpty: "Your canvas is empty",
-  canvasPasteHint: "Paste a screenshot, drop an image, or add text from the toolbar",
+  canvasPasteHint: "Paste a screenshot, drop an image, or add text and structure nodes",
   canvasLoading: "Loading canvas…",
   canvasGuideTitle: "Canvas guide",
-  canvasGuideSelect: "Select: drag an object, or drag its bottom-right handle to resize",
+  canvasGuideSelect: "Select: drag an object, Shift-click for multi-select, or resize from its bottom-right handle",
   canvasGuidePan: "Pan: choose Pan, or hold Space while dragging",
-  canvasGuideAdd: "Add: paste/drop an image, or use Add image and Add text",
+  canvasGuideAdd: "Add: insert images, text, or structure nodes; choose a connector and click two nodes",
   canvasGuideZoom: "Zoom: hold Ctrl/Cmd + wheel for the canvas; wheel a selected image to resize it or selected text to change its size",
-  canvasGuideEdit: "Edit: double-click text to edit; Delete removes it, Ctrl/Cmd+Z undoes",
+  canvasGuideEdit: "Edit: double-click text or a node for rich text; select objects and use Ctrl/Cmd+X, C, or V to cut, copy, and paste",
   canvasGuideOverview: "Minimap: see all object positions and the current viewport in the lower-right; click an object to center on it",
   canvasOverview: "Canvas overview",
   canvasNew: "New canvas",
@@ -717,6 +912,43 @@ const en: TranslationKeys = {
   canvasDeleteCanvas: "Delete canvas",
   canvasOpenList: "Open canvas list",
   canvasCloseList: "Close canvas list",
+  canvasNodeText: "Node",
+  canvasShapeRectangle: "Rectangle node",
+  canvasShapeRounded: "Rounded node",
+  canvasShapeEllipse: "Ellipse node",
+  canvasShapeDiamond: "Decision node",
+  canvasConnectorStraight: "Straight arrow",
+  canvasConnectorOrthogonal: "Orthogonal arrow",
+  canvasDuplicate: "Duplicate selection",
+  canvasAlignHorizontal: "Align horizontal centers",
+  canvasAlignVertical: "Align vertical centers",
+  canvasShapeFill: "Node fill color",
+  canvasShapeStroke: "Border or connector color",
+  canvasFill: "Fill",
+  canvasStroke: "Stroke",
+  canvasTextStyle: "Text style",
+  canvasParagraph: "Paragraph",
+  canvasFontSize: "Font size",
+  canvasFontFamily: "Font family",
+  canvasDefaultFont: "Default font",
+  canvasBold: "Bold",
+  canvasItalic: "Italic",
+  canvasUnderline: "Underline",
+  canvasStrike: "Strikethrough",
+  canvasHighlight: "Highlight",
+  canvasTextColor: "Text color",
+  canvasBulletList: "Bullet list",
+  canvasOrderedList: "Ordered list",
+  canvasQuote: "Blockquote",
+  canvasAlignLeft: "Align left",
+  canvasAlignCenter: "Align center",
+  canvasAlignRight: "Align right",
+  canvasDone: "Done",
+  canvasOpenTile: "Open canvas tile",
+  canvasTile: "Canvas tile",
+  canvasTileLoading: "Loading canvas tile…",
+  canvasPinTile: "Pin tile",
+  canvasUnpinTile: "Unpin tile",
   todo: "Todo List",
   notepad: "Notepad",
   newNote: "New Note",
@@ -792,7 +1024,6 @@ const en: TranslationKeys = {
   renameWorkspace: "Rename Workspace",
   saveWorkspaceName: "Save name",
   inviteCode: "Invite code",
-  inviteCodeHint: "Share this code with people you want to invite",
   inviteRole: "New member role",
   manageWorkspace: "Manage Workspace",
   shareWorkspace: "Share Workspace",
@@ -800,13 +1031,34 @@ const en: TranslationKeys = {
   copied: "Copied",
   regenerateInvite: "Regenerate code",
   newCloudDocument: "New Cloud Document",
-  newCloudDocumentHint: "Start collaborating in this workspace",
+  newCloudDocumentHint: "Create a draft and collaborate in this workspace",
   renameCloudDocument: "Rename Document",
   cloudDocumentName: "Document name",
+  cloudDocumentDraft: "Draft",
+  cloudDocumentScheduled: "Scheduled",
+  cloudDocumentPublished: "Published",
+  manageCloudDocumentPublication: "Publication settings",
+  publishCloudDocumentNow: "Publish now",
+  scheduleCloudDocument: "Schedule publication",
+  rescheduleCloudDocument: "Change publish time",
+  cancelScheduledPublish: "Cancel schedule",
+  scheduledPublishTime: "Publish time",
+  scheduledPublishHour: "Hour",
+  scheduledPublishMinute: "Minute",
+  previousMonth: "Previous month",
+  nextMonth: "Next month",
+  scheduledPublishFuture: "Choose a publish time in the future",
+  cloudDocumentPublishUnsynced: "Wait for the current changes to finish syncing before publishing",
+  cloudDocumentPublicationHint: "Before publication, only owners and editors can see it. Viewers gain access after publication.",
+  cloudDocumentPublishedHint: "This document is visible to viewers. Unpublishing returns it to a draft visible only to owners and editors.",
+  unpublishCloudDocument: "Unpublish to draft",
+  cloudDocumentUnpublishWarning: "Viewers will lose access immediately, including anyone who already has the document open. Continue?",
+  confirmUnpublishCloudDocument: "Confirm unpublish",
+  keepCloudDocumentPublished: "Keep published",
   workspaceDocuments: "Shared documents",
   noWorkspaces: "No workspace yet. Create or join one.",
   noCloudDocuments: "No documents in this workspace",
-  noCloudDocumentsReadOnly: "You are a viewer in this workspace and can only read existing documents",
+  noCloudDocumentsReadOnly: "You are a viewer in this workspace and can only read published documents",
   workspaceMembers: "Workspace Members",
   roleOwner: "Owner",
   roleEditor: "Editor",
@@ -825,8 +1077,26 @@ const en: TranslationKeys = {
   collaborationDisconnected: "Editing offline",
   collaborationError: "Collaboration failed",
   collaborationNotConfigured: "Collaboration server URL is not configured",
+  collaborationNetworkGood: "Good network",
+  collaborationNetworkFair: "Fair network",
+  collaborationNetworkSlow: "Slow network",
+  collaborationNetworkUnstable: "Unstable network",
+  collaborationNetworkHistory: "Network history",
+  collaborationNetworkCurrent: "Current",
+  collaborationNetworkMinimum: "Minimum",
+  collaborationNetworkMaximum: "Maximum",
+  collaborationNetworkAverage: "Average",
+  collaborationNetworkP95: "P95",
+  collaborationSyncBacklog: "Sync backlog",
+  collaborationNetworkThresholds: "Thresholds",
+  collaborationNetworkWaiting: "Waiting for samples",
+  collaborationLocalProtection: "Local protection",
+  collaborationSyncPending: "Waiting to sync",
+  collaborationLocalFallback: "Changes are safe on this device and will sync when the connection recovers",
   onlineUsers: "Online",
   userHighlights: "User highlights",
+  synchronizedScroll: "Synchronized scroll",
+  independentScroll: "Independent scroll",
   readOnly: "Read only",
   cloudSavedRealtime: "Changes are saved in real time",
   workspaceBackendNotReady: "The workspace database is not initialized. Run the provided migration in the Supabase SQL Editor first.",

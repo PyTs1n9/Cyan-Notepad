@@ -8,7 +8,9 @@
 6. Paste and run `migrations/202607200001_realtime_profiles.sql` once.
 7. Paste and run `migrations/202607200002_sync_auth_profiles.sql` once.
 8. Paste and run `migrations/202607200003_workspace_removal_notifications.sql` once.
-9. Confirm that `profiles`, `workspaces`, `workspace_members`, `workspace_notifications`, `documents`, and `document_states` exist.
-10. Never expose the `service_role` key to the desktop client. It is only used by the collaboration server.
+9. Paste and run `migrations/202607220001_scheduled_document_publishing.sql` once.
+10. Paste and run `migrations/202607220002_document_unpublishing.sql` once.
+11. Confirm that `profiles`, `workspaces`, `workspace_members`, `workspace_notifications`, `documents`, and `document_states` exist.
+12. Never expose the `service_role` key to the desktop client. It is only used by the collaboration server.
 
-The migrations enable RLS and Realtime profile refreshes, add explicit grants for projects with “Automatically expose new tables” disabled, and create invitation RPC functions.
+The migrations enable RLS and Realtime refreshes, add explicit grants for projects with “Automatically expose new tables” disabled, and create invitation and document-publication RPC functions.

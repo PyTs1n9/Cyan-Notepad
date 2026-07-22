@@ -1,10 +1,40 @@
 import { marked, type Tokens } from "marked";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import css from "highlight.js/lib/languages/css";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import powershell from "highlight.js/lib/languages/powershell";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { getDataDirectory, resolveImageAttachment } from "@/utils/storage";
 
 const markdownRenderer = new marked.Renderer();
+
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("c", c);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("powershell", powershell);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("xml", xml);
 
 function escapeHtml(text: string): string {
   return text
@@ -15,9 +45,70 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function getCodeLanguage(lang?: string): string {
+  return lang?.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
+}
+
+const CODE_LANGUAGE_LABELS: Record<string, string> = {
+  bash: "Bash",
+  c: "C",
+  cpp: "C++",
+  "c++": "C++",
+  cs: "C#",
+  csharp: "C#",
+  css: "CSS",
+  html: "HTML",
+  java: "Java",
+  javascript: "JavaScript",
+  js: "JavaScript",
+  json: "JSON",
+  jsx: "JSX",
+  markdown: "Markdown",
+  md: "Markdown",
+  powershell: "PowerShell",
+  ps1: "PowerShell",
+  py: "Python",
+  python: "Python",
+  rust: "Rust",
+  rs: "Rust",
+  shell: "Shell",
+  sh: "Shell",
+  sql: "SQL",
+  ts: "TypeScript",
+  tsx: "TSX",
+  typescript: "TypeScript",
+  xml: "XML",
+  yaml: "YAML",
+  yml: "YAML",
+};
+
+function getCodeLanguageLabel(language: string): string {
+  if (!language) return "Code";
+  return CODE_LANGUAGE_LABELS[language]
+    ?? `${language.charAt(0).toUpperCase()}${language.slice(1)}`;
+}
+
+function highlightCode(text: string, language: string): string | null {
+  if (!language || !hljs.getLanguage(language)) return null;
+
+  try {
+    return hljs.highlight(text, { language, ignoreIllegals: true }).value;
+  } catch {
+    return null;
+  }
+}
+
 // Markdown permits raw HTML, but note previews are inserted as HTML. Keep the
 // existing safe behavior while still allowing Markdown-generated <img> tags.
 markdownRenderer.html = ({ text }: Tokens.HTML): string => escapeHtml(text);
+markdownRenderer.space = ({ raw }: Tokens.Space): string => {
+  const blankLineCount = Math.max(0, (raw.match(/\n/g)?.length ?? 0) - 1);
+  if (blankLineCount === 0) return "";
+  return `<span class="markdown-blank-lines" style="--markdown-blank-line-count:${blankLineCount}" aria-hidden="true"></span>\n`;
+};
+markdownRenderer.checkbox = ({ checked }: Tokens.Checkbox): string => {
+  return `<input class="markdown-task-checkbox"${checked ? " checked" : ""} disabled type="checkbox">`;
+};
 markdownRenderer.image = ({ href, title, text }: Tokens.Image): string => {
   const marker = /#attachment=([^#]+)$/i.exec(href);
   const src = marker ? href.slice(0, marker.index) : href;
@@ -27,6 +118,18 @@ markdownRenderer.image = ({ href, title, text }: Tokens.Image): string => {
     attributes.push(`data-attachment-src="attachment://${escapeHtml(decodeUrl(marker[1]))}"`);
   }
   return `<img ${attributes.join(" ")}>`;
+};
+markdownRenderer.code = ({ text, lang }: Tokens.Code): string => {
+  const language = getCodeLanguage(lang);
+  const highlighted = highlightCode(text, language);
+  const languageClass = /^[a-z0-9_+#.-]+$/i.test(language)
+    ? ` language-${escapeHtml(language)}`
+    : "";
+  const highlightClass = highlighted ? " hljs" : "";
+  const code = highlighted ?? escapeHtml(text);
+  const languageLabel = escapeHtml(getCodeLanguageLabel(language));
+
+  return `<pre class="markdown-code-block"><span class="markdown-code-language">${languageLabel}</span><code class="markdown-code${highlightClass}${languageClass}">${code}</code></pre>\n`;
 };
 
 const IMAGE_MARKDOWN_PATTERN = /!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]+\)))?\s*\)/g;
@@ -190,10 +293,50 @@ export async function renderMarkdown(content: string): Promise<string> {
   return typeof html === "string" ? html : await html;
 }
 
+function highlightStoredHtmlCodeBlocks(html: string): string {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  container.querySelectorAll("pre > code").forEach((code) => {
+    const languageClass = Array.from(code.classList).find((name) => name.startsWith("language-"));
+    const language = languageClass?.slice("language-".length).toLowerCase() ?? "";
+    const highlighted = highlightCode(code.textContent ?? "", language);
+
+    const block = code.parentElement;
+    block?.classList.add("markdown-code-block");
+    if (block && !block.querySelector(":scope > .markdown-code-language")) {
+      const languageLabel = document.createElement("span");
+      languageLabel.className = "markdown-code-language";
+      languageLabel.textContent = getCodeLanguageLabel(language);
+      block.insertBefore(languageLabel, code);
+    }
+    code.classList.add("markdown-code");
+    if (highlighted) {
+      code.innerHTML = highlighted;
+      code.classList.add("hljs");
+    }
+  });
+
+  return container.innerHTML;
+}
+
+export function stripMarkdownSyntaxHighlighting(html: string): string {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  container.querySelectorAll("code.hljs").forEach((code) => {
+    code.replaceChildren(document.createTextNode(code.textContent ?? ""));
+    code.classList.remove("hljs");
+  });
+
+  return container.innerHTML;
+}
+
 function isHtmlContent(content: string): boolean {
   return /<[a-zA-Z][\s\S]*>/.test(content);
 }
 
 export async function renderStoredNoteContent(content: string): Promise<string> {
-  return isHtmlContent(content) ? resolveHtmlImages(content) : renderMarkdown(content);
+  if (!isHtmlContent(content)) return renderMarkdown(content);
+  return highlightStoredHtmlCodeBlocks(await resolveHtmlImages(content));
 }

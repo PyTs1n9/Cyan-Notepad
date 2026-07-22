@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as Y from "yjs";
 
 type WorkspaceRole = "owner" | "editor" | "viewer";
+type DocumentPublicationStatus = "draft" | "scheduled" | "published";
 
 interface ConnectionContext {
   userId: string;
@@ -27,6 +28,104 @@ const port = Number(process.env.PORT || 1234);
 const admin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+interface ScheduledDocumentRow {
+  id: string;
+  scheduled_publish_at: string;
+}
+
+interface PublicationChangeRow {
+  id: string;
+  workspace_id: string;
+  publication_status: DocumentPublicationStatus;
+}
+
+interface ScheduledPublicationTimer {
+  scheduledAt: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const PUBLICATION_DISCOVERY_INTERVAL_MS = 5_000;
+const PUBLICATION_SCHEDULING_HORIZON_MS = 60_000;
+const scheduledPublicationTimers = new Map<string, ScheduledPublicationTimer>();
+let publicationSweepRunning = false;
+
+async function publishScheduledDocument(documentId: string): Promise<void> {
+  const publishedAt = new Date().toISOString();
+  const { data, error } = await admin
+    .from("documents")
+    .update({
+      publication_status: "published" satisfies DocumentPublicationStatus,
+      scheduled_publish_at: null,
+      published_at: publishedAt,
+    })
+    .eq("id", documentId)
+    .eq("publication_status", "scheduled" satisfies DocumentPublicationStatus)
+    .lte("scheduled_publish_at", publishedAt)
+    .select("id");
+  if (error) throw error;
+  if (data && data.length > 0) console.log(`Published scheduled cloud document ${documentId}`);
+}
+
+function schedulePublicationTimer(row: ScheduledDocumentRow): void {
+  const scheduledAt = Date.parse(row.scheduled_publish_at);
+  if (!Number.isFinite(scheduledAt)) return;
+  const existing = scheduledPublicationTimers.get(row.id);
+  if (existing?.scheduledAt === scheduledAt) return;
+  if (existing) clearTimeout(existing.timer);
+
+  const delay = Math.max(20, scheduledAt - Date.now() + 20);
+  const timer = setTimeout(() => {
+    scheduledPublicationTimers.delete(row.id);
+    void publishScheduledDocument(row.id).catch((error) => {
+      console.error(`Failed to publish scheduled cloud document ${row.id}:`, error);
+    });
+  }, delay);
+  scheduledPublicationTimers.set(row.id, { scheduledAt, timer });
+}
+
+async function synchronizePublicationSchedule(): Promise<void> {
+  if (publicationSweepRunning) return;
+  publicationSweepRunning = true;
+  try {
+    const publishedAt = new Date().toISOString();
+    const { data: publishedDocuments, error: publishError } = await admin
+      .from("documents")
+      .update({
+        publication_status: "published" satisfies DocumentPublicationStatus,
+        scheduled_publish_at: null,
+        published_at: publishedAt,
+      })
+      .eq("publication_status", "scheduled" satisfies DocumentPublicationStatus)
+      .lte("scheduled_publish_at", publishedAt)
+      .select("id");
+    if (publishError) throw publishError;
+    if (publishedDocuments && publishedDocuments.length > 0) {
+      console.log(`Published ${publishedDocuments.length} overdue cloud document(s)`);
+    }
+
+    const horizon = new Date(Date.now() + PUBLICATION_SCHEDULING_HORIZON_MS).toISOString();
+    const { data, error: discoveryError } = await admin
+      .from("documents")
+      .select("id, scheduled_publish_at")
+      .eq("publication_status", "scheduled" satisfies DocumentPublicationStatus)
+      .lte("scheduled_publish_at", horizon)
+      .order("scheduled_publish_at", { ascending: true });
+    if (discoveryError) throw discoveryError;
+
+    const upcomingDocuments = (data ?? []) as ScheduledDocumentRow[];
+    const upcomingIds = new Set(upcomingDocuments.map((row) => row.id));
+    for (const [documentId, scheduledTimer] of scheduledPublicationTimers) {
+      if (upcomingIds.has(documentId)) continue;
+      clearTimeout(scheduledTimer.timer);
+      scheduledPublicationTimers.delete(documentId);
+    }
+    upcomingDocuments.forEach(schedulePublicationTimer);
+  } catch (error) {
+    console.error("Failed to synchronize scheduled cloud documents:", error);
+  } finally {
+    publicationSweepRunning = false;
+  }
+}
 
 function parseRoom(documentName: string): { workspaceId: string; documentId: string } {
   const [workspaceId, documentId, extra] = documentName.split(":");
@@ -100,7 +199,11 @@ const server = new Server<ConnectionContext>({
 
     const [{ data: document, error: documentError }, { data: membership, error: memberError }] =
       await Promise.all([
-        admin.from("documents").select("workspace_id").eq("id", documentId).maybeSingle(),
+        admin
+          .from("documents")
+          .select("workspace_id, publication_status")
+          .eq("id", documentId)
+          .maybeSingle(),
         admin
           .from("workspace_members")
           .select("role")
@@ -115,6 +218,9 @@ const server = new Server<ConnectionContext>({
     }
 
     const role = membership.role as WorkspaceRole;
+    if (role === "viewer" && document.publication_status !== "published") {
+      throw new Error("This document has not been published");
+    }
     connectionConfig.readOnly = role === "viewer";
     return { userId: userData.user.id, workspaceId, documentId, role };
   },
@@ -123,22 +229,57 @@ const server = new Server<ConnectionContext>({
     const { data, error } = await admin.auth.getUser(token);
     if (error || data.user?.id !== context.userId) throw new Error("Invalid refreshed session");
 
-    const { data: membership, error: memberError } = await admin
-      .from("workspace_members")
-      .select("role")
-      .eq("workspace_id", context.workspaceId)
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    if (memberError || !membership) throw memberError || new Error("Workspace access revoked");
+    const [{ data: membership, error: memberError }, { data: document, error: documentError }] =
+      await Promise.all([
+        admin
+          .from("workspace_members")
+          .select("role")
+          .eq("workspace_id", context.workspaceId)
+          .eq("user_id", context.userId)
+          .maybeSingle(),
+        admin
+          .from("documents")
+          .select("workspace_id, publication_status")
+          .eq("id", context.documentId)
+          .maybeSingle(),
+      ]);
+    if (memberError || documentError || !membership || !document || document.workspace_id !== context.workspaceId) {
+      throw memberError || documentError || new Error("Workspace access revoked");
+    }
 
     const role = membership.role as WorkspaceRole;
+    if (role === "viewer" && document.publication_status !== "published") {
+      throw new Error("This document has not been published");
+    }
     connectionConfig.readOnly = role === "viewer";
     return { ...context, role };
   },
 
+  async onStateless({ payload, connection }) {
+    if (payload.length > 256) return;
+    try {
+      const message = JSON.parse(payload) as { type?: string; id?: string };
+      if (
+        message.type !== "cyan-network-ping"
+        || typeof message.id !== "string"
+        || message.id.length > 64
+      ) return;
+      connection.sendStateless(JSON.stringify({
+        type: "cyan-network-pong",
+        id: message.id,
+      }));
+    } catch {
+      // Ignore unrelated stateless payloads. They may be used by future features.
+    }
+  },
+
   async onRequest({ request, response }) {
     if (request.url === "/health") {
-      response.writeHead(200, { "Content-Type": "application/json" });
+      response.writeHead(200, {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+      });
       response.end(JSON.stringify({ ok: true }));
       throw null;
     }
@@ -152,6 +293,37 @@ const server = new Server<ConnectionContext>({
   ],
 });
 
+function subscribeToPublicationAccessChanges(): void {
+  admin
+    .channel("document-publication-access")
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "documents" },
+      (payload) => {
+        const previous = payload.old as Partial<PublicationChangeRow>;
+        const current = payload.new as PublicationChangeRow;
+        if (
+          previous.publication_status !== "published"
+          || current.publication_status !== "draft"
+          || !current.workspace_id
+          || !current.id
+        ) return;
+
+        const documentName = `${current.workspace_id}:${current.id}`;
+        server.hocuspocus.closeConnections(documentName);
+        console.log(`Closed collaboration connections for unpublished cloud document ${current.id}`);
+      },
+    )
+    .subscribe((status, error) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.error(`Publication access Realtime subscription ${status}:`, error);
+      }
+    });
+}
+
 server.listen().then(() => {
   console.log(`Cyan Notepad collaboration server listening on port ${port}`);
+  subscribeToPublicationAccessChanges();
+  void synchronizePublicationSchedule();
+  setInterval(() => { void synchronizePublicationSchedule(); }, PUBLICATION_DISCOVERY_INTERVAL_MS);
 });

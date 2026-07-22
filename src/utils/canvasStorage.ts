@@ -1,7 +1,7 @@
 import { exists, mkdir, readDir, readFile, readTextFile, remove, rename, stat, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
 import type { CanvasBoard, CanvasDocument } from "@/types";
-import { createEmptyCanvasBoard } from "@/types/canvas";
+import { createEmptyCanvasBoard, normalizeCanvasBoard } from "@/types/canvas";
 import { getDataDirectory, getImageTrashDirectory } from "@/utils/storage";
 
 const CANVAS_DIR = "canvas";
@@ -267,7 +267,7 @@ export async function loadCanvasList(): Promise<CanvasDocument[]> {
       updatedAt: now,
     };
     const legacyBoard = (await exists(legacyPath))
-      ? JSON.parse(await readTextFile(legacyPath)) as CanvasBoard
+      ? normalizeCanvasBoard(JSON.parse(await readTextFile(legacyPath)) as CanvasBoard)
       : createEmptyCanvasBoard();
     await saveCanvasBoard(legacyBoard, DEFAULT_CANVAS_ID);
     await saveCanvasList([defaultCanvas]);
@@ -297,14 +297,14 @@ export async function loadCanvasBoard(id = DEFAULT_CANVAS_ID): Promise<CanvasBoa
   try {
     const boardPath = await getCanvasBoardPath(id);
     if (await exists(boardPath)) {
-      return JSON.parse(await readTextFile(boardPath)) as CanvasBoard;
+      return normalizeCanvasBoard(JSON.parse(await readTextFile(boardPath)) as CanvasBoard);
     }
 
     // Keep loading the legacy path for an existing installation while migration is in progress.
     if (safeCanvasId(id) === DEFAULT_CANVAS_ID) {
       const { canvasDir } = await getCanvasDirectories();
       const legacyPath = await join(canvasDir, CANVAS_BOARD_FILE);
-      if (await exists(legacyPath)) return JSON.parse(await readTextFile(legacyPath)) as CanvasBoard;
+      if (await exists(legacyPath)) return normalizeCanvasBoard(JSON.parse(await readTextFile(legacyPath)) as CanvasBoard);
     }
     return null;
   } catch (error) {

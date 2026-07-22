@@ -100,7 +100,7 @@ function htmlToMarkdown(html: string): string {
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>("todo");
+  const [currentView, setCurrentView] = useState<ViewType>("note");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
@@ -634,7 +634,7 @@ export default function App() {
       />
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <ActivityBar
           currentView={currentView}
           onViewChange={setCurrentView}
@@ -666,7 +666,7 @@ export default function App() {
             )}
           </>
         )}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {currentView === "todo"
             ? <TodoView />
             : currentView === "workspace"

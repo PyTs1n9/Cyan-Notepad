@@ -53,9 +53,22 @@ export type ViewType = "todo" | "note" | "canvas" | "workspace";
 
 export type {
   CanvasBoard,
+  CanvasAnchor,
+  CanvasConnectorBinding,
+  CanvasConnectorItem,
+  CanvasConnectorStyle,
   CanvasDocument,
+  CanvasDoodleEraserMark,
+  CanvasDoodleEraserShape,
+  CanvasDoodleItem,
+  CanvasDoodlePoint,
   CanvasImageItem,
   CanvasItem,
+  CanvasNodeItem,
+  CanvasRichTextFields,
+  CanvasRichTextItem,
+  CanvasShapeItem,
+  CanvasShapeType,
   CanvasTextItem,
   CanvasViewport,
 } from "./canvas";

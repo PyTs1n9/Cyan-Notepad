@@ -11,16 +11,22 @@ function cloneBoard(board: CanvasBoard): CanvasBoard {
 interface CanvasState {
   board: CanvasBoard;
   selectedId: string | null;
+  selectedIds: string[];
   loaded: boolean;
   history: CanvasBoard[];
   future: CanvasBoard[];
   loadBoard: (board: CanvasBoard) => void;
   setSelectedId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelectedId: (id: string) => void;
   setViewport: (viewport: CanvasViewport) => void;
   addItem: (item: CanvasItem) => void;
+  addItems: (items: CanvasItem[]) => void;
   updateItem: (id: string, updates: Partial<CanvasItem>) => void;
+  updateItems: (updates: Record<string, Partial<CanvasItem>>) => void;
   moveLayer: (id: string, direction: "up" | "down") => void;
   removeItem: (id: string) => void;
+  removeItems: (ids: string[]) => void;
   clearBoard: () => void;
   undo: () => void;
   redo: () => void;
@@ -37,12 +43,20 @@ function commit(state: CanvasState, board: CanvasBoard) {
 export const useCanvasStore = create<CanvasState>((set) => ({
   board: createEmptyCanvasBoard(),
   selectedId: null,
+  selectedIds: [],
   loaded: false,
   history: [],
   future: [],
 
-  loadBoard: (board) => set({ board: cloneBoard(board), selectedId: null, loaded: true, history: [], future: [] }),
-  setSelectedId: (id) => set({ selectedId: id }),
+  loadBoard: (board) => set({ board: cloneBoard(board), selectedId: null, selectedIds: [], loaded: true, history: [], future: [] }),
+  setSelectedId: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
+  setSelectedIds: (ids) => set({ selectedIds: [...new Set(ids)], selectedId: ids[ids.length - 1] ?? null }),
+  toggleSelectedId: (id) => set((state) => {
+    const selectedIds = state.selectedIds.includes(id)
+      ? state.selectedIds.filter((candidate) => candidate !== id)
+      : [...state.selectedIds, id];
+    return { selectedIds, selectedId: selectedIds[selectedIds.length - 1] ?? null };
+  }),
   setViewport: (viewport) => set((state) => ({
     board: {
       ...state.board,
@@ -57,6 +71,10 @@ export const useCanvasStore = create<CanvasState>((set) => ({
     ...state.board,
     items: [...state.board.items, item],
   })),
+  addItems: (items) => set((state) => {
+    if (items.length === 0) return state;
+    return commit(state, { ...state.board, items: [...state.board.items, ...items] });
+  }),
   updateItem: (id, updates) => set((state) => {
     const item = state.board.items.find((candidate) => candidate.id === id);
     if (!item) return state;
@@ -64,6 +82,15 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       ...state.board,
       items: state.board.items.map((candidate) => (
         candidate.id === id ? { ...candidate, ...updates } as CanvasItem : candidate
+      )),
+    });
+  }),
+  updateItems: (updates) => set((state) => {
+    if (!state.board.items.some((item) => updates[item.id])) return state;
+    return commit(state, {
+      ...state.board,
+      items: state.board.items.map((item) => (
+        updates[item.id] ? { ...item, ...updates[item.id] } as CanvasItem : item
       )),
     });
   }),
@@ -80,14 +107,36 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   }),
   removeItem: (id) => set((state) => {
     if (!state.board.items.some((item) => item.id === id)) return state;
+    const removedIds = new Set([id]);
+    state.board.items.forEach((item) => {
+      if (item.type === "connector" && (item.startBinding?.itemId === id || item.endBinding?.itemId === id)) removedIds.add(item.id);
+    });
+    const selectedIds = state.selectedIds.filter((candidate) => !removedIds.has(candidate));
     return {
-      ...commit(state, { ...state.board, items: state.board.items.filter((item) => item.id !== id) }),
-      selectedId: state.selectedId === id ? null : state.selectedId,
+      ...commit(state, { ...state.board, items: state.board.items.filter((item) => !removedIds.has(item.id)) }),
+      selectedIds,
+      selectedId: selectedIds[selectedIds.length - 1] ?? null,
+    };
+  }),
+  removeItems: (ids) => set((state) => {
+    const idSet = new Set(ids);
+    if (!state.board.items.some((item) => idSet.has(item.id))) return state;
+    state.board.items.forEach((item) => {
+      if (item.type === "connector" && (
+        (item.startBinding && idSet.has(item.startBinding.itemId))
+        || (item.endBinding && idSet.has(item.endBinding.itemId))
+      )) idSet.add(item.id);
+    });
+    const selectedIds = state.selectedIds.filter((candidate) => !idSet.has(candidate));
+    return {
+      ...commit(state, { ...state.board, items: state.board.items.filter((item) => !idSet.has(item.id)) }),
+      selectedIds,
+      selectedId: selectedIds[selectedIds.length - 1] ?? null,
     };
   }),
   clearBoard: () => set((state) => {
     if (state.board.items.length === 0) return state;
-    return { ...commit(state, { ...state.board, items: [] }), selectedId: null };
+    return { ...commit(state, { ...state.board, items: [] }), selectedId: null, selectedIds: [] };
   }),
   undo: () => set((state) => {
     const previous = state.history[state.history.length - 1];
@@ -97,6 +146,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       history: state.history.slice(0, -1),
       future: [cloneBoard(state.board), ...state.future].slice(0, MAX_HISTORY),
       selectedId: null,
+      selectedIds: [],
     };
   }),
   redo: () => set((state) => {
@@ -107,6 +157,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       history: [...state.history, cloneBoard(state.board)].slice(-MAX_HISTORY),
       future: state.future.slice(1),
       selectedId: null,
+      selectedIds: [],
     };
   }),
 }));

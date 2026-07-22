@@ -6,24 +6,20 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import {
   cleanupUnusedImageAttachments,
-  saveImageAttachment,
   saveNoteContent,
   loadNoteContent,
 } from "@/utils/storage";
-import { Save, Pin, Code, Eye, Columns2, Undo2, Redo2 } from "lucide-react";
+import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
+import type { EditorView } from "@codemirror/view";
+import { Save, Pin, Code, Eye, Columns2, Undo2, Redo2, Link2, Unlink2 } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
+import { useEditorZoom } from "@/utils/editorZoom";
 import LoadingText from "@/components/LoadingText";
+import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
 
 type MarkdownViewMode = "source" | "preview" | "split";
-const MAX_EDITOR_HISTORY = 200;
-
-interface EditorHistory {
-  current: string;
-  undo: string[];
-  redo: string[];
-}
 
 // TipTap stores WYSIWYG documents as HTML internally. User-authored HTML in
 // Markdown mode is still treated as plain text.
@@ -73,46 +69,40 @@ const NoteEditor: React.FC = () => {
   const { notes, activeNoteId, updateNote } = useNoteStore();
   const lang = useSettingsStore((s) => s.lang);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const codeMirrorViewRef = useRef<EditorView | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef(false);
+  const scrollSyncEnabledRef = useRef(true);
 
   // Refs to avoid stale closures in editor callbacks
   const activeNoteIdRef = useRef<string | null>(null);
   const mdContentRef = useRef("");
-  const historyRef = useRef<EditorHistory>({ current: "", undo: [], redo: [] });
 
   const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>("split");
+  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
   const [mdContent, setMdContent] = useState("");
+  const [editorSessionVersion, setEditorSessionVersion] = useState(0);
   const [previewHtml, setPreviewHtml] = useState("");
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSaveStatus, setShowSaveStatus] = useState(false);
-  const [editorFontSize, setEditorFontSize] = useState(16);
   const [stickyOpen, setStickyOpen] = useState(false);
 
-  const EDITOR_FONT_SIZE_MIN = 12;
-  const EDITOR_FONT_SIZE_MAX = 32;
-  const EDITOR_FONT_SIZE_STEP = 1;
-
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const editorFontSize = useEditorZoom(editorContainerRef, { initialSize: 16 });
   const isSavingRef = useRef(false);
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
 
-  const syncHistoryButtons = useCallback(() => {
-    setCanUndo(historyRef.current.undo.length > 0);
-    setCanRedo(historyRef.current.redo.length > 0);
-  }, []);
-
-  const resetEditorHistory = useCallback((value: string) => {
-    historyRef.current = { current: value, undo: [], redo: [] };
+  const resetEditorContent = useCallback((value: string) => {
     mdContentRef.current = value;
     setMdContent(value);
-    syncHistoryButtons();
-  }, [syncHistoryButtons]);
+    setCanUndo(false);
+    setCanRedo(false);
+    setEditorSessionVersion((version) => version + 1);
+  }, []);
 
   const getCurrentEditorContent = useCallback(() => {
     return mdContentRef.current;
@@ -182,13 +172,13 @@ const NoteEditor: React.FC = () => {
 
     if (!currentId) {
       loadingNoteIdRef.current = null;
-      resetEditorHistory("");
+      resetEditorContent("");
       setIsDirty(false);
       return;
     }
 
     // Clear editor immediately before loading
-    resetEditorHistory("");
+    resetEditorContent("");
     setIsDirty(false);
 
     // Load new note content
@@ -199,19 +189,19 @@ const NoteEditor: React.FC = () => {
       if (content) {
         if (isStoredEditorHtml(content)) {
           const markdownContent = htmlToMarkdown(content);
-          resetEditorHistory(markdownContent);
+          resetEditorContent(markdownContent);
           updateNote(currentId, { content: markdownContent }, { touchUpdatedAt: false });
         } else {
-          resetEditorHistory(content);
+          resetEditorContent(content);
           updateNote(currentId, { content }, { touchUpdatedAt: false });
         }
       } else {
-        resetEditorHistory("");
+        resetEditorContent("");
         updateNote(currentId, { content: "" }, { touchUpdatedAt: false });
       }
       setIsDirty(false);
     });
-  }, [activeNoteId, getCurrentEditorContent, resetEditorHistory]); // eslint-disable-line
+  }, [activeNoteId, getCurrentEditorContent, resetEditorContent]); // eslint-disable-line
 
   useEffect(() => {
     if (!autoSaveInterval || !activeNoteId) return;
@@ -232,9 +222,9 @@ const NoteEditor: React.FC = () => {
         // Reload content into editor (avoid echo loop)
         if (!content) return;
         if (isStoredEditorHtml(content)) {
-          resetEditorHistory(htmlToMarkdown(content));
+          resetEditorContent(htmlToMarkdown(content));
         } else {
-          resetEditorHistory(content);
+          resetEditorContent(content);
         }
         setIsDirty(false);
       },
@@ -242,7 +232,7 @@ const NoteEditor: React.FC = () => {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [resetEditorHistory]);
+  }, [resetEditorContent]);
 
   // Ctrl+S / Cmd+S save handler
   useEffect(() => {
@@ -262,41 +252,10 @@ const NoteEditor: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, [doSave]);
 
-  // Ctrl+Wheel 缩放编辑器字体
-  // Use capture phase on window to intercept before WebView2 native zoom
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        const container = editorContainerRef.current;
-        if (container && container.contains(e.target as Node)) {
-          e.preventDefault();
-          setEditorFontSize((prev) => {
-            if (e.deltaY < 0) {
-              return Math.min(prev + EDITOR_FONT_SIZE_STEP, EDITOR_FONT_SIZE_MAX);
-            } else {
-              return Math.max(prev - EDITOR_FONT_SIZE_STEP, EDITOR_FONT_SIZE_MIN);
-            }
-          });
-        }
-      }
-    };
-
-    window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
-    return () => window.removeEventListener("wheel", handleWheel, true);
-  }, []);
-
-  const applyEditorContent = useCallback(
-    (value: string, recordHistory = true) => {
-      const history = historyRef.current;
-      if (value === history.current) return;
-
-      if (recordHistory) {
-        history.undo.push(history.current);
-        if (history.undo.length > MAX_EDITOR_HISTORY) history.undo.shift();
-        history.redo = [];
-      }
-
-      history.current = value;
+  // Save markdown content on change (update store only, no disk write)
+  const handleMdChange = useCallback(
+    (value: string) => {
+      if (value === mdContentRef.current) return;
       mdContentRef.current = value;
       setMdContent(value);
       const noteId = activeNoteIdRef.current;
@@ -304,141 +263,42 @@ const NoteEditor: React.FC = () => {
         updateNote(noteId, { content: value });
         setIsDirty(true);
       }
-      syncHistoryButtons();
     },
-    [syncHistoryButtons, updateNote],
-  );
-
-  // Save markdown content on change (update store only, no disk write)
-  const handleMdChange = useCallback(
-    (value: string) => applyEditorContent(value),
-    [applyEditorContent],
+    [updateNote],
   );
 
   const handleUndo = useCallback(() => {
-    const history = historyRef.current;
-    const previous = history.undo.pop();
-    if (previous === undefined) return;
-    history.redo.push(history.current);
-    applyEditorContent(previous, false);
-  }, [applyEditorContent]);
+    const view = codeMirrorViewRef.current;
+    if (view) codeMirrorUndo(view);
+  }, []);
 
   const handleRedo = useCallback(() => {
-    const history = historyRef.current;
-    const next = history.redo.pop();
-    if (next === undefined) return;
-    history.undo.push(history.current);
-    applyEditorContent(next, false);
-  }, [applyEditorContent]);
+    const view = codeMirrorViewRef.current;
+    if (view) codeMirrorRedo(view);
+  }, []);
 
-  const insertMarkdownAtSelection = useCallback(
-    (snippet: string) => {
-      const textarea = textareaRef.current;
-      const noteId = activeNoteIdRef.current;
-      if (!textarea || !noteId) return;
+  const handleHistoryChange = useCallback((undoAvailable: boolean, redoAvailable: boolean) => {
+    setCanUndo(undoAvailable);
+    setCanRedo(redoAvailable);
+  }, []);
 
-      const selectionStart = textarea.selectionStart;
-      const selectionEnd = textarea.selectionEnd;
-      const nextContent =
-        textarea.value.slice(0, selectionStart) +
-        snippet +
-        textarea.value.slice(selectionEnd);
-      const nextCursorPosition = selectionStart + snippet.length;
+  const handleCodeMirrorViewChange = useCallback((view: EditorView | null) => {
+    codeMirrorViewRef.current = view;
+  }, []);
 
-      handleMdChange(nextContent);
-      requestAnimationFrame(() => {
-        if (activeNoteIdRef.current === noteId) {
-          textareaRef.current?.focus();
-          textareaRef.current?.setSelectionRange(nextCursorPosition, nextCursorPosition);
-        }
-      });
-    },
-    [handleMdChange],
-  );
-
-  const handleMdPaste = useCallback(
-    (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const imageItem = Array.from(event.clipboardData.items).find(
-        (item) => item.kind === "file" && item.type.startsWith("image/"),
-      );
-      const file =
-        imageItem?.getAsFile() ??
-        Array.from(event.clipboardData.files).find((candidate) => candidate.type.startsWith("image/"));
-      if (!file) return;
-
-      event.preventDefault();
-      void (async () => {
-        try {
-          const data = new Uint8Array(await file.arrayBuffer());
-          const extension =
-            file.name.split(".").pop() ||
-            file.type.split("/").pop()?.replace("+xml", "") ||
-            "png";
-          const filename = await saveImageAttachment(data, extension);
-          const alt = file.name
-            .replace(/\.[^.]+$/, "")
-            .replace(/[\[\]\r\n]/g, " ")
-            .trim() || "pasted image";
-          insertMarkdownAtSelection(`![${alt}](attachment://${filename})`);
-        } catch (error) {
-          console.error("Failed to save pasted image:", error);
-        }
-      })();
-    },
-    [insertMarkdownAtSelection],
-  );
-
-  const handleMdKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.ctrlKey || event.metaKey) {
-        const key = event.key.toLowerCase();
-        if (key === "z" && !event.shiftKey) {
-          event.preventDefault();
-          handleUndo();
-          return;
-        }
-        if (key === "y" || (key === "z" && event.shiftKey)) {
-          event.preventDefault();
-          handleRedo();
-          return;
-        }
-      }
-
-      if (event.key !== "Tab" || event.shiftKey) return;
-
-      event.preventDefault();
-
-      const textarea = event.currentTarget;
-      const indentation = "    ";
-      const selectionStart = textarea.selectionStart;
-      const selectionEnd = textarea.selectionEnd;
-      const nextContent =
-        textarea.value.slice(0, selectionStart) +
-        indentation +
-        textarea.value.slice(selectionEnd);
-      const nextCursorPosition = selectionStart + indentation.length;
-
-      handleMdChange(nextContent);
-      requestAnimationFrame(() => {
-        textareaRef.current?.setSelectionRange(nextCursorPosition, nextCursorPosition);
-      });
-    },
-    [handleMdChange, handleRedo, handleUndo],
-  );
-
-  // Sync scroll: textarea → preview
-  const handleTextareaScroll = useCallback(() => {
-    if (isScrollingRef.current) return;
+  // Sync scroll: CodeMirror -> preview
+  const handleCodeMirrorScroll = useCallback((view: EditorView) => {
+    if (!scrollSyncEnabledRef.current || isScrollingRef.current) return;
     isScrollingRef.current = true;
 
-    const textarea = textareaRef.current;
+    const scroller = view.scrollDOM;
     const preview = previewRef.current;
-    if (!textarea || !preview) {
+    if (!preview) {
       isScrollingRef.current = false;
       return;
     }
 
-    const ratio = textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight || 1);
+    const ratio = scroller.scrollTop / (scroller.scrollHeight - scroller.clientHeight || 1);
     preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight);
 
     requestAnimationFrame(() => {
@@ -446,25 +306,42 @@ const NoteEditor: React.FC = () => {
     });
   }, []);
 
-  // Sync scroll: preview → textarea
+  // Sync scroll: preview -> CodeMirror
   const handlePreviewScroll = useCallback(() => {
-    if (isScrollingRef.current) return;
+    if (!scrollSyncEnabledRef.current || isScrollingRef.current) return;
     isScrollingRef.current = true;
 
-    const textarea = textareaRef.current;
+    const scroller = codeMirrorViewRef.current?.scrollDOM;
     const preview = previewRef.current;
-    if (!textarea || !preview) {
+    if (!scroller || !preview) {
       isScrollingRef.current = false;
       return;
     }
 
     const ratio = preview.scrollTop / (preview.scrollHeight - preview.clientHeight || 1);
-    textarea.scrollTop = ratio * (textarea.scrollHeight - textarea.clientHeight);
+    scroller.scrollTop = ratio * (scroller.scrollHeight - scroller.clientHeight);
 
     requestAnimationFrame(() => {
       isScrollingRef.current = false;
     });
   }, []);
+
+  const toggleScrollSync = useCallback(() => {
+    const nextEnabled = !scrollSyncEnabled;
+    scrollSyncEnabledRef.current = nextEnabled;
+    setScrollSyncEnabled(nextEnabled);
+    if (nextEnabled) {
+      requestAnimationFrame(() => {
+        const view = codeMirrorViewRef.current;
+        if (view) handleCodeMirrorScroll(view);
+      });
+    }
+  }, [handleCodeMirrorScroll, scrollSyncEnabled]);
+
+  useEffect(() => {
+    if (markdownViewMode === "preview") return;
+    requestAnimationFrame(() => codeMirrorViewRef.current?.requestMeasure());
+  }, [editorFontSize, markdownViewMode]);
 
   // Resolve local image files asynchronously through Tauri's filesystem API.
   // Cancel stale renders so switching notes cannot paint an older preview.
@@ -525,7 +402,7 @@ const NoteEditor: React.FC = () => {
   const wordCountNum = chineseChars + englishWords;
 
   return (
-    <div ref={editorContainerRef} className="flex-1 flex flex-col h-full">
+    <div ref={editorContainerRef} className="flex min-h-0 h-full flex-1 flex-col overflow-hidden">
       {/* Markdown view controls */}
       <div className="flex items-center gap-2 px-8 pt-4 pb-1">
         <div className="relative grid h-8 grid-cols-3 items-center overflow-hidden rounded-full bg-bg-secondary p-0.5">
@@ -578,6 +455,20 @@ const NoteEditor: React.FC = () => {
           </button>
         </div>
         <div className="flex-1" />
+        <button
+          type="button"
+          aria-pressed={scrollSyncEnabled}
+          onClick={toggleScrollSync}
+          title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
+          className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium leading-none transition-colors ${
+            scrollSyncEnabled
+              ? "border-accent/30 bg-accent/10 text-accent hover:bg-accent/15"
+              : "border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          }`}
+        >
+          {scrollSyncEnabled ? <Link2 size={13} /> : <Unlink2 size={13} />}
+          <span>{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
+        </button>
         {/* Save Button */}
         <button
           onClick={doSave}
@@ -618,7 +509,7 @@ const NoteEditor: React.FC = () => {
         </button>
       </div>
 
-      <div className="app-work-area-overlay mx-4 mb-3 mt-2 flex-1 flex flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/65">
+      <div className="app-work-area-overlay mx-4 mb-3 mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/65">
         {/* Note Title */}
         <div className="px-5 sm:px-6 pt-4 pb-3 border-b border-border bg-bg-primary/80">
           <div className="flex items-center gap-4">
@@ -653,29 +544,26 @@ const NoteEditor: React.FC = () => {
         </div>
 
         {/* Editor Content */}
-        <div className="flex-1 flex overflow-hidden" style={{ fontSize: editorFontSize }}>
-          {showMarkdownSource && (
-            <div className={`${showMarkdownPreview ? "w-1/2 border-r border-border" : "w-full"} flex flex-col`}>
+        <div className="flex min-h-0 flex-1 overflow-hidden" style={{ fontSize: editorFontSize }}>
+          <div
+            className={`${showMarkdownSource ? "flex" : "hidden"} ${showMarkdownPreview ? "w-1/2 border-r border-border" : "w-full"} min-h-0 flex-col overflow-hidden`}
+          >
               <div className="px-3 py-1.5 text-xs text-text-muted bg-bg-secondary border-b border-border font-medium">
                 {t(lang, "sourceEditor")}
               </div>
-              <textarea
-                ref={textareaRef}
+              <MarkdownSourceEditor
+                key={`${activeNote.id}:${editorSessionVersion}`}
                 value={mdContent}
-                onChange={(e) => handleMdChange(e.target.value)}
-                onPaste={handleMdPaste}
-                onKeyDown={handleMdKeyDown}
-                onScroll={handleTextareaScroll}
-                className="flex-1 px-5 sm:px-6 py-4 bg-transparent text-text-primary font-mono leading-relaxed
-                  resize-none outline-none overflow-y-auto
-                  placeholder:text-text-muted/40"
                 placeholder={t(lang, "mdPlaceholder")}
-                spellCheck={false}
+                onChange={handleMdChange}
+                onHistoryChange={handleHistoryChange}
+                onScroll={handleCodeMirrorScroll}
+                onViewChange={handleCodeMirrorViewChange}
+                fontSize={editorFontSize}
               />
-            </div>
-          )}
+          </div>
           {showMarkdownPreview && (
-            <div className={`${showMarkdownSource ? "w-1/2" : "w-full"} flex flex-col`}>
+            <div className={`${showMarkdownSource ? "w-1/2" : "w-full"} flex min-h-0 flex-col overflow-hidden`}>
               <div className="px-3 py-1.5 text-xs text-text-muted bg-bg-secondary border-b border-border font-medium">
                 {t(lang, "preview")}
               </div>
@@ -683,24 +571,23 @@ const NoteEditor: React.FC = () => {
                 ref={previewRef}
                 onScroll={handlePreviewScroll}
                 onClick={handleExternalLinkClick}
-                className="flex-1 overflow-y-auto px-5 py-4 sm:px-6"
+                className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
               >
                 <div
-                  className="prose mx-auto w-full max-w-[820px] text-text-primary
+                  className="markdown-preview prose mx-auto w-full max-w-[820px] text-text-primary
                     [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-4
                     [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3
                     [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mb-2 [&_h3]:mt-2
-                    [&_p]:mb-2 [&_p]:leading-relaxed
-                    [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-2
-                    [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-2
+                    [&_p]:leading-[1.7]
+                    [&_ul]:list-disc [&_ul]:pl-6
+                    [&_ol]:list-decimal [&_ol]:pl-6
                     [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4
                     [&_blockquote]:italic [&_blockquote]:text-text-secondary
                     [&_hr]:border-border [&_hr]:my-4
                     [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
                     [&_strong]:font-bold [&_em]:italic [&_u]:underline [&_s]:line-through
                     [&_a]:text-accent [&_a]:underline
-                    [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs
-                    [&_pre]:bg-bg-secondary [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:mb-2 [&_pre]:overflow-x-auto"
+                    [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs"
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
               </div>

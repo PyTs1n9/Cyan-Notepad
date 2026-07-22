@@ -11,9 +11,12 @@ supabase/migrations/202607190003_workspace_mutation_rpcs.sql
 supabase/migrations/202607190004_realtime_workspaces.sql
 supabase/migrations/202607200001_realtime_profiles.sql
 supabase/migrations/202607200002_sync_auth_profiles.sql
+supabase/migrations/202607200003_workspace_removal_notifications.sql
+supabase/migrations/202607220001_scheduled_document_publishing.sql
+supabase/migrations/202607220002_document_unpublishing.sql
 ```
 
-这些迁移会创建用户资料、工作台、成员、文档、Yjs 状态表、邀请码函数、Realtime publication 和 RLS 策略，并让昵称、头像变更实时刷新到工作台。
+这些迁移会创建用户资料、工作台、成员、文档、Yjs 状态表、邀请码和云文档发布/下架函数、Realtime publication 与 RLS 策略，并让昵称、头像和文档发布状态实时刷新到工作台。
 
 ### 配置密码恢复回调
 

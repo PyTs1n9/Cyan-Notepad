@@ -20,7 +20,11 @@ import {
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type { WorkspaceInviteRole, WorkspaceRole } from "@/types/workspace";
+import type {
+  WorkspaceDocumentPublicationStatus,
+  WorkspaceInviteRole,
+  WorkspaceRole,
+} from "@/types/workspace";
 import { supabase } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
 import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
@@ -265,6 +269,7 @@ export default function WorkspaceView({
     regenerateInvite,
     createDocument,
     updateDocumentTitle,
+    setDocumentPublication,
     deleteDocument,
     updateMemberRole,
     removeMember,
@@ -284,6 +289,7 @@ export default function WorkspaceView({
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState("");
   const [savingWorkspaceName, setSavingWorkspaceName] = useState(false);
   const [copied, setCopied] = useState(false);
+  const publishingDueDocumentIdsRef = useRef(new Set<string>());
 
   const activeWorkspace = workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
   const activeDocument = documents.find((item) => item.id === activeDocumentId) ?? null;
@@ -358,9 +364,83 @@ export default function WorkspaceView({
     return () => { void client.removeChannel(channel); };
   }, [activeWorkspaceId, loadDocuments, loadMembers, loadWorkspaces, user]);
 
+  useEffect(() => {
+    if (!activeWorkspaceId || !canEdit) return;
+    let cancelled = false;
+    let timerId: number | null = null;
+
+    const scheduleNextPublication = () => {
+      if (cancelled) return;
+      const state = useWorkspaceStore.getState();
+      if (state.activeWorkspaceId !== activeWorkspaceId) return;
+
+      const scheduledDocuments = state.documents.flatMap((workspaceDocument) => {
+        if (workspaceDocument.publicationStatus !== "scheduled" || !workspaceDocument.scheduledPublishAt) return [];
+        const scheduledAt = Date.parse(workspaceDocument.scheduledPublishAt);
+        return Number.isFinite(scheduledAt) ? [{ id: workspaceDocument.id, scheduledAt }] : [];
+      });
+      if (scheduledDocuments.length === 0) return;
+
+      const now = Date.now();
+      const dueDocuments = scheduledDocuments.filter(({ scheduledAt }) => scheduledAt <= now);
+      const publishableDocuments = dueDocuments.filter(({ id }) => !publishingDueDocumentIdsRef.current.has(id));
+
+      if (publishableDocuments.length > 0) {
+        void Promise.all(publishableDocuments.map(async ({ id }) => {
+          publishingDueDocumentIdsRef.current.add(id);
+          try {
+            await setDocumentPublication(id, "publish_now");
+          } finally {
+            publishingDueDocumentIdsRef.current.delete(id);
+          }
+        })).finally(() => {
+          if (!cancelled) timerId = window.setTimeout(scheduleNextPublication, 5_000);
+        });
+        return;
+      }
+
+      if (dueDocuments.length > 0) {
+        timerId = window.setTimeout(scheduleNextPublication, 250);
+        return;
+      }
+
+      const nextScheduledAt = Math.min(...scheduledDocuments.map(({ scheduledAt }) => scheduledAt));
+      const maximumTimerDelay = 2_147_000_000;
+      const delay = Math.min(maximumTimerDelay, Math.max(25, nextScheduledAt - now + 25));
+      timerId = window.setTimeout(scheduleNextPublication, delay);
+    };
+
+    scheduleNextPublication();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+  }, [activeWorkspaceId, canEdit, documents, setDocumentPublication]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const refreshVisibleDocuments = () => {
+      if (document.visibilityState === "visible") void loadDocuments(activeWorkspaceId);
+    };
+    const intervalId = window.setInterval(refreshVisibleDocuments, 60_000);
+    document.addEventListener("visibilitychange", refreshVisibleDocuments);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshVisibleDocuments);
+    };
+  }, [activeWorkspaceId, loadDocuments]);
+
   const roleLabel = (role: WorkspaceRole) => t(
     lang,
     role === "owner" ? "roleOwner" : role === "editor" ? "roleEditor" : "roleViewer",
+  );
+  const publicationLabel = (status: WorkspaceDocumentPublicationStatus) => t(
+    lang,
+    status === "draft"
+      ? "cloudDocumentDraft"
+      : status === "scheduled"
+        ? "cloudDocumentScheduled"
+        : "cloudDocumentPublished",
   );
 
   const openDialog = (nextDialog: Exclude<ActionDialog, null>) => {
@@ -664,6 +744,19 @@ export default function WorkspaceView({
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 {documents.map((document) => {
                   const isActive = document.id === activeDocumentId;
+                  const publicationTone = document.publicationStatus === "draft"
+                    ? "border-border bg-bg-secondary text-text-muted"
+                    : document.publicationStatus === "scheduled"
+                      ? "border-warning/20 bg-warning/10 text-warning"
+                      : "border-success/20 bg-success/10 text-success";
+                  const documentTimestamp = document.publicationStatus === "scheduled" && document.scheduledPublishAt
+                    ? new Date(document.scheduledPublishAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US", {
+                        month: "numeric",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : new Date(document.updatedAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US");
                   return (
                     <div key={document.id} className="group relative mb-1 rounded-xl">
                       <button
@@ -685,8 +778,11 @@ export default function WorkspaceView({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{document.title}</span>
-                          <span className="mt-0.5 block truncate text-[11px] font-normal text-text-muted">
-                            {new Date(document.updatedAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}
+                          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] font-normal">
+                            <span className={`flex-shrink-0 rounded border px-1 py-px leading-none ${publicationTone}`}>
+                              {publicationLabel(document.publicationStatus)}
+                            </span>
+                            <span className="min-w-0 truncate text-text-muted">{documentTimestamp}</span>
                           </span>
                         </span>
                       </button>
@@ -762,7 +858,7 @@ export default function WorkspaceView({
         <SidebarResizeHandle onPointerDown={onSidebarResizeStart} />
       )}
 
-      <section className="app-work-area-overlay flex min-w-0 flex-1 flex-col">
+      <section className="app-work-area-overlay flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {error && (
         <div className="flex items-start gap-2 border-b border-danger/25 bg-danger/5 px-4 py-2 text-xs text-danger">
           <span className="flex-1">{schemaError ? t(lang, "workspaceBackendNotReady") : error}</span>
@@ -974,10 +1070,9 @@ export default function WorkspaceView({
               )}
 
               <section className="border-b border-border py-5">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   <div>
                     <h3 className="text-sm font-semibold text-text-primary">{t(lang, "shareWorkspace")}</h3>
-                    <p className="mt-1 text-[11px] leading-relaxed text-text-muted">{t(lang, "inviteCodeHint")}</p>
                   </div>
                   <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
                     <code className="hidden rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm font-semibold tracking-[0.16em] text-text-primary sm:block">

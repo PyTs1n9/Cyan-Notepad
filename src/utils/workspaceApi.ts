@@ -2,6 +2,8 @@ import { supabase } from "@/utils/supabase";
 import type {
   Workspace,
   WorkspaceDocument,
+  WorkspaceDocumentPublicationAction,
+  WorkspaceDocumentPublicationStatus,
   WorkspaceInviteRole,
   WorkspaceMember,
   WorkspaceRemovalNotification,
@@ -24,6 +26,9 @@ interface DocumentRow {
   title: string;
   content?: string;
   created_by: string;
+  publication_status: WorkspaceDocumentPublicationStatus;
+  scheduled_publish_at: string | null;
+  published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +58,9 @@ function mapDocument(row: DocumentRow): WorkspaceDocument {
     title: row.title,
     content: row.content ?? "",
     createdBy: row.created_by,
+    publicationStatus: row.publication_status,
+    scheduledPublishAt: row.scheduled_publish_at,
+    publishedAt: row.published_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -158,7 +166,7 @@ export async function fetchDocuments(workspaceId: string): Promise<WorkspaceDocu
     .from("documents")
     // The editor syncs its body through Yjs; the document list only needs metadata.
     // Avoid transferring every document's full content during workspace startup.
-    .select("id, workspace_id, title, created_by, created_at, updated_at")
+    .select("id, workspace_id, title, created_by, publication_status, scheduled_publish_at, published_at, created_at, updated_at")
     .eq("workspace_id", workspaceId)
     .order("updated_at", { ascending: false });
   if (error) throw error;
@@ -181,7 +189,7 @@ export async function createDocument(
   if (rpcError) throw rpcError;
   const { data, error } = await client
     .from("documents")
-    .select("id, workspace_id, title, content, created_by, created_at, updated_at")
+    .select("id, workspace_id, title, content, created_by, publication_status, scheduled_publish_at, published_at, created_at, updated_at")
     .eq("id", documentId)
     .single();
   if (error) throw error;
@@ -210,6 +218,20 @@ export async function deleteDocument(documentId: string): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.rpc("delete_document", {
     target_document_id: documentId,
+  });
+  if (error) throw error;
+}
+
+export async function setDocumentPublication(
+  documentId: string,
+  action: WorkspaceDocumentPublicationAction,
+  scheduledPublishAt?: string,
+): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("set_document_publication", {
+    target_document_id: documentId,
+    publication_action: action,
+    target_publish_at: scheduledPublishAt ?? null,
   });
   if (error) throw error;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { CircleCheckBig, KeyRound, Link2, MailCheck, Send, ShieldCheck, X } from "lucide-react";
+import { CircleCheckBig, Eye, EyeOff, KeyRound, Link2, MailCheck, Send, ShieldCheck, X } from "lucide-react";
 import {
   PASSWORD_RECOVERY_LINK_INVALID_ERROR,
   useAuthStore,
@@ -27,6 +27,8 @@ export default function PasswordRecoveryModal() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [manualLink, setManualLink] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -35,6 +37,8 @@ export default function PasswordRecoveryModal() {
     setEmail(passwordRecoveryEmail);
     setPassword("");
     setConfirmPassword("");
+    setShowPassword(false);
+    setShowConfirmPassword(false);
     setManualLink("");
     setValidationError(null);
   }, [passwordRecoveryPending, passwordRecoveryStage, passwordRecoveryEmail]);
@@ -276,37 +280,63 @@ export default function PasswordRecoveryModal() {
               <p className="text-xs leading-relaxed text-text-muted">
                 {t(lang, "authResetPasswordHint")}
               </p>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+              <div>
+                <label htmlFor="recovery-new-password" className="mb-1.5 block text-xs font-medium text-text-secondary">
                   {t(lang, "authNewPassword")}
-                </span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={6}
-                  required
-                  autoFocus
-                  placeholder={t(lang, "authPasswordPlaceholder")}
-                  className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                </label>
+                <div className="relative">
+                  <input
+                    id="recovery-new-password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                    autoFocus
+                    placeholder={t(lang, "authPasswordPlaceholder")}
+                    className="auth-password-input h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 pr-10 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    aria-label={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
+                    aria-pressed={showPassword}
+                    title={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
+                    className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="recovery-confirm-password" className="mb-1.5 block text-xs font-medium text-text-secondary">
                   {t(lang, "authConfirmPassword")}
-                </span>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={6}
-                  required
-                  placeholder={t(lang, "authPasswordPlaceholder")}
-                  className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
-                />
-              </label>
+                </label>
+                <div className="relative">
+                  <input
+                    id="recovery-confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                    placeholder={t(lang, "authPasswordPlaceholder")}
+                    className="auth-password-input h-9 w-full rounded-lg border border-border bg-bg-secondary px-3 pr-10 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted/60 focus:border-accent focus:bg-bg-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((visible) => !visible)}
+                    aria-label={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
+                    aria-pressed={showConfirmPassword}
+                    title={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
+                    className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
               {(validationError || displayedError) && (
                 <p className="text-xs leading-relaxed text-danger">{validationError || displayedError}</p>
               )}

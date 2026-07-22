@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff, ListChecks } from "lucide-react";
 import { useTodoStore } from "@/stores/todoStore";
@@ -113,6 +113,7 @@ const TodoView: React.FC = () => {
   const [calendarMotion, setCalendarMotion] = useState<CalendarMotion>("zoomIn");
   const [calendarPosition, setCalendarPosition] = useState({ top: 0, left: 0 });
   const calendarRef = useRef<HTMLDivElement>(null);
+  const calendarAnchorRef = useRef<HTMLElement | null>(null);
 
   // 拖拽排序状态
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -335,6 +336,49 @@ const TodoView: React.FC = () => {
     };
   }, [openCalendarTodoId]);
 
+  const positionCalendar = useCallback((calendarHeight = 284) => {
+    const anchor = calendarAnchorRef.current;
+    if (!anchor?.isConnected) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const calendarWidth = 248;
+    const margin = 12;
+    const gap = 8;
+    const spaceBelow = window.innerHeight - rect.bottom - margin - gap;
+    const spaceAbove = rect.top - margin - gap;
+    const openAbove = spaceBelow < calendarHeight && spaceAbove > spaceBelow;
+    const preferredTop = openAbove
+      ? rect.top - gap - calendarHeight
+      : rect.bottom + gap;
+    const maxTop = Math.max(margin, window.innerHeight - calendarHeight - margin);
+    const top = Math.min(Math.max(preferredTop, margin), maxTop);
+    const maxLeft = Math.max(margin, window.innerWidth - calendarWidth - margin);
+    const left = Math.min(Math.max(rect.left, margin), maxLeft);
+
+    setCalendarPosition((current) => (
+      current.top === top && current.left === left ? current : { top, left }
+    ));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!openCalendarTodoId) return;
+    const calendar = calendarRef.current;
+    if (!calendar) return;
+
+    const updatePosition = () => positionCalendar(calendar.getBoundingClientRect().height);
+    updatePosition();
+
+    const resizeObserver = new ResizeObserver(updatePosition);
+    resizeObserver.observe(calendar);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [calendarView, openCalendarTodoId, positionCalendar]);
+
   const startEditing = (id: string, title: string) => {
     setEditingId(id);
     setEditingTitle(title);
@@ -361,16 +405,12 @@ const TodoView: React.FC = () => {
   const toggleCalendar = (todoId: string, dueDate: string | undefined, element: HTMLElement) => {
     if (openCalendarTodoId === todoId) {
       setOpenCalendarTodoId(null);
+      calendarAnchorRef.current = null;
       return;
     }
 
-    const rect = element.getBoundingClientRect();
-    const calendarWidth = 248;
-    const margin = 12;
-    setCalendarPosition({
-      top: rect.bottom + 8,
-      left: Math.min(Math.max(rect.left, margin), window.innerWidth - calendarWidth - margin),
-    });
+    calendarAnchorRef.current = element;
+    positionCalendar();
     setCalendarMonth(getMonthStart(dueDate));
     setCalendarView("day");
     setCalendarMotion("zoomIn");
@@ -675,7 +715,7 @@ const TodoView: React.FC = () => {
                 {openCalendarTodoId === todo.id && createPortal(
                   <div
                     ref={calendarRef}
-                    className="todo-popover fixed z-50 w-[248px] rounded-xl border border-border bg-bg-primary p-3
+                    className="todo-popover fixed z-50 max-h-[calc(100vh-24px)] w-[248px] overflow-y-auto rounded-xl border border-border bg-bg-primary p-3
                       text-text-primary shadow-lg shadow-black/10"
                     style={{ top: calendarPosition.top, left: calendarPosition.left }}
                   >

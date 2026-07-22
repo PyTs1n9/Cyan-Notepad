@@ -200,7 +200,7 @@ export default function TitleBar({
         onDoubleClick={handleToggleMaximize}
       >
         <div className="flex h-full w-12 flex-shrink-0 items-center justify-center bg-bg-sidebar" aria-hidden="true">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-xs font-bold text-white">C</div>
+          <img src="/default-icon.png" alt="" className="h-6 w-6 rounded-md object-cover" />
         </div>
         {/* Menu Bar */}
         <div ref={menuRef} className="flex items-center h-full relative" onDoubleClick={(e) => e.stopPropagation()}>

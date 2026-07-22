@@ -544,30 +544,30 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={() => handleSelectNote(note.id)}
                   data-flat-row-button
-                  className={`flex h-11 w-full items-center text-left pl-3 pr-16 rounded-lg border text-sm cursor-pointer
+                  className={`flex h-11 w-full items-center rounded-lg border pl-3 pr-3 text-left text-sm cursor-pointer transition-[padding] duration-150 group-hover:pr-16 group-focus-within:pr-16
                     ${activeNoteId === note.id ? "flat-active-row border-accent/20 text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-hover"}`}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                    {!note.pinned && (
-                      <span
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => startNoteDrag(e, note, index)}
-                        className="text-text-muted opacity-45 group-hover:opacity-100 flex-shrink-0 cursor-grab active:cursor-grabbing"
-                        title={t(lang, "dragNote")}
-                      >
-                        <GripVertical size={12} />
-                      </span>
-                    )}
-                    {note.pinned && <Pin size={12} className="text-accent flex-shrink-0" />}
-                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg ${
-                      activeNoteId === note.id ? "bg-accent text-white" : "bg-bg-primary/70 text-text-muted"
-                    }`}>
-                      <FileText size={13} />
+                    <span
+                      onClick={(event) => event.stopPropagation()}
+                      onMouseDown={note.pinned ? undefined : (event) => startNoteDrag(event, note, index)}
+                      className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg ${
+                        activeNoteId === note.id
+                          ? "bg-accent text-white"
+                          : note.pinned
+                            ? "bg-accent-light text-accent"
+                            : "bg-bg-primary/70 text-text-muted"
+                      } ${note.pinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"}`}
+                      title={note.pinned ? t(lang, "pinNote") : t(lang, "dragNote")}
+                    >
+                      {note.pinned ? <Pin size={13} /> : <FileText size={13} />}
                     </span>
-                    <div className="min-w-0 truncate font-medium">{note.title || t(lang, "untitled")}</div>
+                    <div className="min-w-0 truncate font-medium" title={getNoteTitle(note)}>
+                      {getNoteTitle(note)}
+                    </div>
                   </div>
                 </button>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+                <div className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

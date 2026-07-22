@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   Workspace,
   WorkspaceDocument,
+  WorkspaceDocumentPublicationAction,
   WorkspaceInviteRole,
   WorkspaceMember,
 } from "@/types/workspace";
@@ -38,6 +39,11 @@ interface WorkspaceState {
   regenerateInvite: (workspaceId: string, userId: string) => Promise<string | null>;
   createDocument: (title: string, userId: string, content?: string) => Promise<boolean>;
   updateDocumentTitle: (documentId: string, title: string) => Promise<boolean>;
+  setDocumentPublication: (
+    documentId: string,
+    action: WorkspaceDocumentPublicationAction,
+    scheduledPublishAt?: string,
+  ) => Promise<boolean>;
   deleteDocument: (documentId: string) => Promise<boolean>;
   updateMemberRole: (
     workspaceId: string,
@@ -253,6 +259,50 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             ? { ...document, title, updatedAt: new Date().toISOString() }
             : document
         ),
+        error: null,
+      }));
+      return true;
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return false;
+    }
+  },
+
+  setDocumentPublication: async (documentId, action, scheduledPublishAt) => {
+    try {
+      await workspaceApi.setDocumentPublication(documentId, action, scheduledPublishAt);
+      const now = new Date().toISOString();
+      set((state) => ({
+        documents: state.documents.map((document) => {
+          if (document.id !== documentId) return document;
+          if (action === "publish_now") {
+            return {
+              ...document,
+              publicationStatus: "published",
+              scheduledPublishAt: null,
+              publishedAt: now,
+              updatedAt: now,
+            };
+          }
+          if (action === "schedule") {
+            return {
+              ...document,
+              publicationStatus: "scheduled",
+              scheduledPublishAt: scheduledPublishAt ?? null,
+              publishedAt: null,
+              updatedAt: now,
+            };
+          }
+          // Both cancelling a schedule and unpublishing return the document to
+          // a private draft. The database RPC validates the source state.
+          return {
+            ...document,
+            publicationStatus: "draft",
+            scheduledPublishAt: null,
+            publishedAt: null,
+            updatedAt: now,
+          };
+        }),
         error: null,
       }));
       return true;

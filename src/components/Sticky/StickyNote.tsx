@@ -17,7 +17,7 @@ import {
 } from "@/stores/settingsStore";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
-import { renderStoredNoteContent } from "@/utils/markdown";
+import { renderStoredNoteContent, stripMarkdownSyntaxHighlighting } from "@/utils/markdown";
 
 const MIN_FONT = 10;
 const MAX_FONT = 32;
@@ -133,7 +133,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     }
     if (!isDirtyRef.current || !editorRef.current) return;
 
-    const content = editorRef.current.innerHTML;
+    const content = stripMarkdownSyntaxHighlighting(editorRef.current.innerHTML);
     isDirtyRef.current = false;
     const savePromise = (async () => {
       try {
