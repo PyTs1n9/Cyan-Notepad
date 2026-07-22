@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as Y from "yjs";
 
 type WorkspaceRole = "owner" | "editor" | "viewer";
+type DocumentAccessLevel = "creator" | "managers" | "members";
 type DocumentPublicationStatus = "draft" | "scheduled" | "published";
 
 interface ConnectionContext {
@@ -33,10 +34,15 @@ interface ScheduledDocumentRow {
   scheduled_publish_at: string;
 }
 
-interface PublicationChangeRow {
+interface DocumentAccessChangeRow {
   id: string;
   workspace_id: string;
+  access_level: DocumentAccessLevel;
   publication_status: DocumentPublicationStatus;
+}
+
+interface WorkspaceMemberChangeRow {
+  workspace_id: string;
 }
 
 interface ScheduledPublicationTimer {
@@ -54,6 +60,7 @@ async function publishScheduledDocument(documentId: string): Promise<void> {
   const { data, error } = await admin
     .from("documents")
     .update({
+      access_level: "members" satisfies DocumentAccessLevel,
       publication_status: "published" satisfies DocumentPublicationStatus,
       scheduled_publish_at: null,
       published_at: publishedAt,
@@ -91,6 +98,7 @@ async function synchronizePublicationSchedule(): Promise<void> {
     const { data: publishedDocuments, error: publishError } = await admin
       .from("documents")
       .update({
+        access_level: "members" satisfies DocumentAccessLevel,
         publication_status: "published" satisfies DocumentPublicationStatus,
         scheduled_publish_at: null,
         published_at: publishedAt,
@@ -134,6 +142,12 @@ function parseRoom(documentName: string): { workspaceId: string; documentId: str
     throw new Error("Invalid collaboration room");
   }
   return { workspaceId, documentId };
+}
+
+function canAccessDocument(role: WorkspaceRole, accessLevel: DocumentAccessLevel): boolean {
+  if (role === "owner") return true;
+  if (role === "editor") return accessLevel === "managers" || accessLevel === "members";
+  return accessLevel === "members";
 }
 
 async function fetchInitialState(documentName: string): Promise<Uint8Array | null> {
@@ -201,7 +215,7 @@ const server = new Server<ConnectionContext>({
       await Promise.all([
         admin
           .from("documents")
-          .select("workspace_id, publication_status")
+          .select("workspace_id, access_level")
           .eq("id", documentId)
           .maybeSingle(),
         admin
@@ -218,8 +232,8 @@ const server = new Server<ConnectionContext>({
     }
 
     const role = membership.role as WorkspaceRole;
-    if (role === "viewer" && document.publication_status !== "published") {
-      throw new Error("This document has not been published");
+    if (!canAccessDocument(role, document.access_level as DocumentAccessLevel)) {
+      throw new Error("You do not have access to this document");
     }
     connectionConfig.readOnly = role === "viewer";
     return { userId: userData.user.id, workspaceId, documentId, role };
@@ -239,7 +253,7 @@ const server = new Server<ConnectionContext>({
           .maybeSingle(),
         admin
           .from("documents")
-          .select("workspace_id, publication_status")
+          .select("workspace_id, access_level")
           .eq("id", context.documentId)
           .maybeSingle(),
       ]);
@@ -248,8 +262,8 @@ const server = new Server<ConnectionContext>({
     }
 
     const role = membership.role as WorkspaceRole;
-    if (role === "viewer" && document.publication_status !== "published") {
-      throw new Error("This document has not been published");
+    if (!canAccessDocument(role, document.access_level as DocumentAccessLevel)) {
+      throw new Error("Document access revoked");
     }
     connectionConfig.readOnly = role === "viewer";
     return { ...context, role };
@@ -293,37 +307,71 @@ const server = new Server<ConnectionContext>({
   ],
 });
 
-function subscribeToPublicationAccessChanges(): void {
+async function closeWorkspaceConnections(workspaceId: string): Promise<void> {
+  const { data, error } = await admin
+    .from("documents")
+    .select("id")
+    .eq("workspace_id", workspaceId);
+  if (error) throw error;
+  for (const document of data ?? []) {
+    server.hocuspocus.closeConnections(`${workspaceId}:${document.id}`);
+  }
+}
+
+function subscribeToPermissionChanges(): void {
   admin
-    .channel("document-publication-access")
+    .channel("workspace-permission-access")
     .on(
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "documents" },
       (payload) => {
-        const previous = payload.old as Partial<PublicationChangeRow>;
-        const current = payload.new as PublicationChangeRow;
+        const previous = payload.old as Partial<DocumentAccessChangeRow>;
+        const current = payload.new as DocumentAccessChangeRow;
         if (
-          previous.publication_status !== "published"
-          || current.publication_status !== "draft"
+          previous.access_level === current.access_level
           || !current.workspace_id
           || !current.id
         ) return;
 
         const documentName = `${current.workspace_id}:${current.id}`;
         server.hocuspocus.closeConnections(documentName);
-        console.log(`Closed collaboration connections for unpublished cloud document ${current.id}`);
+        console.log(`Closed collaboration connections after access changed for document ${current.id}`);
+      },
+    )
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "workspace_members" },
+      (payload) => {
+        const previous = payload.old as Partial<WorkspaceMemberChangeRow>;
+        const current = payload.new as Partial<WorkspaceMemberChangeRow>;
+        const workspaceId = current.workspace_id ?? previous.workspace_id;
+        if (!workspaceId) return;
+        void closeWorkspaceConnections(workspaceId).catch((error) => {
+          console.error(`Failed to close connections after workspace role change for ${workspaceId}:`, error);
+        });
+      },
+    )
+    .on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "workspace_members" },
+      (payload) => {
+        const previous = payload.old as Partial<WorkspaceMemberChangeRow>;
+        if (!previous.workspace_id) return;
+        void closeWorkspaceConnections(previous.workspace_id).catch((error) => {
+          console.error(`Failed to close connections after workspace member removal for ${previous.workspace_id}:`, error);
+        });
       },
     )
     .subscribe((status, error) => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.error(`Publication access Realtime subscription ${status}:`, error);
+        console.error(`Permission Realtime subscription ${status}:`, error);
       }
     });
 }
 
 server.listen().then(() => {
   console.log(`Cyan Notepad collaboration server listening on port ${port}`);
-  subscribeToPublicationAccessChanges();
+  subscribeToPermissionChanges();
   void synchronizePublicationSchedule();
   setInterval(() => { void synchronizePublicationSchedule(); }, PUBLICATION_DISCOVERY_INTERVAL_MS);
 });

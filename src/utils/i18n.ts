@@ -166,6 +166,9 @@ type TranslationKeys = {
   inviteCode: string;
   inviteRole: string;
   manageWorkspace: string;
+  permissionManagement: string;
+  permissionManagementHint: string;
+  workspaceSettings: string;
   shareWorkspace: string;
   copyInvite: string;
   copied: string;
@@ -173,8 +176,18 @@ type TranslationKeys = {
   newCloudDocument: string;
   newCloudDocumentHint: string;
   renameCloudDocument: string;
+  documentActions: string;
+  dragCloudDocument: string;
+  documentDetails: string;
+  deleteCloudDocument: string;
   cloudDocumentName: string;
+  documentCreator: string;
+  publicationStatus: string;
+  collaborationMode: string;
+  realTimeCollaboration: string;
+  publishedAt: string;
   cloudDocumentDraft: string;
+  cloudDocumentUnpublished: string;
   cloudDocumentScheduled: string;
   cloudDocumentPublished: string;
   manageCloudDocumentPublication: string;
@@ -195,9 +208,25 @@ type TranslationKeys = {
   cloudDocumentUnpublishWarning: string;
   confirmUnpublishCloudDocument: string;
   keepCloudDocumentPublished: string;
+  documentPermissions: string;
+  documentPermissionsHint: string;
+  documentAccessLevel: string;
+  accessCreator: string;
+  accessManagers: string;
+  accessMembers: string;
+  accessCreatorHint: string;
+  accessManagersHint: string;
+  accessMembersHint: string;
+  transferCreator: string;
+  confirmTransferCreator: string;
+  transferCreatorWarning: string;
+  memberPermissions: string;
+  memberPermissionsHint: string;
+  currentUser: string;
   workspaceDocuments: string;
   noWorkspaces: string;
   noCloudDocuments: string;
+  noFilteredCloudDocuments: string;
   noCloudDocumentsReadOnly: string;
   workspaceMembers: string;
   roleOwner: string;
@@ -593,12 +622,15 @@ const zh: TranslationKeys = {
   joinWorkspace: "加入工作台",
   workspaceAlreadyJoined: "已经加入该工作台",
   workspaceName: "工作台名称",
-  workspaceNameHint: "仅工作台所有者可以修改名称",
+  workspaceNameHint: "仅工作台创建者可以修改名称",
   renameWorkspace: "修改工作台名称",
   saveWorkspaceName: "保存名称",
   inviteCode: "邀请码",
   inviteRole: "新成员权限",
   manageWorkspace: "管理工作台",
+  permissionManagement: "权限管理",
+  permissionManagementHint: "统一管理成员角色与每篇文档的阅读范围",
+  workspaceSettings: "工作台设置",
   shareWorkspace: "分享工作台",
   copyInvite: "复制邀请码",
   copied: "已复制",
@@ -606,8 +638,18 @@ const zh: TranslationKeys = {
   newCloudDocument: "新建云文档",
   newCloudDocumentHint: "创建草稿并在当前工作台协作",
   renameCloudDocument: "修改文档名",
+  documentActions: "文档操作",
+  dragCloudDocument: "上下拖动云文档",
+  documentDetails: "文档详情",
+  deleteCloudDocument: "删除文档",
   cloudDocumentName: "文档名称",
+  documentCreator: "创建者",
+  publicationStatus: "发布状态",
+  collaborationMode: "协作模式",
+  realTimeCollaboration: "云端实时协作",
+  publishedAt: "发布时间",
   cloudDocumentDraft: "草稿",
+  cloudDocumentUnpublished: "未发布",
   cloudDocumentScheduled: "定时",
   cloudDocumentPublished: "已发布",
   manageCloudDocumentPublication: "发布设置",
@@ -622,20 +664,36 @@ const zh: TranslationKeys = {
   nextMonth: "下个月",
   scheduledPublishFuture: "请选择未来的发布时间",
   cloudDocumentPublishUnsynced: "请等待当前修改同步完成后再发布",
-  cloudDocumentPublicationHint: "发布前仅所有者和编辑者可见；发布后访客也可查看。",
-  cloudDocumentPublishedHint: "文档当前已对访客开放。下架后会转回草稿，仅所有者和编辑者可见。",
+  cloudDocumentPublicationHint: "发布后文档将开放给全体成员；也可以在权限管理中直接调整阅读范围。",
+  cloudDocumentPublishedHint: "文档当前对全体成员开放。下架后将仅创建者和管理者可见。",
   unpublishCloudDocument: "下架为草稿",
-  cloudDocumentUnpublishWarning: "下架后访客将立即失去访问权限，已打开文档的访客也会被断开。确定继续吗？",
+  cloudDocumentUnpublishWarning: "下架后普通用户将立即失去访问权限，已打开文档的普通用户也会被断开。确定继续吗？",
   confirmUnpublishCloudDocument: "确认下架",
   keepCloudDocumentPublished: "暂不下架",
+  documentPermissions: "文档阅读权限",
+  documentPermissionsHint: "为不同文档设置独立的阅读范围，权限由服务端强制执行。",
+  documentAccessLevel: "访问范围",
+  accessCreator: "仅创建者",
+  accessManagers: "创建者与管理者",
+  accessMembers: "全体成员",
+  accessCreatorHint: "只有工作台创建者可以查看和编辑",
+  accessManagersHint: "创建者与管理者可以查看和编辑",
+  accessMembersHint: "普通用户可查看，创建者与管理者可编辑",
+  transferCreator: "转让创建者",
+  confirmTransferCreator: "确认转让",
+  transferCreatorWarning: "将创建者身份转让给“{member}”后，你会变为管理者，且只有新创建者能继续管理成员权限和删除工作台。",
+  memberPermissions: "成员权限",
+  memberPermissionsHint: "创建者唯一；管理者可维护文档；普通用户按文档权限只读。",
+  currentUser: "你",
   workspaceDocuments: "协作文档",
   noWorkspaces: "还没有工作台，创建或加入一个吧",
   noCloudDocuments: "工作台中还没有文档",
-  noCloudDocumentsReadOnly: "你在此工作台中为访客，仅可查看已发布文档",
+  noFilteredCloudDocuments: "当前发布状态下没有文档",
+  noCloudDocumentsReadOnly: "你在此工作台中为普通用户，当前没有可阅读的文档",
   workspaceMembers: "工作台成员",
-  roleOwner: "所有者",
-  roleEditor: "可编辑",
-  roleViewer: "仅查看",
+  roleOwner: "创建者",
+  roleEditor: "管理者",
+  roleViewer: "普通用户",
   removeMember: "移除成员",
   confirmRemoveMember: '确定将“{member}”移出“{workspace}”工作台吗？移除后，该成员将无法再访问其中的文档。',
   removedFromWorkspaceTitle: "已被移出工作台",
@@ -1026,12 +1084,15 @@ const en: TranslationKeys = {
   joinWorkspace: "Join Workspace",
   workspaceAlreadyJoined: "You have already joined this workspace",
   workspaceName: "Workspace name",
-  workspaceNameHint: "Only the workspace owner can change its name",
+  workspaceNameHint: "Only the workspace creator can change its name",
   renameWorkspace: "Rename Workspace",
   saveWorkspaceName: "Save name",
   inviteCode: "Invite code",
   inviteRole: "New member role",
   manageWorkspace: "Manage Workspace",
+  permissionManagement: "Permissions",
+  permissionManagementHint: "Manage member roles and document access in one place",
+  workspaceSettings: "Workspace Settings",
   shareWorkspace: "Share Workspace",
   copyInvite: "Copy invite code",
   copied: "Copied",
@@ -1039,8 +1100,18 @@ const en: TranslationKeys = {
   newCloudDocument: "New Cloud Document",
   newCloudDocumentHint: "Create a draft and collaborate in this workspace",
   renameCloudDocument: "Rename Document",
+  documentActions: "Document actions",
+  dragCloudDocument: "Drag cloud document up or down",
+  documentDetails: "Document details",
+  deleteCloudDocument: "Delete Document",
   cloudDocumentName: "Document name",
+  documentCreator: "Creator",
+  publicationStatus: "Publication status",
+  collaborationMode: "Collaboration mode",
+  realTimeCollaboration: "Live cloud collaboration",
+  publishedAt: "Published",
   cloudDocumentDraft: "Draft",
+  cloudDocumentUnpublished: "Unpublished",
   cloudDocumentScheduled: "Scheduled",
   cloudDocumentPublished: "Published",
   manageCloudDocumentPublication: "Publication settings",
@@ -1055,20 +1126,36 @@ const en: TranslationKeys = {
   nextMonth: "Next month",
   scheduledPublishFuture: "Choose a publish time in the future",
   cloudDocumentPublishUnsynced: "Wait for the current changes to finish syncing before publishing",
-  cloudDocumentPublicationHint: "Before publication, only owners and editors can see it. Viewers gain access after publication.",
-  cloudDocumentPublishedHint: "This document is visible to viewers. Unpublishing returns it to a draft visible only to owners and editors.",
+  cloudDocumentPublicationHint: "Publishing opens the document to all members. You can also change access directly in Permission Management.",
+  cloudDocumentPublishedHint: "This document is open to all members. Unpublishing restricts it to creators and managers.",
   unpublishCloudDocument: "Unpublish to draft",
-  cloudDocumentUnpublishWarning: "Viewers will lose access immediately, including anyone who already has the document open. Continue?",
+  cloudDocumentUnpublishWarning: "Members will lose access immediately, including anyone who already has the document open. Continue?",
   confirmUnpublishCloudDocument: "Confirm unpublish",
   keepCloudDocumentPublished: "Keep published",
+  documentPermissions: "Document access",
+  documentPermissionsHint: "Give each document its own audience. Access is enforced by the server.",
+  documentAccessLevel: "Access level",
+  accessCreator: "Creator only",
+  accessManagers: "Creator and managers",
+  accessMembers: "All members",
+  accessCreatorHint: "Only the workspace creator can view and edit",
+  accessManagersHint: "Creators and managers can view and edit",
+  accessMembersHint: "Members can read; creators and managers can edit",
+  transferCreator: "Transfer creator",
+  confirmTransferCreator: "Confirm transfer",
+  transferCreatorWarning: "After transferring creator access to “{member}”, you will become a manager. Only the new creator can manage member permissions or delete the workspace.",
+  memberPermissions: "Member permissions",
+  memberPermissionsHint: "There is one creator. Managers maintain documents; members receive read-only access by document.",
+  currentUser: "You",
   workspaceDocuments: "Shared documents",
   noWorkspaces: "No workspace yet. Create or join one.",
   noCloudDocuments: "No documents in this workspace",
-  noCloudDocumentsReadOnly: "You are a viewer in this workspace and can only read published documents",
+  noFilteredCloudDocuments: "No documents match this publication status",
+  noCloudDocumentsReadOnly: "You are a member of this workspace and no documents are currently available to you",
   workspaceMembers: "Workspace Members",
-  roleOwner: "Owner",
-  roleEditor: "Editor",
-  roleViewer: "Viewer",
+  roleOwner: "Creator",
+  roleEditor: "Manager",
+  roleViewer: "Member",
   removeMember: "Remove member",
   confirmRemoveMember: 'Remove “{member}” from the “{workspace}” workspace? They will no longer be able to access its documents.',
   removedFromWorkspaceTitle: "Removed from workspace",

@@ -127,12 +127,23 @@ const TodoView: React.FC = () => {
 
   useEffect(() => {
     const handlePortalAction = (event: Event) => {
-      if ((event as CustomEvent<PortalAction>).detail !== "new-todo") return;
-      newTodoInputRef.current?.focus();
+      const action = (event as CustomEvent<PortalAction>).detail;
+      if (action === "new-todo") {
+        newTodoInputRef.current?.focus();
+        return;
+      }
+      if (action === "filter-todos-all") {
+        setFilter("all");
+        setPriorityFilter("all");
+      } else if (action === "filter-todos-active") {
+        setFilter("active");
+      } else if (action === "filter-todos-completed") {
+        setFilter("completed");
+      }
     };
     window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
     return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, []);
+  }, [setFilter, setPriorityFilter]);
 
   const confirmDeleteTodo = () => {
     if (!deleteConfirmTodo) return;

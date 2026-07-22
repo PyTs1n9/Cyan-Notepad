@@ -1,6 +1,6 @@
 # Cyan Notepad collaboration server
 
-This service provides authenticated Yjs rooms over WebSocket. It validates every Supabase access token, checks workspace membership and publication access, enforces viewer read-only mode, stores Yjs snapshots in `document_states`, preloads upcoming scheduled documents so they publish at their target time, and closes active rooms when a published document is returned to draft so viewer access is revoked immediately.
+This service provides authenticated Yjs rooms over WebSocket. It validates every Supabase access token, enforces the document's creator/manager/member access level, keeps ordinary members read-only, stores Yjs snapshots in `document_states`, preloads scheduled publications, and closes active rooms immediately when document access or a member role changes so every connection is re-authorized.
 
 ## Local development
 

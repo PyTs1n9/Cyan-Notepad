@@ -16,6 +16,7 @@ import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyM
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
 import { useEditorZoom } from "@/utils/editorZoom";
+import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import LoadingText from "@/components/LoadingText";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
 
@@ -116,6 +117,15 @@ const NoteEditor: React.FC = () => {
       setStickyOpen(isStickyOpen(activeNoteId));
     }, 500);
     return () => clearInterval(timer);
+  }, [activeNoteId]);
+
+  useEffect(() => {
+    const handlePortalAction = (event: Event) => {
+      if ((event as CustomEvent<PortalAction>).detail !== "open-note-sticky" || !activeNoteId) return;
+      void createStickyNote(activeNoteId);
+    };
+    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
+    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
   }, [activeNoteId]);
 
   // Keep refs in sync with state

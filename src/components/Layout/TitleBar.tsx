@@ -1,10 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useTodoStore } from "@/stores/todoStore";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { t } from "@/utils/i18n";
 import { dispatchPortalAction, type PortalAction } from "@/utils/portalActions";
 import type { ViewType } from "@/types";
@@ -12,7 +14,9 @@ import UserAvatar from "@/components/UserAvatar";
 import LoadingText from "@/components/LoadingText";
 import {
   CheckSquare,
-  CirclePlus,
+  CheckCircle2,
+  Circle,
+  Copy,
   FileDown,
   FilePlus2,
   FileText,
@@ -20,20 +24,55 @@ import {
   FolderPlus,
   Info,
   Images,
+  ImagePlus,
+  ListChecks,
   ListPlus,
   LogOut,
   Minus,
   Plus,
+  Pin,
   Power,
   Square,
   X,
   Maximize2,
   Settings,
+  ShieldCheck,
+  Type,
   LogIn,
   Mail,
   UserPlus,
   Users,
 } from "lucide-react";
+
+interface PortalActionButtonProps {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+}
+
+function PortalActionButton({ icon, label, onClick, active = false, disabled = false }: PortalActionButtonProps) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={`group flex min-h-12 w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        active
+          ? "border-accent/25 bg-accent-light text-accent"
+          : "border-transparent bg-bg-primary/55 text-text-secondary hover:border-accent/20 hover:bg-accent-light hover:text-text-primary disabled:hover:border-transparent disabled:hover:bg-bg-primary/55"
+      }`}
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+    >
+      <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${active ? "bg-accent/10" : "bg-bg-secondary text-accent group-hover:bg-accent/10"}`}>
+        {icon}
+      </span>
+      <span className="min-w-0 truncate font-medium">{label}</span>
+    </button>
+  );
+}
 
 interface TitleBarProps {
   currentView: ViewType;
@@ -71,6 +110,10 @@ export default function TitleBar({
     s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId) ?? null
   );
   const canCreateCloudDocument = activeWorkspace?.role === "owner" || activeWorkspace?.role === "editor";
+  const todoFilter = useTodoStore((s) => s.filter);
+  const todoPriorityFilter = useTodoStore((s) => s.priorityFilter);
+  const canvasLoaded = useCanvasStore((s) => s.loaded);
+  const canvasItemCount = useCanvasStore((s) => s.board.items.length);
   const [isMaximized, setIsMaximized] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
@@ -98,6 +141,15 @@ export default function TitleBar({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, [openMenu]);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
   }, [openMenu]);
 
   useEffect(() => {
@@ -192,6 +244,14 @@ export default function TitleBar({
   };
 
   const menuItemClass = "w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-bg-hover transition-colors";
+  const portalViewMeta = currentView === "note"
+    ? { label: t(lang, "notepad"), icon: FileText }
+    : currentView === "todo"
+      ? { label: t(lang, "todo"), icon: CheckSquare }
+      : currentView === "canvas"
+        ? { label: t(lang, "canvas"), icon: Images }
+        : { label: t(lang, "workspace"), icon: Users };
+  const PortalViewIcon = portalViewMeta.icon;
 
   return (
     <>
@@ -253,54 +313,77 @@ export default function TitleBar({
               data-menu-btn
               className={`h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "portal" ? "bg-bg-hover" : ""}`}
               onClick={() => setOpenMenu(openMenu === "portal" ? null : "portal")}
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "portal"}
             >
               {t(lang, "portal")}
             </button>
             {openMenu === "portal" && (
-              <div className={`absolute top-full left-0 mt-0 bg-bg-secondary border border-border rounded-b-md shadow-lg py-1 z-50 ${currentView === "canvas" ? "min-w-[320px] max-w-[380px]" : "min-w-[172px]"}`}>
+              <div
+                className="absolute left-0 top-full z-50 max-h-[calc(100vh-48px)] w-[304px] overflow-y-auto rounded-b-xl border border-border bg-bg-secondary shadow-xl"
+                role="menu"
+                aria-label={`${t(lang, "portal")} · ${portalViewMeta.label}`}
+              >
+                <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                    <PortalViewIcon size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-text-primary">{portalViewMeta.label}</div>
+                    <div className="mt-0.5 text-[10px] text-text-muted">{t(lang, "portal")}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 p-2">
                 {currentView === "note" && (
                   <>
-                    <button className={menuItemClass} onClick={handleNewNote}>
-                      <Plus size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "newNote")}</span>
-                    </button>
-                    <button className={menuItemClass} onClick={handleNewCategory}>
-                      <FolderPlus size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "newCategory")}</span>
-                    </button>
-                    <button className={menuItemClass} onClick={handleImportNotes}>
-                      <FileUp size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "importNote")}</span>
-                    </button>
-                    <button
-                      className={`${menuItemClass} ${activeNoteId ? "" : "opacity-50 cursor-not-allowed hover:bg-transparent"}`}
-                      onClick={handleExportNote}
-                      disabled={!activeNoteId}
-                    >
-                      <FileDown size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "exportFile")}</span>
-                    </button>
+                    <PortalActionButton icon={<Plus size={15} />} label={t(lang, "newNote")} onClick={handleNewNote} />
+                    <PortalActionButton icon={<FolderPlus size={15} />} label={t(lang, "newCategory")} onClick={handleNewCategory} />
+                    <PortalActionButton icon={<FileUp size={15} />} label={t(lang, "importNote")} onClick={handleImportNotes} />
+                    <PortalActionButton icon={<FileDown size={15} />} label={t(lang, "exportFile")} onClick={handleExportNote} disabled={!activeNoteId} />
+                    <PortalActionButton icon={<Pin size={15} />} label={t(lang, "pinSticky")} onClick={() => handlePortalAction("open-note-sticky")} disabled={!activeNoteId} />
                   </>
                 )}
                 {currentView === "todo" && (
                   <>
-                    <button className={menuItemClass} onClick={() => handlePortalAction("new-todo-list")}>
-                      <ListPlus size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "newTodoList")}</span>
-                    </button>
-                    <button className={menuItemClass} onClick={() => handlePortalAction("new-todo")}>
-                      <CirclePlus size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "newTodo")}</span>
-                    </button>
+                    <PortalActionButton icon={<ListPlus size={15} />} label={t(lang, "newTodoList")} onClick={() => handlePortalAction("new-todo-list")} />
+                    <PortalActionButton icon={<ListChecks size={15} />} label={t(lang, "filterAll")} onClick={() => handlePortalAction("filter-todos-all")} active={todoFilter === "all" && todoPriorityFilter === "all"} />
+                    <PortalActionButton icon={<Circle size={15} />} label={t(lang, "filterActive")} onClick={() => handlePortalAction("filter-todos-active")} active={todoFilter === "active"} />
+                    <PortalActionButton icon={<CheckCircle2 size={15} />} label={t(lang, "filterCompleted")} onClick={() => handlePortalAction("filter-todos-completed")} active={todoFilter === "completed"} />
                   </>
                 )}
                 {currentView === "canvas" && (
-                  <div className="px-3 py-2" role="note">
-                    <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-text-primary">
-                      <Info size={14} className="flex-shrink-0 text-accent" />
-                      <span>{t(lang, "canvasGuideTitle")}</span>
+                  <>
+                    <PortalActionButton icon={<Plus size={15} />} label={t(lang, "canvasNew")} onClick={() => handlePortalAction("new-canvas")} disabled={!canvasLoaded} />
+                    <PortalActionButton icon={<ImagePlus size={15} />} label={t(lang, "canvasAddImage")} onClick={() => handlePortalAction("add-canvas-image")} disabled={!canvasLoaded} />
+                    <PortalActionButton icon={<Type size={15} />} label={t(lang, "canvasAddText")} onClick={() => handlePortalAction("add-canvas-text")} disabled={!canvasLoaded} />
+                    <PortalActionButton icon={<Maximize2 size={15} />} label={t(lang, "canvasFit")} onClick={() => handlePortalAction("fit-canvas")} disabled={!canvasLoaded} />
+                    <PortalActionButton icon={<Pin size={15} />} label={t(lang, "canvasOpenTile")} onClick={() => handlePortalAction("open-canvas-tile")} disabled={!canvasLoaded} />
+                    <PortalActionButton icon={<FileDown size={15} />} label={t(lang, "canvasExport")} onClick={() => handlePortalAction("export-canvas")} disabled={!canvasLoaded || canvasItemCount === 0} />
+                  </>
+                )}
+                {currentView === "workspace" && (
+                  authUser ? (
+                    <>
+                      <PortalActionButton icon={<Plus size={15} />} label={t(lang, "createWorkspace")} onClick={() => handlePortalAction("create-workspace")} />
+                      <PortalActionButton icon={<UserPlus size={15} />} label={t(lang, "joinWorkspace")} onClick={() => handlePortalAction("join-workspace")} />
+                      <PortalActionButton icon={<FilePlus2 size={15} />} label={t(lang, "newCloudDocument")} onClick={() => handlePortalAction("new-cloud-document")} disabled={!canCreateCloudDocument} />
+                      <PortalActionButton icon={<ShieldCheck size={15} />} label={t(lang, "permissionManagement")} onClick={() => handlePortalAction("manage-workspace")} disabled={!activeWorkspace} />
+                      <PortalActionButton icon={<Copy size={15} />} label={t(lang, "copyInvite")} onClick={() => handlePortalAction("copy-workspace-invite")} disabled={!activeWorkspace} />
+                    </>
+                  ) : (
+                    <div className="col-span-2">
+                      <PortalActionButton icon={<LogIn size={15} />} label={t(lang, "authSignIn")} onClick={handleOpenAuth} />
                     </div>
-                    <ul className="space-y-1 text-[11px] leading-4 text-text-muted">
+                  )
+                )}
+                </div>
+                {currentView === "canvas" && (
+                  <details className="group border-t border-border/70">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary [&::-webkit-details-marker]:hidden">
+                      <Info size={13} className="flex-shrink-0 text-accent" />
+                      <span>{t(lang, "canvasGuideTitle")}</span>
+                    </summary>
+                    <ul className="space-y-1 px-3 pb-3 text-[10px] leading-4 text-text-muted">
                       <li>{t(lang, "canvasGuideSelect")}</li>
                       <li>{t(lang, "canvasGuidePan")}</li>
                       <li>{t(lang, "canvasGuideAdd")}</li>
@@ -308,34 +391,7 @@ export default function TitleBar({
                       <li>{t(lang, "canvasGuideEdit")}</li>
                       <li>{t(lang, "canvasGuideOverview")}</li>
                     </ul>
-                  </div>
-                )}
-                {currentView === "workspace" && (
-                  authUser ? (
-                    <>
-                      <button className={menuItemClass} onClick={() => handlePortalAction("create-workspace")}>
-                        <Plus size={14} className="flex-shrink-0" />
-                        <span>{t(lang, "createWorkspace")}</span>
-                      </button>
-                      <button className={menuItemClass} onClick={() => handlePortalAction("join-workspace")}>
-                        <UserPlus size={14} className="flex-shrink-0" />
-                        <span>{t(lang, "joinWorkspace")}</span>
-                      </button>
-                      <button
-                        className={`${menuItemClass} ${canCreateCloudDocument ? "" : "opacity-50 cursor-not-allowed hover:bg-transparent"}`}
-                        onClick={() => handlePortalAction("new-cloud-document")}
-                        disabled={!canCreateCloudDocument}
-                      >
-                        <FilePlus2 size={14} className="flex-shrink-0" />
-                        <span>{t(lang, "newCloudDocument")}</span>
-                      </button>
-                    </>
-                  ) : (
-                    <button className={menuItemClass} onClick={handleOpenAuth}>
-                      <LogIn size={14} className="flex-shrink-0" />
-                      <span>{t(lang, "authSignIn")}</span>
-                    </button>
-                  )
+                  </details>
                 )}
               </div>
             )}

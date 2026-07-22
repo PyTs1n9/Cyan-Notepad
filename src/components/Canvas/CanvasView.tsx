@@ -74,6 +74,7 @@ import { t, tWithParams } from "@/utils/i18n";
 import { getCanvasRichTextHtml, plainTextToCanvasHtml } from "@/utils/canvasRichText";
 import { appendCanvasDoodlePoint, canvasDoodlePath, getCanvasDoodleBounds } from "@/utils/canvasDoodle";
 import { openCanvasTileWindow } from "@/utils/canvasTile";
+import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import { CanvasDoodleDefinitions, CanvasDoodleStroke } from "@/components/Canvas/CanvasDoodleLayer";
 import CanvasRichTextEditor from "@/components/Canvas/CanvasRichTextEditor";
 import CanvasTextToolbar from "@/components/Canvas/CanvasTextToolbar";
@@ -1146,6 +1147,40 @@ export default function CanvasView() {
     await saveCanvasBoard(currentBoard, activeCanvasId);
     await openCanvasTileWindow(activeCanvasId);
   }, [activeCanvasId, editingTextId, finishEditingText]);
+
+  useEffect(() => {
+    const handlePortalAction = (event: Event) => {
+      const action = (event as CustomEvent<PortalAction>).detail;
+      if (action === "new-canvas") {
+        if (switchingCanvas || !canvasListLoaded || !loaded) return;
+        setCanvasMenuOpen(true);
+        setCreatingCanvas(true);
+        setNewCanvasName("");
+      } else if (action === "add-canvas-image") {
+        void handleChooseImage();
+      } else if (action === "add-canvas-text") {
+        addTextAt(getViewportCenter());
+      } else if (action === "fit-canvas") {
+        fitCanvas();
+      } else if (action === "open-canvas-tile") {
+        void handleOpenCanvasTile();
+      } else if (action === "export-canvas") {
+        void handleExport();
+      }
+    };
+    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
+    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
+  }, [
+    addTextAt,
+    canvasListLoaded,
+    fitCanvas,
+    getViewportCenter,
+    handleChooseImage,
+    handleExport,
+    handleOpenCanvasTile,
+    loaded,
+    switchingCanvas,
+  ]);
 
   const handlePaste = useCallback(async (event: ClipboardEvent) => {
     const active = document.activeElement;

@@ -1,16 +1,21 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
+  CalendarClock,
   Copy,
-  ChevronDown,
+  FileCheck2,
+  FileClock,
   FilePlus2,
   FileText,
+  Info,
   LogIn,
   LogOut,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
   Settings2,
+  ShieldCheck,
   Trash2,
   UserMinus,
   UserPlus,
@@ -21,6 +26,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type {
+  WorkspaceDocumentAccessLevel,
   WorkspaceDocumentPublicationStatus,
   WorkspaceInviteRole,
   WorkspaceRole,
@@ -31,6 +37,7 @@ import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import LoadingText from "@/components/LoadingText";
 import SidebarResizeHandle from "@/components/Layout/SidebarResizeHandle";
 import UserAvatar from "@/components/UserAvatar";
+import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
 
 interface WorkspaceViewProps {
   sidebarCollapsed: boolean;
@@ -52,187 +59,23 @@ interface MemberRemovalConfirmation {
   displayName: string;
 }
 
-const CloudNoteEditor = lazy(() => import("@/components/Workspace/CloudNoteEditor"));
-
-interface WorkspaceDropdownOption {
-  value: string;
-  label: string;
+interface OwnershipTransferConfirmation {
+  workspaceId: string;
+  userId: string;
+  displayName: string;
 }
 
-interface WorkspaceDropdownProps {
-  value: string;
-  options: WorkspaceDropdownOption[];
-  onChange: (value: string) => void;
-  placeholder?: string;
-  ariaLabel: string;
-  disabled?: boolean;
-  containerClassName?: string;
-  triggerClassName?: string;
-}
-
-interface WorkspaceDropdownMenuPosition {
+interface FloatingPanelPosition {
   left: number;
+  top: number;
   width: number;
   maxHeight: number;
-  top?: number;
-  bottom?: number;
 }
 
-function WorkspaceDropdown({
-  value,
-  options,
-  onChange,
-  placeholder,
-  ariaLabel,
-  disabled = false,
-  containerClassName = "",
-  triggerClassName = "h-8 min-w-[96px]",
-}: WorkspaceDropdownProps) {
-  const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<WorkspaceDropdownMenuPosition | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const selectedOption = options.find((option) => option.value === value);
-  const selectedLabel = selectedOption?.label ?? placeholder ?? "";
+type WorkspaceManageSection = "permissions" | "settings";
+type WorkspaceDocumentPublicationFilter = "all" | WorkspaceDocumentPublicationStatus;
 
-  useEffect(() => {
-    if (!open) return;
-
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!dropdownRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-
-    document.addEventListener("mousedown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open || disabled) {
-      setMenuPosition(null);
-      return;
-    }
-
-    const updateMenuPosition = () => {
-      const trigger = dropdownRef.current;
-      if (!trigger) return;
-
-      const rect = trigger.getBoundingClientRect();
-      const viewportPadding = 8;
-      const menuGap = 4;
-      const maxMenuHeight = 224;
-      const estimatedMenuHeight = Math.min(maxMenuHeight, Math.max(40, options.length * 32 + 8));
-      const spaceBelow = window.innerHeight - rect.bottom - menuGap - viewportPadding;
-      const spaceAbove = rect.top - menuGap - viewportPadding;
-      const openAbove = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow;
-      const maxHeight = Math.max(40, Math.min(maxMenuHeight, openAbove ? spaceAbove : spaceBelow));
-      const width = rect.width;
-      const left = Math.max(
-        viewportPadding,
-        Math.min(rect.left, window.innerWidth - viewportPadding - width),
-      );
-
-      setMenuPosition({
-        left,
-        width,
-        maxHeight,
-        ...(openAbove
-          ? { bottom: Math.max(viewportPadding, window.innerHeight - rect.top + menuGap) }
-          : { top: Math.min(window.innerHeight - viewportPadding - maxHeight, rect.bottom + menuGap) }),
-      });
-    };
-
-    updateMenuPosition();
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [disabled, open, options.length]);
-
-  return (
-    <div ref={dropdownRef} className={`relative min-w-0 ${containerClassName}`}>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-label={ariaLabel}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if ((event.key === "Enter" || event.key === " ") && !disabled) {
-            event.preventDefault();
-            setOpen((current) => !current);
-          }
-          if (event.key === "ArrowDown" && !disabled) {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-        className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border bg-bg-secondary px-2.5 text-left text-text-primary
-          outline-none transition-colors hover:bg-bg-hover focus:border-accent focus:ring-1 focus:ring-accent
-          disabled:cursor-not-allowed disabled:opacity-60 ${triggerClassName}`}
-      >
-        <span className="min-w-0 truncate text-inherit">{selectedLabel}</span>
-        <ChevronDown
-          size={13}
-          className={`flex-shrink-0 text-text-muted transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {open && !disabled && menuPosition && createPortal(
-        <div
-          ref={menuRef}
-          role="listbox"
-          aria-label={ariaLabel}
-          className="fixed z-[10001] overflow-y-auto rounded-lg border border-border bg-bg-primary p-1 text-text-primary shadow-lg shadow-black/15"
-          style={{
-            left: menuPosition.left,
-            width: menuPosition.width,
-            maxHeight: menuPosition.maxHeight,
-            ...(menuPosition.top !== undefined
-              ? { top: menuPosition.top }
-              : { bottom: menuPosition.bottom }),
-          }}
-        >
-          {options.map((option) => {
-            const selected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-                className={`w-full cursor-pointer rounded-md px-2.5 py-1.5 text-left text-xs transition-colors
-                  ${selected
-                    ? "bg-accent-light text-accent"
-                    : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-          {options.length === 0 && (
-            <div className="px-2.5 py-1.5 text-xs text-text-muted">{placeholder}</div>
-          )}
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
-}
+const CloudNoteEditor = lazy(() => import("@/components/Workspace/CloudNoteEditor"));
 
 function isMissingSchemaError(error: string): boolean {
   return /workspace_members|workspaces|documents|relation .* does not exist|schema cache/i.test(error);
@@ -253,6 +96,7 @@ export default function WorkspaceView({
     activeDocumentId,
     loading,
     creatingDocument,
+    reorderingDocument,
     error,
     reset,
     clearError,
@@ -269,9 +113,12 @@ export default function WorkspaceView({
     regenerateInvite,
     createDocument,
     updateDocumentTitle,
+    reorderDocument,
     setDocumentPublication,
+    setDocumentAccessLevel,
     deleteDocument,
     updateMemberRole,
+    transferWorkspaceOwnership,
     removeMember,
   } = useWorkspaceStore();
   const [dialog, setDialog] = useState<ActionDialog>(null);
@@ -286,10 +133,151 @@ export default function WorkspaceView({
   const [removingMember, setRemovingMember] = useState(false);
   const [leavingWorkspace, setLeavingWorkspace] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const [manageSection, setManageSection] = useState<WorkspaceManageSection>("permissions");
+  const [ownershipTransferConfirmation, setOwnershipTransferConfirmation] = useState<OwnershipTransferConfirmation | null>(null);
+  const [transferringOwnership, setTransferringOwnership] = useState(false);
+  const [updatingMemberUserId, setUpdatingMemberUserId] = useState<string | null>(null);
+  const [updatingDocumentAccessId, setUpdatingDocumentAccessId] = useState<string | null>(null);
+  const [documentActionMenuId, setDocumentActionMenuId] = useState<string | null>(null);
+  const [documentActionMenuPosition, setDocumentActionMenuPosition] = useState<FloatingPanelPosition | null>(null);
+  const [documentDetailsId, setDocumentDetailsId] = useState<string | null>(null);
+  const [documentDetailsPosition, setDocumentDetailsPosition] = useState<FloatingPanelPosition | null>(null);
+  const [publicationDialogDocumentId, setPublicationDialogDocumentId] = useState<string | null>(null);
+  const [publicationFilter, setPublicationFilter] = useState<WorkspaceDocumentPublicationFilter>("all");
+  const [draggedDocumentId, setDraggedDocumentId] = useState<string | null>(null);
+  const [dragOverDocumentId, setDragOverDocumentId] = useState<string | null>(null);
+  const [dragOverDocumentPosition, setDragOverDocumentPosition] = useState<"before" | "after" | null>(null);
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState("");
   const [savingWorkspaceName, setSavingWorkspaceName] = useState(false);
   const [copied, setCopied] = useState(false);
   const publishingDueDocumentIdsRef = useRef(new Set<string>());
+  const documentActionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const documentDetailsAnchorRef = useRef<HTMLElement | null>(null);
+  const documentListRef = useRef<HTMLDivElement | null>(null);
+  const documentDragPreviewRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!documentActionMenuId) return;
+    const closeDocumentMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest("[data-document-action-menu]")) setDocumentActionMenuId(null);
+    };
+    const closeDocumentMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDocumentActionMenuId(null);
+    };
+    document.addEventListener("mousedown", closeDocumentMenu);
+    document.addEventListener("keydown", closeDocumentMenuOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeDocumentMenu);
+      document.removeEventListener("keydown", closeDocumentMenuOnEscape);
+    };
+  }, [documentActionMenuId]);
+
+  useLayoutEffect(() => {
+    if (!documentActionMenuId) {
+      setDocumentActionMenuPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const trigger = documentActionTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportPadding = 8;
+      const gap = 6;
+      const width = 168;
+      const estimatedHeight = 152;
+      if (rect.bottom < viewportPadding || rect.top > window.innerHeight - viewportPadding) {
+        setDocumentActionMenuId(null);
+        return;
+      }
+      const preferredLeft = rect.left - gap - width;
+      const fallbackLeft = rect.right + gap;
+      const left = Math.max(
+        viewportPadding,
+        Math.min(
+          preferredLeft >= viewportPadding ? preferredLeft : fallbackLeft,
+          window.innerWidth - viewportPadding - width,
+        ),
+      );
+      const top = Math.max(
+        viewportPadding,
+        Math.min(rect.top + rect.height / 2 - estimatedHeight / 2, window.innerHeight - viewportPadding - estimatedHeight),
+      );
+      setDocumentActionMenuPosition({
+        left,
+        top,
+        width,
+        maxHeight: Math.max(80, window.innerHeight - viewportPadding * 2),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [documentActionMenuId]);
+
+  useEffect(() => {
+    if (!documentDetailsId) return;
+    const closeDocumentDetails = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest("[data-document-details]")) setDocumentDetailsId(null);
+    };
+    const closeDocumentDetailsOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDocumentDetailsId(null);
+    };
+    document.addEventListener("mousedown", closeDocumentDetails);
+    document.addEventListener("keydown", closeDocumentDetailsOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeDocumentDetails);
+      document.removeEventListener("keydown", closeDocumentDetailsOnEscape);
+    };
+  }, [documentDetailsId]);
+
+  useLayoutEffect(() => {
+    if (!documentDetailsId) {
+      setDocumentDetailsPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const anchor = documentDetailsAnchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const viewportPadding = 8;
+      const gap = 6;
+      const width = Math.min(340, window.innerWidth - viewportPadding * 2);
+      const estimatedHeight = 420;
+      if (rect.bottom < viewportPadding || rect.top > window.innerHeight - viewportPadding) {
+        setDocumentDetailsId(null);
+        return;
+      }
+      const availableBelow = window.innerHeight - viewportPadding - rect.bottom - gap;
+      const availableAbove = rect.top - viewportPadding - gap;
+      const openBelow = availableBelow >= estimatedHeight || availableBelow >= availableAbove;
+      const maxHeight = Math.max(140, Math.min(estimatedHeight, openBelow ? availableBelow : availableAbove));
+      const top = openBelow
+        ? Math.min(rect.bottom + gap, window.innerHeight - viewportPadding - maxHeight)
+        : Math.max(viewportPadding, rect.top - gap - maxHeight);
+      const left = Math.max(
+        viewportPadding,
+        Math.min(rect.left, window.innerWidth - viewportPadding - width),
+      );
+      setDocumentDetailsPosition({ left, top, width, maxHeight });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [documentDetailsId]);
 
   const activeWorkspace = workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
   const activeDocument = documents.find((item) => item.id === activeDocumentId) ?? null;
@@ -308,6 +296,117 @@ export default function WorkspaceView({
         avatarUrl: currentAvatarUrl !== undefined ? currentAvatarUrl : member.avatarUrl,
       }
     : member);
+  const filteredDocuments = useMemo(
+    () => publicationFilter === "all"
+      ? documents
+      : documents.filter((document) => document.publicationStatus === publicationFilter),
+    [documents, publicationFilter],
+  );
+  const actionDocument = documents.find((item) => item.id === documentActionMenuId) ?? null;
+  const detailedDocument = documents.find((item) => item.id === documentDetailsId) ?? null;
+  const detailedDocumentCreator = detailedDocument
+    ? displayedMembers.find((member) => member.userId === detailedDocument.createdBy)?.displayName
+      ?? detailedDocument.createdBy
+    : null;
+
+  const resetDocumentDrag = () => {
+    documentDragPreviewRef.current?.remove();
+    documentDragPreviewRef.current = null;
+    setDraggedDocumentId(null);
+    setDragOverDocumentId(null);
+    setDragOverDocumentPosition(null);
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  };
+
+  const getDocumentDropTarget = (clientX: number, clientY: number, documentId: string) => {
+    const viewport = documentListRef.current?.getBoundingClientRect();
+    if (!viewport || clientX < viewport.left || clientX > viewport.right) {
+      return { id: null, position: null as "before" | "after" | null };
+    }
+
+    const rows = Array.from(
+      documentListRef.current?.querySelectorAll<HTMLElement>("[data-document-id]") ?? [],
+    ).filter((row) => row.dataset.documentId !== documentId);
+    const target = rows.find((row) => {
+      const rect = row.getBoundingClientRect();
+      return clientY >= rect.top && clientY <= rect.bottom;
+    }) ?? rows.find((row) => {
+      const rect = row.getBoundingClientRect();
+      return clientY < rect.top + rect.height / 2;
+    }) ?? rows[rows.length - 1];
+    if (!target) return { id: null, position: null as "before" | "after" | null };
+
+    const rect = target.getBoundingClientRect();
+    return {
+      id: target.dataset.documentId ?? null,
+      position: clientY >= rect.top + rect.height / 2 ? "after" : "before",
+    } as const;
+  };
+
+  const startDocumentDrag = (
+    event: ReactMouseEvent<HTMLSpanElement>,
+    documentId: string,
+  ) => {
+    if (!canEdit || reorderingDocument) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const row = event.currentTarget.closest<HTMLElement>("[data-document-row]");
+    if (!row) return;
+
+    const startRect = row.getBoundingClientRect();
+    const offsetY = event.clientY - startRect.top;
+    const preview = row.cloneNode(true) as HTMLElement;
+    preview.style.position = "fixed";
+    preview.style.left = `${startRect.left}px`;
+    preview.style.top = `${startRect.top}px`;
+    preview.style.width = `${startRect.width}px`;
+    preview.style.zIndex = "9999";
+    preview.style.pointerEvents = "none";
+    preview.style.opacity = "0.86";
+    preview.style.boxShadow = "0 4px 16px rgba(0,0,0,0.18)";
+    preview.style.borderRadius = "12px";
+    preview.style.transition = "none";
+    document.body.appendChild(preview);
+    documentDragPreviewRef.current = preview;
+
+    setDraggedDocumentId(documentId);
+    setDragOverDocumentId(null);
+    setDragOverDocumentPosition(null);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+
+    const onMove = (moveEvent: MouseEvent) => {
+      preview.style.top = `${moveEvent.clientY - offsetY}px`;
+      if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) {
+        moved = true;
+      }
+
+      const target = getDocumentDropTarget(moveEvent.clientX, moveEvent.clientY, documentId);
+      setDragOverDocumentId(target.id);
+      setDragOverDocumentPosition(target.position);
+    };
+
+    const onUp = (upEvent: MouseEvent) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (moved) {
+        const target = getDocumentDropTarget(upEvent.clientX, upEvent.clientY, documentId);
+        if (target.id && target.position) {
+          void reorderDocument(documentId, target.id, target.position);
+        }
+      }
+      resetDocumentDrag();
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
     if (user) {
@@ -316,6 +415,10 @@ export default function WorkspaceView({
       reset();
     }
   }, [loadWorkspaces, reset, user]);
+
+  useEffect(() => {
+    setPublicationFilter("all");
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (manageOpen && activeWorkspaceId) {
@@ -332,12 +435,20 @@ export default function WorkspaceView({
   useEffect(() => {
     const client = supabase;
     if (!client || !activeWorkspaceId || !user) return;
+    let documentReloadTimer: number | null = null;
+    const scheduleDocumentReload = () => {
+      if (documentReloadTimer !== null) window.clearTimeout(documentReloadTimer);
+      documentReloadTimer = window.setTimeout(() => {
+        documentReloadTimer = null;
+        void loadDocuments(activeWorkspaceId);
+      }, 80);
+    };
     const channel = client
       .channel(`workspace-meta-${activeWorkspaceId}-${user.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "documents", filter: `workspace_id=eq.${activeWorkspaceId}` },
-        () => { void loadDocuments(activeWorkspaceId); },
+        scheduleDocumentReload,
       )
       .on(
         "postgres_changes",
@@ -361,7 +472,10 @@ export default function WorkspaceView({
         () => { void loadMembers(activeWorkspaceId); },
       )
       .subscribe();
-    return () => { void client.removeChannel(channel); };
+    return () => {
+      if (documentReloadTimer !== null) window.clearTimeout(documentReloadTimer);
+      void client.removeChannel(channel);
+    };
   }, [activeWorkspaceId, loadDocuments, loadMembers, loadWorkspaces, user]);
 
   useEffect(() => {
@@ -434,7 +548,23 @@ export default function WorkspaceView({
     lang,
     role === "owner" ? "roleOwner" : role === "editor" ? "roleEditor" : "roleViewer",
   );
-  const publicationLabel = (status: WorkspaceDocumentPublicationStatus) => t(
+  const accessLevelLabel = (accessLevel: WorkspaceDocumentAccessLevel) => t(
+    lang,
+    accessLevel === "creator"
+      ? "accessCreator"
+      : accessLevel === "managers"
+        ? "accessManagers"
+        : "accessMembers",
+  );
+  const accessLevelHint = (accessLevel: WorkspaceDocumentAccessLevel) => t(
+    lang,
+    accessLevel === "creator"
+      ? "accessCreatorHint"
+      : accessLevel === "managers"
+        ? "accessManagersHint"
+        : "accessMembersHint",
+  );
+  const publicationStatusLabel = (status: WorkspaceDocumentPublicationStatus) => t(
     lang,
     status === "draft"
       ? "cloudDocumentDraft"
@@ -442,6 +572,40 @@ export default function WorkspaceView({
         ? "cloudDocumentScheduled"
         : "cloudDocumentPublished",
   );
+  const formatDocumentDate = (value: string | null) => value
+    ? new Date(value).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")
+    : "—";
+  const publicationFilterOptions: Array<{
+    value: WorkspaceDocumentPublicationFilter;
+    label: string;
+    activeClassName: string;
+    inactiveClassName: string;
+  }> = [
+    {
+      value: "all",
+      label: t(lang, "all"),
+      activeClassName: "bg-accent text-white",
+      inactiveClassName: "text-text-muted hover:bg-bg-hover hover:text-text-primary",
+    },
+    {
+      value: "draft",
+      label: t(lang, "cloudDocumentUnpublished"),
+      activeClassName: "bg-text-muted text-bg-primary",
+      inactiveClassName: "text-text-muted hover:bg-bg-hover hover:text-text-primary",
+    },
+    {
+      value: "scheduled",
+      label: t(lang, "cloudDocumentScheduled"),
+      activeClassName: "bg-warning text-white",
+      inactiveClassName: "text-warning hover:bg-warning/10",
+    },
+    {
+      value: "published",
+      label: t(lang, "cloudDocumentPublished"),
+      activeClassName: "bg-success text-white",
+      inactiveClassName: "text-success hover:bg-success/10",
+    },
+  ];
 
   const openDialog = (nextDialog: Exclude<ActionDialog, null>) => {
     clearError();
@@ -454,6 +618,18 @@ export default function WorkspaceView({
   useEffect(() => {
     const handlePortalAction = (event: Event) => {
       const action = (event as CustomEvent<PortalAction>).detail;
+      if (action === "manage-workspace" && activeWorkspace) {
+        setManageSection("permissions");
+        setManageOpen(true);
+        return;
+      }
+      if (action === "copy-workspace-invite" && activeWorkspace) {
+        void navigator.clipboard.writeText(activeWorkspace.inviteCode).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+        return;
+      }
       const nextDialog = action === "create-workspace"
         ? "createWorkspace"
         : action === "join-workspace"
@@ -466,7 +642,7 @@ export default function WorkspaceView({
     };
     window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
     return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, [canEdit]);
+  }, [activeWorkspace, canEdit]);
 
   const openRenameDocumentDialog = (documentId: string) => {
     const document = documents.find((item) => item.id === documentId);
@@ -538,6 +714,21 @@ export default function WorkspaceView({
     setDeleteConfirmation({ kind: "document", id: document.id, title: document.title });
   };
 
+  const openDocumentPublication = (documentId: string) => {
+    setDocumentActionMenuId(null);
+    setDocumentDetailsId(null);
+    selectDocument(documentId);
+    setPublicationDialogDocumentId(documentId);
+  };
+
+  const openDocumentDetails = (documentId: string) => {
+    const anchor = documentActionTriggerRef.current?.closest<HTMLElement>("[data-document-row]");
+    if (!anchor) return;
+    documentDetailsAnchorRef.current = anchor;
+    setDocumentActionMenuId(null);
+    setDocumentDetailsId(documentId);
+  };
+
   const handleRemoveMember = (memberUserId: string, displayName: string) => {
     if (!activeWorkspace) return;
     setMemberRemovalConfirmation({
@@ -546,6 +737,58 @@ export default function WorkspaceView({
       userId: memberUserId,
       displayName,
     });
+  };
+
+  const handleMemberRoleChange = async (
+    memberUserId: string,
+    displayName: string,
+    nextRole: WorkspaceRole,
+  ) => {
+    if (!activeWorkspace || activeWorkspace.role !== "owner" || updatingMemberUserId) return;
+    if (nextRole === "owner") {
+      setOwnershipTransferConfirmation({
+        workspaceId: activeWorkspace.id,
+        userId: memberUserId,
+        displayName,
+      });
+      return;
+    }
+
+    setUpdatingMemberUserId(memberUserId);
+    try {
+      await updateMemberRole(activeWorkspace.id, memberUserId, nextRole);
+    } finally {
+      setUpdatingMemberUserId(null);
+    }
+  };
+
+  const confirmOwnershipTransfer = async () => {
+    if (!ownershipTransferConfirmation || !user || transferringOwnership) return;
+    setTransferringOwnership(true);
+    try {
+      const transferred = await transferWorkspaceOwnership(
+        ownershipTransferConfirmation.workspaceId,
+        ownershipTransferConfirmation.userId,
+        user.id,
+      );
+      if (transferred) setOwnershipTransferConfirmation(null);
+    } finally {
+      setTransferringOwnership(false);
+    }
+  };
+
+  const handleDocumentAccessChange = async (
+    documentId: string,
+    accessLevel: WorkspaceDocumentAccessLevel,
+  ) => {
+    if (!activeWorkspace || !canEdit || updatingDocumentAccessId) return;
+    if (activeWorkspace.role !== "owner" && accessLevel === "creator") return;
+    setUpdatingDocumentAccessId(documentId);
+    try {
+      await setDocumentAccessLevel(documentId, accessLevel);
+    } finally {
+      setUpdatingDocumentAccessId(null);
+    }
   };
 
   const confirmRemoveMember = async () => {
@@ -644,12 +887,15 @@ export default function WorkspaceView({
         {activeWorkspace && (
           <button
             type="button"
-            onClick={() => setManageOpen(true)}
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-bg-secondary text-text-muted transition-colors hover:border-accent/30 hover:bg-bg-hover hover:text-accent"
-            title={t(lang, "manageWorkspace")}
-            aria-label={t(lang, "manageWorkspace")}
+            onClick={() => {
+              setManageSection("permissions");
+              setManageOpen(true);
+            }}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-accent/25 bg-accent-light text-accent transition-colors hover:border-accent/45 hover:bg-accent/15"
+            title={t(lang, "permissionManagement")}
+            aria-label={t(lang, "permissionManagement")}
           >
-            <Settings2 size={15} />
+            <ShieldCheck size={15} />
           </button>
         )}
       </div>
@@ -741,13 +987,55 @@ export default function WorkspaceView({
                 </span>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {documents.map((document) => {
+              <div className="px-2 pb-2">
+                <div
+                  role="group"
+                  aria-label={t(lang, "publicationStatus")}
+                  className="grid grid-cols-4 divide-x divide-border overflow-hidden rounded-lg border border-border bg-bg-primary/35"
+                >
+                  {publicationFilterOptions.map((option) => {
+                    const selected = publicationFilter === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setPublicationFilter(option.value)}
+                        className={`h-7 min-w-0 truncate px-1 text-[10px] font-medium transition-colors ${
+                          selected ? option.activeClassName : option.inactiveClassName
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div ref={documentListRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                {filteredDocuments.map((document) => {
                   const isActive = document.id === activeDocumentId;
-                  const publicationTone = document.publicationStatus === "draft"
-                    ? "border-border bg-bg-secondary text-text-muted"
+                  const isDragOver = document.id === dragOverDocumentId;
+                  const PublicationIcon = document.publicationStatus === "scheduled"
+                    ? FileClock
+                    : document.publicationStatus === "published"
+                      ? FileCheck2
+                      : FileText;
+                  const publicationIconTone = isActive
+                    ? document.publicationStatus === "scheduled"
+                      ? "bg-warning text-white"
+                      : document.publicationStatus === "published"
+                        ? "bg-success text-white"
+                        : "bg-text-muted text-bg-primary"
                     : document.publicationStatus === "scheduled"
-                      ? "border-warning/20 bg-warning/10 text-warning"
+                      ? "bg-transparent text-warning hover:bg-warning/10"
+                      : document.publicationStatus === "published"
+                        ? "bg-transparent text-success hover:bg-success/10"
+                        : "bg-transparent text-text-muted hover:bg-bg-primary/70";
+                  const accessTone = document.accessLevel === "creator"
+                    ? "border-warning/20 bg-warning/10 text-warning"
+                    : document.accessLevel === "managers"
+                      ? "border-accent/20 bg-accent-light text-accent"
                       : "border-success/20 bg-success/10 text-success";
                   const documentTimestamp = document.publicationStatus === "scheduled" && document.scheduledPublishAt
                     ? new Date(document.scheduledPublishAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US", {
@@ -758,65 +1046,92 @@ export default function WorkspaceView({
                       })
                     : new Date(document.updatedAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US");
                   return (
-                    <div key={document.id} className="group relative mb-1 rounded-xl">
+                    <div
+                      key={document.id}
+                      data-document-row
+                      data-document-id={document.id}
+                      className={`group relative mb-1 rounded-xl ${
+                        isDragOver ? "bg-accent-light/35" : ""
+                      } ${draggedDocumentId === document.id ? "opacity-55" : ""}`}
+                    >
+                      {isDragOver && dragOverDocumentPosition && (
+                        <span
+                          aria-hidden="true"
+                          className={`drag-insertion-line drag-insertion-line--${dragOverDocumentPosition}`}
+                        />
+                      )}
                       <button
                         type="button"
                         data-flat-row-button
                         onClick={() => selectDocument(document.id)}
                         aria-current={isActive ? "page" : undefined}
-                        className={`relative flex min-h-12 w-full items-center gap-2 overflow-hidden rounded-xl border py-2 pl-2.5 text-left transition-colors ${canEdit ? "pr-16" : "pr-2.5"} ${
+                        className={`relative flex min-h-12 w-full items-center gap-2 overflow-hidden rounded-xl border py-2 pl-2.5 text-left transition-colors ${canEdit ? "pr-10" : "pr-2.5"} ${
                           isActive
                             ? "flat-active-row border-accent/20 text-text-primary"
                             : "border-transparent text-text-secondary hover:border-border hover:bg-bg-primary/55 hover:text-text-primary"
                         }`}
                       >
                         {isActive && <span className="absolute bottom-2 left-0 top-2 w-0.5 rounded-r-full bg-accent" />}
-                        <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg ${
-                          isActive ? "bg-accent text-white" : "bg-bg-primary/70 text-text-muted"
-                        }`}>
-                          <FileText size={13} />
+                        <span
+                          onMouseDown={(event) => startDocumentDrag(event, document.id)}
+                          title={canEdit
+                            ? `${publicationStatusLabel(document.publicationStatus)} · ${t(lang, "dragCloudDocument")}`
+                            : publicationStatusLabel(document.publicationStatus)}
+                          className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors ${publicationIconTone} ${
+                            canEdit ? "cursor-grab active:cursor-grabbing" : ""
+                          }`}
+                        >
+                          <PublicationIcon size={14} strokeWidth={isActive ? 2.2 : 1.9} />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{document.title}</span>
                           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] font-normal">
-                            <span className={`flex-shrink-0 rounded border px-1 py-px leading-none ${publicationTone}`}>
-                              {publicationLabel(document.publicationStatus)}
+                            <span className={`flex-shrink-0 rounded border px-1 py-px leading-none ${accessTone}`}>
+                              {accessLevelLabel(document.accessLevel)}
                             </span>
                             <span className="min-w-0 truncate text-text-muted">{documentTimestamp}</span>
                           </span>
                         </span>
                       </button>
                       {canEdit && (
-                        <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+                        <div
+                          data-document-action-menu
+                          className={`absolute right-1.5 top-1/2 z-20 -translate-y-1/2 ${
+                            documentActionMenuId === document.id ? "block" : "hidden group-hover:block group-focus-within:block"
+                          }`}
+                        >
                           <button
                             type="button"
-                            onClick={() => openRenameDocumentDialog(document.id)}
+                            onClick={(event) => {
+                              if (documentActionMenuId === document.id) {
+                                setDocumentActionMenuId(null);
+                                return;
+                              }
+                              documentActionTriggerRef.current = event.currentTarget;
+                              setDocumentDetailsId(null);
+                              setDocumentActionMenuId(document.id);
+                            }}
                             className="rounded-lg bg-bg-primary/80 p-1.5 text-text-muted shadow-sm hover:bg-bg-primary hover:text-accent"
-                            title={t(lang, "renameCloudDocument")}
-                            aria-label={t(lang, "renameCloudDocument")}
+                            title={t(lang, "documentActions")}
+                            aria-label={t(lang, "documentActions")}
+                            aria-expanded={documentActionMenuId === document.id}
+                            aria-haspopup="menu"
                           >
-                            <Pencil size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteDocument(document.id)}
-                            className="rounded-lg bg-bg-primary/80 p-1.5 text-text-muted shadow-sm hover:bg-bg-primary hover:text-danger"
-                            title={t(lang, "deleteNote")}
-                            aria-label={t(lang, "deleteNote")}
-                          >
-                            <Trash2 size={13} />
+                            <MoreHorizontal size={14} />
                           </button>
                         </div>
                       )}
                     </div>
                   );
                 })}
-                {documents.length === 0 && (
+                {filteredDocuments.length === 0 && (
                   <div className="mx-1 mt-2 rounded-xl border border-dashed border-border bg-bg-primary/35 px-3 py-5 text-center">
                     <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-accent-light text-accent">
                       <FileText size={15} />
                     </div>
-                    <p className="mt-2 text-xs leading-relaxed text-text-muted">{t(lang, "noCloudDocuments")}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-text-muted">
+                      {t(lang, documents.length === 0 ? "noCloudDocuments" : "noFilteredCloudDocuments")}
+                    </p>
                   </div>
                 )}
               </div>
@@ -856,6 +1171,122 @@ export default function WorkspaceView({
       </div>
       {!sidebarCollapsed && (
         <SidebarResizeHandle onPointerDown={onSidebarResizeStart} />
+      )}
+
+      {actionDocument && documentActionMenuPosition && createPortal(
+        <div
+          data-document-action-menu
+          role="menu"
+          aria-label={t(lang, "documentActions")}
+          className="fixed z-[10003] overflow-y-auto rounded-xl border border-border bg-bg-primary p-1.5 text-text-primary shadow-xl shadow-black/20"
+          style={{
+            left: documentActionMenuPosition.left,
+            top: documentActionMenuPosition.top,
+            width: documentActionMenuPosition.width,
+            maxHeight: documentActionMenuPosition.maxHeight,
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setDocumentActionMenuId(null);
+              openRenameDocumentDialog(actionDocument.id);
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent"
+          >
+            <Pencil size={13} />
+            {t(lang, "renameCloudDocument")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => openDocumentPublication(actionDocument.id)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent"
+          >
+            <CalendarClock size={13} />
+            {t(lang, "scheduleCloudDocument")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => openDocumentDetails(actionDocument.id)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent"
+          >
+            <Info size={13} />
+            {t(lang, "documentDetails")}
+          </button>
+          <div className="my-1 border-t border-border/70" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setDocumentActionMenuId(null);
+              handleDeleteDocument(actionDocument.id);
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-danger transition-colors hover:bg-danger/10"
+          >
+            <Trash2 size={13} />
+            {t(lang, "deleteCloudDocument")}
+          </button>
+        </div>,
+        document.body,
+      )}
+
+      {detailedDocument && documentDetailsPosition && createPortal(
+        <div
+          data-document-details
+          role="dialog"
+          aria-label={t(lang, "documentDetails")}
+          className="fixed z-[10002] overflow-y-auto rounded-xl border border-border bg-bg-primary text-text-primary shadow-2xl shadow-black/20"
+          style={{
+            left: documentDetailsPosition.left,
+            top: documentDetailsPosition.top,
+            width: documentDetailsPosition.width,
+            maxHeight: documentDetailsPosition.maxHeight,
+          }}
+        >
+          <div className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
+            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+              <Info size={15} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-text-primary">{t(lang, "documentDetails")}</h3>
+              <p className="mt-0.5 truncate text-[11px] text-text-muted">{detailedDocument.title}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDocumentDetailsId(null)}
+              className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+              aria-label={t(lang, "close")}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-4 text-xs">
+            {[
+              [t(lang, "cloudDocumentName"), detailedDocument.title],
+              [t(lang, "documentCreator"), detailedDocumentCreator ?? "—"],
+              [t(lang, "createdAt"), formatDocumentDate(detailedDocument.createdAt)],
+              [t(lang, "updatedAt"), formatDocumentDate(detailedDocument.updatedAt)],
+              [t(lang, "publicationStatus"), publicationStatusLabel(detailedDocument.publicationStatus)],
+              [t(lang, "collaborationMode"), t(lang, "realTimeCollaboration")],
+              [t(lang, "documentAccessLevel"), accessLevelLabel(detailedDocument.accessLevel)],
+              ...(detailedDocument.scheduledPublishAt
+                ? [[t(lang, "scheduledPublishTime"), formatDocumentDate(detailedDocument.scheduledPublishAt)]]
+                : []),
+              ...(detailedDocument.publishedAt
+                ? [[t(lang, "publishedAt"), formatDocumentDate(detailedDocument.publishedAt)]]
+                : []),
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0 rounded-lg bg-bg-secondary/55 px-3 py-2.5">
+                <div className="text-[10px] font-medium text-text-muted">{label}</div>
+                <div className="mt-1 break-words leading-relaxed text-text-primary">{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body,
       )}
 
       <section className="app-work-area-overlay flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -919,6 +1350,8 @@ export default function WorkspaceView({
             workspaceId={activeWorkspace.id}
             role={activeWorkspace.role}
             user={user}
+            publicationDialogRequested={publicationDialogDocumentId === activeDocument.id}
+            onPublicationDialogRequestHandled={() => setPublicationDialogDocumentId(null)}
           />
         </Suspense>
       ) : activeWorkspace ? (
@@ -1006,12 +1439,12 @@ export default function WorkspaceView({
       {manageOpen && activeWorkspace && (
         <div className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-[2px]">
           <div
-            className="app-modal-panel flex max-h-[min(760px,88vh)] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-border bg-bg-primary shadow-2xl shadow-black/20"
+            className="app-modal-panel flex h-[min(800px,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-[22px] border border-border bg-bg-primary shadow-2xl shadow-black/20"
             role="dialog"
             aria-modal="true"
             aria-labelledby="workspace-manage-title"
           >
-            <div className="flex items-start gap-3 border-b border-border bg-bg-sidebar/45 px-5 py-5 sm:px-6">
+            <div className="flex flex-shrink-0 items-start gap-3 border-b border-border bg-bg-sidebar/45 px-5 py-5 sm:px-6">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 id="workspace-manage-title" className="truncate text-base font-semibold text-text-primary">
@@ -1021,7 +1454,9 @@ export default function WorkspaceView({
                     {roleLabel(activeWorkspace.role)}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-text-muted">{t(lang, "manageWorkspace")}</p>
+                <p className="mt-1 text-xs text-text-muted">
+                  {t(lang, manageSection === "permissions" ? "permissionManagementHint" : "workspaceSettings")}
+                </p>
               </div>
               <button
                 type="button"
@@ -1033,7 +1468,29 @@ export default function WorkspaceView({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 sm:px-6">
+            <div className="grid flex-shrink-0 grid-cols-2 border-b border-border bg-bg-sidebar/20 px-5 sm:px-6">
+              {(["permissions", "settings"] as const).map((section) => {
+                const selected = manageSection === section;
+                return (
+                  <button
+                    key={section}
+                    type="button"
+                    onClick={() => setManageSection(section)}
+                    className={`relative flex h-11 items-center justify-center gap-2 text-xs font-semibold transition-colors ${
+                      selected ? "text-accent" : "text-text-muted hover:text-text-primary"
+                    }`}
+                  >
+                    {section === "permissions" ? <ShieldCheck size={14} /> : <Settings2 size={14} />}
+                    {t(lang, section === "permissions" ? "permissionManagement" : "workspaceSettings")}
+                    {selected && <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-accent" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden px-5 sm:px-6">
+              {manageSection === "settings" && (
+                <>
               {activeWorkspace.role === "owner" && (
                 <section className="border-b border-border py-5">
                   <div className="mb-3">
@@ -1069,10 +1526,11 @@ export default function WorkspaceView({
                 </section>
               )}
 
-              <section className="border-b border-border py-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-sm font-semibold text-text-primary">{t(lang, "shareWorkspace")}</h3>
+              {activeWorkspace.role === "owner" && (
+                <section className="border-b border-border py-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-text-primary">{t(lang, "shareWorkspace")}</h3>
                   </div>
                   <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
                     <code className="hidden rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm font-semibold tracking-[0.16em] text-text-primary sm:block">
@@ -1086,47 +1544,62 @@ export default function WorkspaceView({
                       <Copy size={13} />
                       <span>{copied ? t(lang, "copied") : t(lang, "copyInvite")}</span>
                     </button>
-                    {activeWorkspace.role === "owner" && (
-                      <button
-                        type="button"
-                        onClick={() => void regenerateInvite(activeWorkspace.id, user.id)}
-                        className="flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                      >
-                        <RefreshCw size={12} />
-                        <span>{t(lang, "regenerateInvite")}</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => void regenerateInvite(activeWorkspace.id, user.id)}
+                      className="flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                    >
+                      <RefreshCw size={12} />
+                      <span>{t(lang, "regenerateInvite")}</span>
+                    </button>
                   </div>
                 </div>
                 <code className="mt-3 block rounded-lg border border-border bg-bg-secondary px-3 py-2 text-center text-sm font-semibold tracking-[0.2em] text-text-primary sm:hidden">
                   {activeWorkspace.inviteCode}
                 </code>
-                {activeWorkspace.role === "owner" && (
-                  <div className="mt-4 space-y-2.5 border-t border-border/70 pt-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <label className="text-xs font-medium text-text-secondary">{t(lang, "inviteRole")}</label>
-                      <WorkspaceDropdown
-                        value={activeWorkspace.inviteRole}
-                        options={[
-                          { value: "editor", label: t(lang, "roleEditor") },
-                          { value: "viewer", label: t(lang, "roleViewer") },
-                        ]}
-                        onChange={(value) => void updateWorkspace(
-                          activeWorkspace.id,
-                          { invite_role: value as WorkspaceInviteRole },
-                          user.id,
-                        )}
-                        ariaLabel={t(lang, "inviteRole")}
-                        triggerClassName="h-8 min-w-[92px] text-xs"
-                      />
+                <div className="mt-4 space-y-2.5 border-t border-border/70 pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-xs font-medium text-text-secondary">{t(lang, "inviteRole")}</label>
+                    <WorkspaceDropdown
+                      value={activeWorkspace.inviteRole}
+                      options={[
+                        { value: "editor", label: t(lang, "roleEditor") },
+                        { value: "viewer", label: t(lang, "roleViewer") },
+                      ]}
+                      onChange={(value) => void updateWorkspace(
+                        activeWorkspace.id,
+                        { invite_role: value as WorkspaceInviteRole },
+                        user.id,
+                      )}
+                      ariaLabel={t(lang, "inviteRole")}
+                      triggerClassName="h-8 min-w-[92px] text-xs"
+                    />
+                  </div>
+                </div>
+                </section>
+              )}
+
+                </>
+              )}
+
+              {manageSection === "permissions" && (
+                <div className="flex h-full min-h-0 flex-col">
+              <div className="grid flex-shrink-0 grid-cols-3 gap-2 pt-5">
+                {(["owner", "editor", "viewer"] as const).map((role) => (
+                  <div key={role} className="rounded-xl border border-border bg-bg-secondary/45 px-3 py-2.5">
+                    <div className="text-[10px] font-medium text-text-muted">{roleLabel(role)}</div>
+                    <div className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
+                      {displayedMembers.filter((member) => member.role === role).length}
                     </div>
                   </div>
-                )}
-              </section>
-
-              <section className="py-5">
+                ))}
+              </div>
+              <section className="flex-shrink-0 border-b border-border py-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-text-primary">{t(lang, "workspaceMembers")}</h3>
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">{t(lang, "memberPermissions")}</h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-text-muted">{t(lang, "memberPermissionsHint")}</p>
+                  </div>
                   <span className="rounded-full bg-bg-secondary px-2.5 py-1 text-[11px] font-semibold text-text-muted">
                     {displayedMembers.length}
                   </span>
@@ -1140,22 +1613,29 @@ export default function WorkspaceView({
                         avatarUrl={member.avatarUrl}
                         className="h-8 w-8 bg-accent-light text-xs font-semibold text-accent"
                       />
-                      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{member.displayName}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                        {member.displayName}
+                        {member.userId === user.id && (
+                          <span className="ml-1.5 text-[10px] text-text-muted">({t(lang, "currentUser")})</span>
+                        )}
+                      </span>
                       {activeWorkspace.role === "owner" && member.role !== "owner" ? (
                         <>
                           <WorkspaceDropdown
                             value={member.role}
                             options={[
+                              { value: "owner", label: t(lang, "roleOwner") },
                               { value: "editor", label: t(lang, "roleEditor") },
                               { value: "viewer", label: t(lang, "roleViewer") },
                             ]}
-                            onChange={(value) => void updateMemberRole(
-                              activeWorkspace.id,
+                            onChange={(value) => void handleMemberRoleChange(
                               member.userId,
-                              value as WorkspaceInviteRole,
+                              member.displayName,
+                              value as WorkspaceRole,
                             )}
                             ariaLabel={member.displayName}
-                            triggerClassName="h-7 min-w-[80px] px-2 text-[11px] text-text-secondary"
+                            disabled={updatingMemberUserId === member.userId}
+                            triggerClassName="h-8 min-w-[112px] px-2 text-[11px] text-text-secondary"
                           />
                           <button
                             type="button"
@@ -1176,9 +1656,68 @@ export default function WorkspaceView({
                   ))}
                 </div>
               </section>
+
+              <section className="flex min-h-0 flex-1 flex-col overflow-hidden py-5">
+                <div className="mb-3 flex flex-shrink-0 items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">{t(lang, "documentPermissions")}</h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-text-muted">{t(lang, "documentPermissionsHint")}</p>
+                  </div>
+                  <span className="rounded-full bg-bg-secondary px-2.5 py-1 text-[11px] font-semibold text-text-muted">
+                    {documents.length}
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border [scrollbar-gutter:stable]">
+                  {documents.map((workspaceDocument, index) => (
+                    <div
+                      key={workspaceDocument.id}
+                      className={`flex items-center gap-3 px-3 py-3 ${index > 0 ? "border-t border-border" : ""}`}
+                    >
+                      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-bg-secondary text-text-muted">
+                        <FileText size={14} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-text-primary">{workspaceDocument.title}</span>
+                        <span className="mt-0.5 block truncate text-[10px] text-text-muted">
+                          {accessLevelHint(workspaceDocument.accessLevel)}
+                        </span>
+                      </span>
+                      {canEdit ? (
+                        <WorkspaceDropdown
+                          value={workspaceDocument.accessLevel}
+                          options={[
+                            ...(activeWorkspace.role === "owner"
+                              ? [{ value: "creator", label: t(lang, "accessCreator") }]
+                              : []),
+                            { value: "managers", label: t(lang, "accessManagers") },
+                            { value: "members", label: t(lang, "accessMembers") },
+                          ]}
+                          onChange={(value) => void handleDocumentAccessChange(
+                            workspaceDocument.id,
+                            value as WorkspaceDocumentAccessLevel,
+                          )}
+                          ariaLabel={`${workspaceDocument.title} · ${t(lang, "documentAccessLevel")}`}
+                          disabled={updatingDocumentAccessId === workspaceDocument.id}
+                          triggerClassName="h-8 min-w-[154px] px-2 text-[11px] text-text-secondary"
+                        />
+                      ) : (
+                        <span className="shrink-0 rounded-full border border-border bg-bg-secondary px-2.5 py-1 text-[11px] font-semibold text-text-muted">
+                          {accessLevelLabel(workspaceDocument.accessLevel)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {documents.length === 0 && (
+                    <div className="px-4 py-6 text-center text-xs text-text-muted">{t(lang, "noCloudDocuments")}</div>
+                  )}
+                </div>
+              </section>
+                </div>
+              )}
             </div>
 
-            <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="flex flex-shrink-0 flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              {manageSection === "settings" ? (
               <button
                 type="button"
                 onClick={() => void handleLeaveOrDelete()}
@@ -1195,12 +1734,72 @@ export default function WorkspaceView({
                   </>
                 )}
               </button>
+              ) : (
+                <span className="hidden text-[11px] text-text-muted sm:block">{t(lang, "permissionManagementHint")}</span>
+              )}
               <button
                 type="button"
                 onClick={() => setManageOpen(false)}
                 className="h-8 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 {t(lang, "close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {ownershipTransferConfirmation && (
+        <div
+          className="app-modal-backdrop fixed inset-0 z-[10004] flex items-center justify-center px-4"
+          style={{ backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 48%))" }}
+        >
+          <div
+            className="app-modal-panel w-full max-w-[380px] overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workspace-transfer-creator-title"
+          >
+            <div className="px-4 pb-3 pt-4">
+              <div className="flex items-center gap-2 text-text-primary">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-warning/10 text-warning">
+                  <ShieldCheck size={16} />
+                </div>
+                <div className="min-w-0">
+                  <div id="workspace-transfer-creator-title" className="text-sm font-semibold">
+                    {t(lang, "transferCreator")}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-text-muted">
+                    {ownershipTransferConfirmation.displayName}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-text-secondary">
+                {t(lang, "transferCreatorWarning").replace(
+                  "{member}",
+                  ownershipTransferConfirmation.displayName,
+                )}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setOwnershipTransferConfirmation(null)}
+                disabled={transferringOwnership}
+                className="h-8 rounded-lg border border-border px-3 text-sm text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+              >
+                {t(lang, "confirmNo")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmOwnershipTransfer()}
+                disabled={transferringOwnership}
+                aria-busy={transferringOwnership}
+                className="h-8 rounded-lg bg-warning px-3 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+              >
+                {transferringOwnership
+                  ? <LoadingText label={t(lang, "confirmTransferCreator")} variant="bounce" />
+                  : t(lang, "confirmTransferCreator")}
               </button>
             </div>
           </div>
@@ -1225,7 +1824,7 @@ export default function WorkspaceView({
                 </div>
                 <div className="min-w-0">
                   <div id="workspace-delete-confirm-title" className="text-sm font-semibold">
-                    {t(lang, deleteConfirmation.kind === "workspace" ? "deleteWorkspace" : "deleteNote")}
+                    {t(lang, deleteConfirmation.kind === "workspace" ? "deleteWorkspace" : "deleteCloudDocument")}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-text-muted">
                     {deleteConfirmation.title}

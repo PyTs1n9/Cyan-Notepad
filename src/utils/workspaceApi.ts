@@ -2,6 +2,7 @@ import { supabase } from "@/utils/supabase";
 import type {
   Workspace,
   WorkspaceDocument,
+  WorkspaceDocumentAccessLevel,
   WorkspaceDocumentPublicationAction,
   WorkspaceDocumentPublicationStatus,
   WorkspaceInviteRole,
@@ -26,6 +27,8 @@ interface DocumentRow {
   title: string;
   content?: string;
   created_by: string;
+  sort_order: number;
+  access_level: WorkspaceDocumentAccessLevel;
   publication_status: WorkspaceDocumentPublicationStatus;
   scheduled_publish_at: string | null;
   published_at: string | null;
@@ -58,6 +61,8 @@ function mapDocument(row: DocumentRow): WorkspaceDocument {
     title: row.title,
     content: row.content ?? "",
     createdBy: row.created_by,
+    sortOrder: row.sort_order,
+    accessLevel: row.access_level,
     publicationStatus: row.publication_status,
     scheduledPublishAt: row.scheduled_publish_at,
     publishedAt: row.published_at,
@@ -166,9 +171,10 @@ export async function fetchDocuments(workspaceId: string): Promise<WorkspaceDocu
     .from("documents")
     // The editor syncs its body through Yjs; the document list only needs metadata.
     // Avoid transferring every document's full content during workspace startup.
-    .select("id, workspace_id, title, created_by, publication_status, scheduled_publish_at, published_at, created_at, updated_at")
+    .select("id, workspace_id, title, created_by, sort_order, access_level, publication_status, scheduled_publish_at, published_at, created_at, updated_at")
     .eq("workspace_id", workspaceId)
-    .order("updated_at", { ascending: false });
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as DocumentRow[]).map(mapDocument);
 }
@@ -189,7 +195,7 @@ export async function createDocument(
   if (rpcError) throw rpcError;
   const { data, error } = await client
     .from("documents")
-    .select("id, workspace_id, title, content, created_by, publication_status, scheduled_publish_at, published_at, created_at, updated_at")
+    .select("id, workspace_id, title, content, created_by, sort_order, access_level, publication_status, scheduled_publish_at, published_at, created_at, updated_at")
     .eq("id", documentId)
     .single();
   if (error) throw error;
@@ -214,6 +220,20 @@ export async function updateDocument(
   }
 }
 
+export async function reorderDocument(
+  documentId: string,
+  referenceDocumentId: string,
+  position: "before" | "after",
+): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("reorder_workspace_document", {
+    target_document_id: documentId,
+    reference_document_id: referenceDocumentId,
+    drop_position: position,
+  });
+  if (error) throw error;
+}
+
 export async function deleteDocument(documentId: string): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.rpc("delete_document", {
@@ -232,6 +252,18 @@ export async function setDocumentPublication(
     target_document_id: documentId,
     publication_action: action,
     target_publish_at: scheduledPublishAt ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function setDocumentAccessLevel(
+  documentId: string,
+  accessLevel: WorkspaceDocumentAccessLevel,
+): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("set_document_access_level", {
+    target_document_id: documentId,
+    next_access_level: accessLevel,
   });
   if (error) throw error;
 }
@@ -285,6 +317,18 @@ export async function updateMemberRole(
     target_workspace_id: workspaceId,
     target_user_id: userId,
     next_role: role,
+  });
+  if (error) throw error;
+}
+
+export async function transferWorkspaceOwnership(
+  workspaceId: string,
+  nextOwnerId: string,
+): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("transfer_workspace_ownership", {
+    target_workspace_id: workspaceId,
+    next_owner_id: nextOwnerId,
   });
   if (error) throw error;
 }

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   Workspace,
   WorkspaceDocument,
+  WorkspaceDocumentAccessLevel,
   WorkspaceDocumentPublicationAction,
   WorkspaceInviteRole,
   WorkspaceMember,
@@ -16,6 +17,7 @@ interface WorkspaceState {
   activeDocumentId: string | null;
   loading: boolean;
   creatingDocument: boolean;
+  reorderingDocument: boolean;
   error: string | null;
   reset: () => void;
   clearError: () => void;
@@ -39,16 +41,30 @@ interface WorkspaceState {
   regenerateInvite: (workspaceId: string, userId: string) => Promise<string | null>;
   createDocument: (title: string, userId: string, content?: string) => Promise<boolean>;
   updateDocumentTitle: (documentId: string, title: string) => Promise<boolean>;
+  reorderDocument: (
+    documentId: string,
+    referenceDocumentId: string,
+    position: "before" | "after",
+  ) => Promise<boolean>;
   setDocumentPublication: (
     documentId: string,
     action: WorkspaceDocumentPublicationAction,
     scheduledPublishAt?: string,
+  ) => Promise<boolean>;
+  setDocumentAccessLevel: (
+    documentId: string,
+    accessLevel: WorkspaceDocumentAccessLevel,
   ) => Promise<boolean>;
   deleteDocument: (documentId: string) => Promise<boolean>;
   updateMemberRole: (
     workspaceId: string,
     userId: string,
     role: WorkspaceInviteRole,
+  ) => Promise<boolean>;
+  transferWorkspaceOwnership: (
+    workspaceId: string,
+    nextOwnerId: string,
+    userId: string,
   ) => Promise<boolean>;
   removeMember: (workspaceId: string, userId: string) => Promise<boolean>;
 }
@@ -61,6 +77,7 @@ const initialState = {
   activeDocumentId: null as string | null,
   loading: false,
   creatingDocument: false,
+  reorderingDocument: false,
   error: null as string | null,
 };
 
@@ -68,6 +85,33 @@ function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error && "message" in error) return String(error.message);
   return String(error);
+}
+
+function reorderDocuments(
+  documents: WorkspaceDocument[],
+  documentId: string,
+  referenceDocumentId: string,
+  position: "before" | "after",
+): WorkspaceDocument[] {
+  const sourceIndex = documents.findIndex((document) => document.id === documentId);
+  if (sourceIndex < 0 || !documents.some((document) => document.id === referenceDocumentId)) {
+    return documents;
+  }
+
+  const nextDocuments = [...documents];
+  const [movedDocument] = nextDocuments.splice(sourceIndex, 1);
+  const referenceIndex = nextDocuments.findIndex((document) => document.id === referenceDocumentId);
+  if (!movedDocument || referenceIndex < 0) return documents;
+
+  nextDocuments.splice(referenceIndex + (position === "after" ? 1 : 0), 0, movedDocument);
+  if (nextDocuments.every((document, index) => document.id === documents[index]?.id)) {
+    return documents;
+  }
+
+  return nextDocuments.map((document, index) => ({
+    ...document,
+    sortOrder: index * 1024,
+  }));
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -268,6 +312,34 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  reorderDocument: async (documentId, referenceDocumentId, position) => {
+    if (documentId === referenceDocumentId || get().reorderingDocument) return false;
+
+    const workspaceId = get().activeWorkspaceId;
+    const previousDocuments = get().documents;
+    const documents = reorderDocuments(
+      previousDocuments,
+      documentId,
+      referenceDocumentId,
+      position,
+    );
+    if (documents === previousDocuments) return true;
+
+    set({ documents, reorderingDocument: true, error: null });
+    try {
+      await workspaceApi.reorderDocument(documentId, referenceDocumentId, position);
+      return true;
+    } catch (error) {
+      set((state) => ({
+        ...(state.activeWorkspaceId === workspaceId ? { documents: previousDocuments } : {}),
+        error: errorMessage(error),
+      }));
+      return false;
+    } finally {
+      set({ reorderingDocument: false });
+    }
+  },
+
   setDocumentPublication: async (documentId, action, scheduledPublishAt) => {
     try {
       await workspaceApi.setDocumentPublication(documentId, action, scheduledPublishAt);
@@ -278,6 +350,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           if (action === "publish_now") {
             return {
               ...document,
+              accessLevel: "members",
               publicationStatus: "published",
               scheduledPublishAt: null,
               publishedAt: now,
@@ -293,16 +366,41 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               updatedAt: now,
             };
           }
-          // Both cancelling a schedule and unpublishing return the document to
-          // a private draft. The database RPC validates the source state.
+          // Cancelling a schedule preserves its audience; unpublishing returns
+          // the document to the creator-and-manager audience.
           return {
             ...document,
+            ...(action === "unpublish" ? { accessLevel: "managers" as const } : {}),
             publicationStatus: "draft",
             scheduledPublishAt: null,
             publishedAt: null,
             updatedAt: now,
           };
         }),
+        error: null,
+      }));
+      return true;
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return false;
+    }
+  },
+
+  setDocumentAccessLevel: async (documentId, accessLevel) => {
+    try {
+      await workspaceApi.setDocumentAccessLevel(documentId, accessLevel);
+      const now = new Date().toISOString();
+      set((state) => ({
+        documents: state.documents.map((document) => document.id === documentId
+          ? {
+              ...document,
+              accessLevel,
+              publicationStatus: accessLevel === "members" ? "published" : "draft",
+              scheduledPublishAt: null,
+              publishedAt: accessLevel === "members" ? document.publishedAt ?? now : null,
+              updatedAt: now,
+            }
+          : document),
         error: null,
       }));
       return true;
@@ -337,6 +435,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       await workspaceApi.updateMemberRole(workspaceId, userId, role);
       await get().loadMembers(workspaceId);
+      return true;
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return false;
+    }
+  },
+
+  transferWorkspaceOwnership: async (workspaceId, nextOwnerId, userId) => {
+    try {
+      await workspaceApi.transferWorkspaceOwnership(workspaceId, nextOwnerId);
+      await get().loadWorkspaces(userId);
       return true;
     } catch (error) {
       set({ error: errorMessage(error) });

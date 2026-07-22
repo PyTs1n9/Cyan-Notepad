@@ -12,6 +12,7 @@ import {
   Highlighter,
   Link2,
   Send,
+  ShieldCheck,
   Unlink2,
   Users,
   X,
@@ -29,6 +30,7 @@ import type { User } from "@supabase/supabase-js";
 import type {
   CollaborationStatus,
   WorkspaceDocument,
+  WorkspaceDocumentAccessLevel,
   WorkspaceDocumentPublicationAction,
   WorkspaceDocumentPublicationStatus,
   WorkspaceRole,
@@ -54,12 +56,15 @@ import {
 import LoadingText from "@/components/LoadingText";
 import UserAvatar from "@/components/UserAvatar";
 import PublicationDateTimePicker from "@/components/Workspace/PublicationDateTimePicker";
+import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
 
 interface CloudNoteEditorProps {
   document: WorkspaceDocument;
   workspaceId: string;
   role: WorkspaceRole;
   user: User;
+  publicationDialogRequested?: boolean;
+  onPublicationDialogRequestHandled?: () => void;
 }
 
 type MarkdownViewMode = "source" | "preview" | "split";
@@ -604,13 +609,21 @@ function defaultScheduledPublishValue(currentValue: string | null): string {
   return toLocalDateTimeInputValue(nextDate);
 }
 
-export default function CloudNoteEditor({ document, workspaceId, role, user }: CloudNoteEditorProps) {
+export default function CloudNoteEditor({
+  document,
+  workspaceId,
+  role,
+  user,
+  publicationDialogRequested = false,
+  onPublicationDialogRequestHandled,
+}: CloudNoteEditorProps) {
   const lang = useSettingsStore((state) => state.lang);
   const showHighlights = useSettingsStore((state) => state.showWorkspaceHighlights);
   const setShowHighlights = useSettingsStore((state) => state.setShowWorkspaceHighlights);
   const loadDocuments = useWorkspaceStore((state) => state.loadDocuments);
   const updateDocumentTitle = useWorkspaceStore((state) => state.updateDocumentTitle);
   const setDocumentPublication = useWorkspaceStore((state) => state.setDocumentPublication);
+  const setDocumentAccessLevel = useWorkspaceStore((state) => state.setDocumentAccessLevel);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorHostRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -654,10 +667,12 @@ export default function CloudNoteEditor({ document, workspaceId, role, user }: C
   const publicationSaving = publicationSavingAction !== null;
   const [publicationValidationError, setPublicationValidationError] = useState<string | null>(null);
   const [unpublishConfirming, setUnpublishConfirming] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
   useEffect(() => {
     setPublicationDialogOpen(false);
     setUnpublishConfirming(false);
     setPublicationValidationError(null);
+    setAccessSaving(false);
   }, [document.id]);
   const collabUrl = import.meta.env.VITE_COLLAB_URL?.trim();
   const network = useCollaborationNetwork(
@@ -948,8 +963,8 @@ export default function CloudNoteEditor({ document, workspaceId, role, user }: C
       onAuthenticationFailed: ({ reason }) => {
         setStatus("error");
         setConnectionError(reason);
-        // A published document may have just been returned to draft. Reloading
-        // applies RLS immediately and removes it from a viewer's document list.
+        // A document permission or workspace role may have changed. Reloading
+        // applies RLS immediately and removes inaccessible documents.
         void loadDocuments(workspaceId);
       },
       onUnsyncedChanges: ({ number }) => {
@@ -1258,17 +1273,39 @@ export default function CloudNoteEditor({ document, workspaceId, role, user }: C
     : document.publicationStatus === "scheduled"
       ? "border-warning/20 bg-warning/10 text-warning"
       : "border-success/20 bg-success/10 text-success";
+  const accessLevelLabel = t(
+    lang,
+    document.accessLevel === "creator"
+      ? "accessCreator"
+      : document.accessLevel === "managers"
+        ? "accessManagers"
+        : "accessMembers",
+  );
+  const saveAccessLevel = async (accessLevel: WorkspaceDocumentAccessLevel) => {
+    if (!canEdit || accessSaving || (role !== "owner" && accessLevel === "creator")) return;
+    setAccessSaving(true);
+    try {
+      await setDocumentAccessLevel(document.id, accessLevel);
+    } finally {
+      setAccessSaving(false);
+    }
+  };
   const scheduledPublishLabel = document.scheduledPublishAt
     ? new Date(document.scheduledPublishAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")
     : null;
-  const openPublicationDialog = () => {
+  const openPublicationDialog = useCallback(() => {
     if (!canEdit) return;
     setScheduledPublishValue(defaultScheduledPublishValue(document.scheduledPublishAt));
     setPublicationDialogStatus(document.publicationStatus);
     setPublicationValidationError(null);
     setUnpublishConfirming(false);
     setPublicationDialogOpen(true);
-  };
+  }, [canEdit, document.publicationStatus, document.scheduledPublishAt]);
+  useEffect(() => {
+    if (!publicationDialogRequested) return;
+    openPublicationDialog();
+    onPublicationDialogRequestHandled?.();
+  }, [onPublicationDialogRequestHandled, openPublicationDialog, publicationDialogRequested]);
   const savePublication = async (action: WorkspaceDocumentPublicationAction) => {
     if (publicationSavingAction !== null) return;
     if ((action === "publish_now" || action === "schedule") && (unsyncedChanges > 0 || localFallbackActive)) {
@@ -1333,24 +1370,39 @@ export default function CloudNoteEditor({ document, workspaceId, role, user }: C
         />
         <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-text-muted">
           {canEdit ? (
+            <WorkspaceDropdown
+              value={document.accessLevel}
+              options={[
+                ...(role === "owner" ? [{ value: "creator", label: t(lang, "accessCreator") }] : []),
+                { value: "managers", label: t(lang, "accessManagers") },
+                { value: "members", label: t(lang, "accessMembers") },
+              ]}
+              onChange={(value) => void saveAccessLevel(value as WorkspaceDocumentAccessLevel)}
+              disabled={accessSaving}
+              ariaLabel={t(lang, "documentAccessLevel")}
+              icon={ShieldCheck}
+              tone="accent"
+              triggerClassName="h-7 min-w-[132px] text-[11px] font-semibold"
+            />
+          ) : (
+            <span
+              className="flex h-7 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent-light px-2 text-[11px] font-semibold text-accent"
+              title={t(lang, "documentAccessLevel")}
+            >
+              <ShieldCheck size={13} />
+              {accessLevelLabel}
+            </span>
+          )}
+          {canEdit && (
             <button
               type="button"
               onClick={openPublicationDialog}
-              className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium outline-none transition-colors hover:border-accent/30 focus-visible:ring-2 focus-visible:ring-accent/50 ${publicationTone}`}
-              title={scheduledPublishLabel ?? t(lang, "manageCloudDocumentPublication")}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg border outline-none transition-colors hover:border-accent/30 focus-visible:ring-2 focus-visible:ring-accent/50 ${publicationTone}`}
+              title={`${publicationLabel} · ${scheduledPublishLabel ?? t(lang, "manageCloudDocumentPublication")}`}
               aria-label={t(lang, "manageCloudDocumentPublication")}
             >
-              <CalendarClock size={12} />
-              <span>{publicationLabel}</span>
+              <CalendarClock size={13} />
             </button>
-          ) : (
-            <span
-              className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium ${publicationTone}`}
-              title={scheduledPublishLabel ?? publicationLabel}
-            >
-              <CalendarClock size={12} />
-              <span>{publicationLabel}</span>
-            </span>
           )}
           <span aria-hidden="true">·</span>
           <div className="group relative">

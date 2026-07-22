@@ -1,5 +1,6 @@
 export type WorkspaceRole = "owner" | "editor" | "viewer";
 export type WorkspaceInviteRole = Exclude<WorkspaceRole, "owner">;
+export type WorkspaceDocumentAccessLevel = "creator" | "managers" | "members";
 export type WorkspaceDocumentPublicationStatus = "draft" | "scheduled" | "published";
 export type WorkspaceDocumentPublicationAction = "publish_now" | "schedule" | "cancel_schedule" | "unpublish";
 
@@ -20,6 +21,8 @@ export interface WorkspaceDocument {
   title: string;
   content: string;
   createdBy: string;
+  sortOrder: number;
+  accessLevel: WorkspaceDocumentAccessLevel;
   publicationStatus: WorkspaceDocumentPublicationStatus;
   scheduledPublishAt: string | null;
   publishedAt: string | null;
