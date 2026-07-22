@@ -105,6 +105,7 @@ const RECENT_EDIT_DURATION = RECENT_EDIT_STEADY_DURATION + RECENT_EDIT_FADE_DURA
 const RECENT_EDIT_GROUP_WINDOW = 1_400;
 const RECENT_EDIT_GROUP_DISTANCE = 3;
 const RECENT_EDIT_GROUP_MAX_LENGTH = 320;
+const RECENT_EDIT_MAX_ENTRIES = 32;
 const NETWORK_LATENCY_DISPLAY_DIVISOR = 4;
 const recentEditChange = StateEffect.define<null>();
 
@@ -145,7 +146,7 @@ function createThrottledAwareness(
   awareness: Awareness,
   getDelay: () => number,
 ): { awareness: Awareness; destroy: () => void } {
-  const throttledFields = new Set(["cursor", "recentEdit"]);
+  const throttledFields = new Set(["cursor", "recentEdit", "recentEdits"]);
   const pendingFields = new Map<string, unknown>();
   let lastFlushAt = 0;
   let timer: number | null = null;
@@ -275,6 +276,30 @@ function colorWithAlpha(color: string, alpha: string): string {
   if (/^#[\da-f]{6}$/i.test(color)) return `${color}${alpha}`;
   const opacity = Math.round((Number.parseInt(alpha, 16) / 255) * 100);
   return `color-mix(in srgb, ${color} ${opacity}%, transparent)`;
+}
+
+function colorWithScaledAlpha(color: string, alpha: string, scale: number): string {
+  const scaledAlpha = Math.round(
+    Number.parseInt(alpha, 16) * Math.min(1, Math.max(0, scale)),
+  ).toString(16).padStart(2, "0");
+  return colorWithAlpha(color, scaledAlpha);
+}
+
+function isRecentEditAwareness(value: unknown): value is RecentEditAwareness {
+  if (typeof value !== "object" || value === null) return false;
+  const edit = value as Partial<RecentEditAwareness>;
+  return typeof edit.timestamp === "number"
+    && typeof edit.from === "object"
+    && edit.from !== null
+    && typeof edit.to === "object"
+    && edit.to !== null;
+}
+
+function recentEditsFromAwarenessState(state: Record<string, unknown>): RecentEditAwareness[] {
+  if (Array.isArray(state.recentEdits)) {
+    return state.recentEdits.filter(isRecentEditAwareness);
+  }
+  return isRecentEditAwareness(state.recentEdit) ? [state.recentEdit] : [];
 }
 
 function changedRangeFromDelta(
@@ -417,15 +442,15 @@ function recentChangesExtension(ytext: Y.Text, awareness: Awareness) {
       const now = Date.now();
       let nextRefresh = Number.POSITIVE_INFINITY;
       awareness.getStates().forEach((state) => {
-        const recentEdit = state.recentEdit as RecentEditAwareness | undefined;
-        if (recentEdit && typeof recentEdit.timestamp === "number") {
+        recentEditsFromAwarenessState(state).forEach((recentEdit) => {
           const fadeStart = recentEdit.timestamp + RECENT_EDIT_STEADY_DURATION;
           const expiration = recentEdit.timestamp + RECENT_EDIT_DURATION;
+          if (expiration <= now) return;
           nextRefresh = Math.min(
             nextRefresh,
             now < fadeStart ? fadeStart : Math.min(expiration, now + 250),
           );
-        }
+        });
       });
       const delay = nextRefresh - now;
       if (Number.isFinite(nextRefresh) && delay > 0) {
@@ -445,22 +470,23 @@ function recentChangesExtension(ytext: Y.Text, awareness: Awareness) {
       const ranges: RecentChangeRange[] = [];
       awareness.getStates().forEach((state, clientId) => {
         if (clientId === awareness.doc.clientID) return;
-        const recentEdit = state.recentEdit as RecentEditAwareness | undefined;
         const user = state.user as AwarenessUser | undefined;
-        if (!recentEdit || !user?.color || typeof recentEdit.timestamp !== "number") return;
-        const age = now - recentEdit.timestamp;
-        if (age >= RECENT_EDIT_DURATION) return;
-        const from = absolutePosition(recentEdit.from, ytext);
-        const to = absolutePosition(recentEdit.to, ytext);
-        if (from === null || to === null) return;
-        const fadeProgress = Math.max(0, age - RECENT_EDIT_STEADY_DURATION) / RECENT_EDIT_FADE_DURATION;
-        ranges.push({
-          from: Math.min(from, to),
-          to: Math.max(from, to),
-          color: user.color,
-          colorLight: colorWithAlpha(user.color, "1F"),
-          opacity: Math.max(0, 1 - fadeProgress),
-          timestamp: recentEdit.timestamp,
+        if (!user?.color) return;
+        recentEditsFromAwarenessState(state).forEach((recentEdit) => {
+          const age = now - recentEdit.timestamp;
+          if (age >= RECENT_EDIT_DURATION) return;
+          const from = absolutePosition(recentEdit.from, ytext);
+          const to = absolutePosition(recentEdit.to, ytext);
+          if (from === null || to === null) return;
+          const fadeProgress = Math.max(0, age - RECENT_EDIT_STEADY_DURATION) / RECENT_EDIT_FADE_DURATION;
+          ranges.push({
+            from: Math.min(from, to),
+            to: Math.max(from, to),
+            color: user.color,
+            colorLight: colorWithAlpha(user.color, "1F"),
+            opacity: Math.max(0, 1 - fadeProgress),
+            timestamp: recentEdit.timestamp,
+          });
         });
       });
 
@@ -485,7 +511,7 @@ function recentChangesExtension(ytext: Y.Text, awareness: Awareness) {
           decorations.push(Decoration.mark({
             attributes: {
               class: "cm-yRecentChange",
-              style: `background-color: ${range.colorLight}; box-shadow: inset 0 -1px 0 ${colorWithAlpha(range.color, "A6")}; opacity: ${range.opacity.toFixed(2)}`,
+              style: `background-color: ${colorWithScaledAlpha(range.color, "1F", range.opacity)}; box-shadow: inset 0 -1px 0 ${colorWithScaledAlpha(range.color, "A6", range.opacity)}`,
             },
           }).range(range.from, range.to));
         }
@@ -571,7 +597,7 @@ const editorTheme = EditorView.theme({
   ".cm-yRecentChange": {
     borderRadius: "3px",
     boxDecorationBreak: "clone",
-    transition: "opacity 260ms linear, background-color 180ms ease, box-shadow 180ms ease",
+    transition: "background-color 260ms linear, box-shadow 260ms linear",
   },
   ".cm-yRecentChangeCaret": {
     display: "inline-block",
@@ -1037,9 +1063,28 @@ export default function CloudNoteEditor({
     }
 
     let recentEditTimer: number | null = null;
+    let recentEdits: RecentEditAwareness[] = [];
     let recentEditBurst: { from: number; to: number; lastEditedAt: number } | null = null;
     let removeRecentEditObserver: (() => void) | null = null;
     if (editorAwareness) {
+      const publishRecentEdits = () => {
+        if (recentEditTimer !== null) window.clearTimeout(recentEditTimer);
+        recentEditTimer = null;
+        const now = Date.now();
+        recentEdits = recentEdits.filter((edit) => now - edit.timestamp < RECENT_EDIT_DURATION);
+        const latestEdit = recentEdits[recentEdits.length - 1] ?? null;
+        editorAwareness.setLocalStateField("recentEdits", recentEdits);
+        editorAwareness.setLocalStateField("recentEdit", latestEdit);
+        if (recentEdits.length === 0) {
+          recentEditBurst = null;
+          return;
+        }
+        const nextExpiration = Math.min(
+          ...recentEdits.map((edit) => edit.timestamp + RECENT_EDIT_DURATION),
+        );
+        recentEditTimer = window.setTimeout(publishRecentEdits, Math.max(1, nextExpiration - now));
+      };
+
       const publishRecentEdit = (
         event: Y.YTextEvent,
         transaction: Y.Transaction,
@@ -1063,7 +1108,7 @@ export default function CloudNoteEditor({
           ? groupedRange
           : changedRange;
         recentEditBurst = { ...visibleRange, lastEditedAt: timestamp };
-        editorAwareness.setLocalStateField("recentEdit", {
+        const nextEdit = {
           from: Y.relativePositionToJSON(
             Y.createRelativePositionFromTypeIndex(ytext, visibleRange.from, -1),
           ),
@@ -1071,14 +1116,11 @@ export default function CloudNoteEditor({
             Y.createRelativePositionFromTypeIndex(ytext, visibleRange.to, 1),
           ),
           timestamp,
-        } satisfies RecentEditAwareness);
-        if (recentEditTimer !== null) window.clearTimeout(recentEditTimer);
-        recentEditTimer = window.setTimeout(() => {
-          const currentEdit = editorAwareness.getLocalState()?.recentEdit as RecentEditAwareness | undefined;
-          if (currentEdit?.timestamp === timestamp) editorAwareness.setLocalStateField("recentEdit", null);
-          recentEditBurst = null;
-          recentEditTimer = null;
-        }, RECENT_EDIT_DURATION);
+        } satisfies RecentEditAwareness;
+        recentEdits = canGroupWithPrevious && recentEdits.length > 0
+          ? [...recentEdits.slice(0, -1), nextEdit]
+          : [...recentEdits, nextEdit].slice(-RECENT_EDIT_MAX_ENTRIES);
+        publishRecentEdits();
       };
       ytext.observe(publishRecentEdit);
       removeRecentEditObserver = () => ytext.unobserve(publishRecentEdit);
