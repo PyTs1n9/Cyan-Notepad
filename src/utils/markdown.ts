@@ -333,7 +333,11 @@ export function stripMarkdownSyntaxHighlighting(html: string): string {
 }
 
 function isHtmlContent(content: string): boolean {
-  return /<[a-zA-Z][\s\S]*>/.test(content);
+  // A generic `<word>` match also treats C++ template arguments such as
+  // `vector<int>` as HTML. Stored editor HTML has a matching closing tag, or
+  // a real void element, so only use those as the signal.
+  return /<([a-z][\w-]*)\b[^>]*>[\s\S]*<\/\1\s*>/i.test(content)
+    || /<(?:img|br|hr)\b(?:\s+[^>]*)?\/?\s*>/i.test(content);
 }
 
 export async function renderStoredNoteContent(content: string): Promise<string> {
