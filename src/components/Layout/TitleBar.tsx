@@ -42,6 +42,9 @@ import {
   Mail,
   UserPlus,
   Users,
+  Wrench,
+  Compass,
+  CircleHelp,
 } from "lucide-react";
 
 interface PortalActionButtonProps {
@@ -268,10 +271,13 @@ export default function TitleBar({
           <div className="relative h-full flex items-center">
             <button
               data-menu-btn
-              className={`h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "tools" ? "bg-bg-hover" : ""}`}
+              className={`titlebar-menu-button h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "tools" ? "bg-bg-hover" : ""}`}
               onClick={() => setOpenMenu(openMenu === "tools" ? null : "tools")}
+              title={t(lang, "tools")}
+              aria-label={t(lang, "tools")}
             >
-              {t(lang, "tools")}
+              <Wrench className="titlebar-menu-icon" size={14} aria-hidden="true" />
+              <span className="titlebar-menu-label">{t(lang, "tools")}</span>
             </button>
             {openMenu === "tools" && (
               <div className="absolute top-full left-0 mt-0 bg-bg-secondary border border-border rounded-b-md shadow-lg py-1 z-50 min-w-[172px]">
@@ -311,12 +317,15 @@ export default function TitleBar({
           <div className="relative h-full flex items-center">
             <button
               data-menu-btn
-              className={`h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "portal" ? "bg-bg-hover" : ""}`}
+              className={`titlebar-menu-button h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "portal" ? "bg-bg-hover" : ""}`}
               onClick={() => setOpenMenu(openMenu === "portal" ? null : "portal")}
               aria-haspopup="menu"
               aria-expanded={openMenu === "portal"}
+              title={t(lang, "portal")}
+              aria-label={t(lang, "portal")}
             >
-              {t(lang, "portal")}
+              <Compass className="titlebar-menu-icon" size={14} aria-hidden="true" />
+              <span className="titlebar-menu-label">{t(lang, "portal")}</span>
             </button>
             {openMenu === "portal" && (
               <div
@@ -401,10 +410,13 @@ export default function TitleBar({
           <div className="relative h-full flex items-center">
             <button
               data-menu-btn
-              className={`h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "help" ? "bg-bg-hover" : ""}`}
+              className={`titlebar-menu-button h-full px-3 text-xs hover:bg-bg-hover transition-colors ${openMenu === "help" ? "bg-bg-hover" : ""}`}
               onClick={() => setOpenMenu(openMenu === "help" ? null : "help")}
+              title={t(lang, "help")}
+              aria-label={t(lang, "help")}
             >
-              {t(lang, "help")}
+              <CircleHelp className="titlebar-menu-icon" size={14} aria-hidden="true" />
+              <span className="titlebar-menu-label">{t(lang, "help")}</span>
             </button>
             {openMenu === "help" && (
               <div className="absolute top-full left-0 mt-0 bg-bg-secondary border border-border rounded-b-md shadow-lg py-1 z-50 min-w-[172px]">

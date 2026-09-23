@@ -17,7 +17,11 @@ import { t, tWithParams } from "@/utils/i18n";
 import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import type { TodoList } from "@/types";
 
-const TodoSidebar: React.FC = () => {
+interface TodoSidebarProps {
+  compact?: boolean;
+}
+
+const TodoSidebar: React.FC<TodoSidebarProps> = ({ compact = false }) => {
   const {
     todos,
     lists,
@@ -199,6 +203,7 @@ const TodoSidebar: React.FC = () => {
 
   return (
     <aside className="todo-surface flex h-full w-full flex-col bg-bg-sidebar">
+      {!compact && (
       <div className="border-b border-border bg-gradient-to-b from-accent-light/35 to-transparent px-3 pb-3 pt-4">
         <div className="mb-3 flex items-center justify-between px-1">
           <div>
@@ -229,8 +234,9 @@ const TodoSidebar: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="px-3 pb-2 pt-3">
+      <div className={compact ? "px-1 py-2" : "px-3 pb-2 pt-3"}>
         {creating ? (
           <div className="todo-create-panel rounded-xl border border-border p-2.5 focus-within:border-accent/45">
             <div className="mb-2 flex items-center gap-2 px-0.5">
@@ -275,6 +281,14 @@ const TodoSidebar: React.FC = () => {
               </button>
             </div>
           </div>
+        ) : compact ? (
+          <button
+            onClick={() => setCreating(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer mx-auto"
+            title={t(lang, "newTodoList")}
+          >
+            <Plus size={16} />
+          </button>
         ) : (
           <button
             onClick={() => setCreating(true)}
@@ -346,14 +360,15 @@ const TodoSidebar: React.FC = () => {
                     onClick={() => setActiveList(list.id)}
                     onDoubleClick={() => startRename(list)}
                     data-todo-row-button
-                    className={`relative flex h-11 w-full items-center gap-2 overflow-hidden rounded-xl border pl-2 pr-[76px] text-left text-sm ${
+                    title={list.name}
+                    className={`relative flex ${compact ? "h-9 justify-center px-1" : "h-11 pl-2 pr-[76px]"} w-full items-center gap-2 overflow-hidden rounded-xl border text-left text-sm ${
                       isActive
                         ? "todo-list-active border-accent/20 font-medium text-text-primary"
                         : "border-transparent text-text-secondary hover:border-border hover:bg-bg-primary/55 hover:text-text-primary"
                     }`}
                   >
                     {isActive && <span className="absolute bottom-2 left-0 top-2 w-0.5 rounded-r-full bg-accent" />}
-                    {!list.pinned && (
+                    {!compact && !list.pinned && (
                       <span
                         onMouseDown={(event) => startDrag(event, list)}
                         onClick={(event) => event.stopPropagation()}
@@ -369,16 +384,20 @@ const TodoSidebar: React.FC = () => {
                     }`}>
                       <ListChecks size={13} />
                     </span>
-                    <span className="min-w-0 flex-1 truncate">{list.name}</span>
-                    <span
-                      className={`absolute right-2 inline-flex h-[18px] min-w-[34px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none tabular-nums tracking-tight shadow-sm group-hover:hidden ${
+                    {!compact && (
+                      <>
+                        <span className="min-w-0 flex-1 truncate">{list.name}</span>
+                        <span
+                          className={`absolute right-2 inline-flex h-[18px] min-w-[34px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none tabular-nums tracking-tight shadow-sm group-hover:hidden ${
                         isActive
                           ? "bg-accent/10 text-accent"
                           : "border border-border/70 bg-bg-primary/70 text-text-muted"
                       }`}
                     >
                       {listPending}/{listTodos.length}
-                    </span>
+                        </span>
+                      </>
+                    )}
                   </button>
                   <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex">
                     <button

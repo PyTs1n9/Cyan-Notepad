@@ -1586,14 +1586,14 @@ export default function CloudNoteEditor({
               type="button"
               onClick={() => setViewMode(option.value)}
               title={option.label}
-              className={`relative z-10 flex h-7 min-w-[4.25rem] cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium leading-none transition-colors duration-150 ${
+              className={`workspace-toolbar-button relative z-10 flex h-7 min-w-[4.25rem] cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium leading-none transition-colors duration-150 ${
                 viewMode === option.value
                   ? "text-white"
                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
               }`}
             >
               {option.icon}
-              <span>{option.label}</span>
+              <span className="workspace-toolbar-label">{option.label}</span>
             </button>
           ))}
         </div>
@@ -1603,14 +1603,14 @@ export default function CloudNoteEditor({
             aria-pressed={scrollSyncEnabled}
             onClick={toggleScrollSync}
             title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-            className={`flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs transition-colors ${
+            className={`workspace-toolbar-button flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs transition-colors ${
               scrollSyncEnabled
                 ? "border-accent/30 bg-accent/10 text-accent hover:bg-accent/15"
                 : "border-border bg-bg-primary text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             }`}
           >
             {scrollSyncEnabled ? <Link2 size={14} /> : <Unlink2 size={14} />}
-            <span>{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
+            <span className="workspace-toolbar-label">{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
           </button>
           <button
             type="button"
@@ -1619,10 +1619,10 @@ export default function CloudNoteEditor({
             aria-label={highlightsToggleLabel}
             title={highlightsToggleLabel}
             onClick={() => setShowHighlights(!showHighlights)}
-            className="flex h-8 cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-border bg-bg-primary px-2.5 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+            className="workspace-toolbar-button flex h-8 cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-border bg-bg-primary px-2.5 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
             <Highlighter size={14} />
-            <span>{highlightsToggleLabel}</span>
+            <span className="workspace-toolbar-label">{highlightsToggleLabel}</span>
             <span className={`relative h-4 w-7 rounded-full transition-colors ${showHighlights ? "bg-accent" : "bg-border"}`}>
               <span className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${showHighlights ? "translate-x-3" : "translate-x-0"}`} />
             </span>

@@ -15,8 +15,8 @@
         "title": "Cyan Notepad",
         "width": 1200,
         "height": 800,
-        "minWidth": 1000,
-        "minHeight": 600,
+        "minWidth": 480,
+        "minHeight": 400,
         "decorations": false,
         "center": true
       }
@@ -25,14 +25,20 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**", "$EXE/**", "$RESOURCE/**"]
+        "scope": [
+          "$APPDATA/**",
+          "$EXE/**",
+          "$RESOURCE/**"
+        ]
       }
     }
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["cyan-notepad"]
+        "schemes": [
+          "cyan-notepad"
+        ]
       }
     }
   },

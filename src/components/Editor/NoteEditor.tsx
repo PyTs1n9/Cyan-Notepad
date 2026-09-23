@@ -412,9 +412,9 @@ const NoteEditor: React.FC = () => {
   const wordCountNum = chineseChars + englishWords;
 
   return (
-    <div ref={editorContainerRef} className="flex min-h-0 h-full flex-1 flex-col overflow-hidden">
+    <div ref={editorContainerRef} className="note-editor-surface flex min-h-0 min-w-0 h-full flex-1 flex-col overflow-hidden">
       {/* Markdown view controls */}
-      <div className="flex items-center gap-2 px-8 pt-4 pb-1">
+      <div className="note-editor-toolbar flex items-center gap-2 px-8 pt-4 pb-1">
         <div className="relative grid h-8 grid-cols-3 items-center overflow-hidden rounded-full bg-bg-secondary p-0.5">
           <div
             className="markdown-view-pill pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full"
@@ -430,13 +430,13 @@ const NoteEditor: React.FC = () => {
               key={option.value}
               onClick={() => setMarkdownViewMode(option.value)}
               title={option.label}
-              className={`relative z-10 flex h-7 min-w-[4.25rem] items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium leading-none cursor-pointer transition-colors duration-150
+              className={`note-toolbar-button relative z-10 flex h-7 min-w-[4.25rem] items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium leading-none cursor-pointer transition-colors duration-150
                 ${markdownViewMode === option.value
                   ? "text-white"
                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
             >
               {option.icon}
-              <span>{option.label}</span>
+              <span className="note-toolbar-label">{option.label}</span>
             </button>
           ))}
         </div>
@@ -470,34 +470,30 @@ const NoteEditor: React.FC = () => {
           aria-pressed={scrollSyncEnabled}
           onClick={toggleScrollSync}
           title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-          className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium leading-none transition-colors ${
+          className={`note-toolbar-button flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium leading-none transition-colors ${
             scrollSyncEnabled
               ? "border-accent/30 bg-accent/10 text-accent hover:bg-accent/15"
               : "border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
           {scrollSyncEnabled ? <Link2 size={13} /> : <Unlink2 size={13} />}
-          <span>{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
+          <span className="note-toolbar-label">{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
         </button>
         {/* Save Button */}
-        <button
-          onClick={doSave}
+          <button
+            onClick={doSave}
           disabled={!isDirty || isSaving}
           aria-busy={isSaving}
-          className={`flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
+            className={`note-toolbar-button flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
             ${isDirty
               ? "bg-accent text-white hover:bg-accent-hover"
               : "bg-bg-secondary text-text-muted cursor-not-allowed opacity-60"}`}
           title={t(lang, "save")}
         >
-          {isSaving ? (
-            <LoadingText label={t(lang, "save")} variant="bounce" />
-          ) : (
-            <>
-              <Save size={12} />
-              <span>{t(lang, "save")}</span>
-            </>
-          )}
+          <Save size={12} className={isSaving ? "animate-pulse" : undefined} />
+          <span className="note-toolbar-label">
+            {isSaving ? <LoadingText label={t(lang, "save")} variant="bounce" /> : t(lang, "save")}
+          </span>
         </button>
         <button
           onClick={() => {
@@ -508,14 +504,14 @@ const NoteEditor: React.FC = () => {
               createStickyNote(activeNoteId);
             }
           }}
-          className={`flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
+          className={`note-toolbar-button flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
             ${stickyOpen
               ? "bg-accent text-white"
               : "bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
           title={t(lang, "pinSticky")}
         >
           <Pin size={12} />
-          <span>{t(lang, "pinSticky")}</span>
+          <span className="note-toolbar-label">{t(lang, "pinSticky")}</span>
         </button>
       </div>
 

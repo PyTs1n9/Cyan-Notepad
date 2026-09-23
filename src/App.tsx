@@ -649,7 +649,7 @@ export default function App() {
               className="sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
             >
               {currentView === "todo" ? (
-                <TodoSidebar />
+                <TodoSidebar  />
               ) : (
                 <Sidebar
                   currentView={currentView}
@@ -657,6 +657,7 @@ export default function App() {
                   onNewNote={handleNewNote}
                   collapsed={sidebarCollapsed}
                   onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  
                 />
               )}
             </div>

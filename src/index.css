@@ -1,5 +1,100 @@
 @import "tailwindcss";
 
+/* The title-bar menus stay icon-only on compact windows so labels never
+   collapse into vertically stacked characters. */
+.titlebar-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.titlebar-menu-icon {
+  display: none;
+  flex-shrink: 0;
+}
+
+@media (max-width: 520px) {
+  .titlebar-menu-button {
+    width: 2.25rem;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .titlebar-menu-label {
+    display: none;
+  }
+
+  .titlebar-menu-icon {
+    display: block;
+  }
+}
+
+/* Workspace editor actions use their icons as the compact representation. */
+@media (max-width: 640px) {
+  .workspace-toolbar-label {
+    display: none;
+  }
+
+  .workspace-toolbar-button {
+    min-width: 2.25rem;
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .workspace-editor-surface > div:nth-child(2) {
+    gap: 0.5rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .workspace-editor-surface > div:nth-child(2) > .relative {
+    flex-shrink: 0;
+  }
+
+  .workspace-editor-surface > div:nth-child(2) > .ml-auto {
+    gap: 0.375rem;
+    padding-left: 0.5rem;
+  }
+}
+
+.note-editor-surface {
+  container-type: inline-size;
+  container-name: note-editor;
+}
+
+.note-editor-toolbar button,
+.note-editor-toolbar > div:not(.flex-1) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.note-editor-toolbar svg {
+  flex-shrink: 0;
+}
+
+@container note-editor (max-width: 720px) {
+  .note-toolbar-label {
+    display: none;
+  }
+
+  .note-toolbar-button {
+    min-width: 2rem;
+    width: 2rem;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .note-editor-toolbar {
+    gap: 0.25rem;
+    padding-inline: 0.5rem;
+    overflow-x: auto;
+  }
+}
+
 /* Default theme = Blue */
 @theme {
   --color-bg-primary: #f0f4f8;
