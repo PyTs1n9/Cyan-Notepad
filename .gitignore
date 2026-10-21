@@ -41,5 +41,14 @@ IDEA.md
 .workbuddy/
 .agents/
 
+# Local design preview scaffolding (scratch entrypoints, preview builds, screenshots)
+/dist-preview/
+/preview-*.html
+/src/__preview-*.tsx
+/vite.preview.config.ts
+/sidebar-menu.png
+/*-preview.png
+/tree-tint*.png
+
 # .md
 AGENTS.md
