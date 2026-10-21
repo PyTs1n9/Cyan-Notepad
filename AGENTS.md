@@ -73,8 +73,11 @@ On Windows PowerShell, `npx tsc --noEmit` may be blocked by the local script exe
 Rust/Tauri builds on Windows require the MSVC linker. Before `npm run tauri dev` or `npm run tauri build`, load the environment:
 
 ```powershell
+Copy-Item env.example.ps1 env.ps1   # first time only
 . .\env.ps1
 ```
+
+`env.ps1` holds machine-local absolute paths and is git-ignored, so every clone creates its own copy from the tracked template `env.example.ps1`. The template pins versions below but falls back to the newest locally installed MSVC / Windows SDK when the pinned ones are missing.
 
 The explicit variables used by this project are:
 

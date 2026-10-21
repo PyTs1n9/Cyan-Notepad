@@ -7,11 +7,22 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies and build output
 node_modules
 dist
 dist-ssr
+
+# Environment files (the tracked template is .env.example)
+.env
+.env.local
+.env.*.local
 *.local
+
+# Local application data (single source of truth lives beside the app, never in git)
 /data/
+
+# Machine-local build environment (copy env.example.ps1 to env.ps1)
+env.ps1
 
 # Editor directories and files
 .vscode/*
@@ -24,6 +35,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local notes and agent workspace state
+IDEA.md
+.workbuddy/
+.agents/
 
 # .md
 AGENTS.md
