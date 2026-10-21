@@ -38,6 +38,8 @@ import {
   MAX_STICKY_OPACITY,
   MIN_STICKY_OPACITY,
   THEME_COLORS,
+  TRASH_RETENTION_DISABLED,
+  TRASH_RETENTION_FOREVER,
 } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import { isSupabaseConfigured } from "@/utils/supabase";
@@ -86,6 +88,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     shortcuts,
     autoSaveInterval,
     stickyOpacity,
+    trashRetentionDays,
     setTheme,
     setLang,
     setCustomColors,
@@ -96,6 +99,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     setShortcuts,
     setAutoSaveInterval,
     setStickyOpacity,
+    setTrashRetentionDays,
   } = useSettingsStore();
   const { user, loading: authLoading, error: authError, signOut, updateProfile, updatePassword, clearError } = useAuthStore();
   const activeAvatarCache = typeof user?.user_metadata?.avatar_cache === "string"
@@ -105,6 +109,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
   const [activeSection, setActiveSection] = useState<SettingsSection>("basic");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [autoSaveDropdownOpen, setAutoSaveDropdownOpen] = useState(false);
+  const [trashDropdownOpen, setTrashDropdownOpen] = useState(false);
   const [recordingField, setRecordingField] = useState<keyof AppShortcuts | null>(null);
   const [dataDirectory, setDataDirectory] = useState<string | null>(null);
   const [imageCacheDirectory, setImageCacheDirectory] = useState<string | null>(null);
@@ -125,6 +130,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const autoSaveDropdownRef = useRef<HTMLDivElement>(null);
+  const trashDropdownRef = useRef<HTMLDivElement>(null);
 
   const refreshAvatarHistory = useCallback(async () => {
     if (!user) {
@@ -240,6 +246,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [autoSaveDropdownOpen]);
+
+  useEffect(() => {
+    if (!trashDropdownOpen) return;
+
+    const handler = (event: MouseEvent) => {
+      if (trashDropdownRef.current && !trashDropdownRef.current.contains(event.target as Node)) {
+        setTrashDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [trashDropdownOpen]);
 
   const handleShortcutKeyDown = useCallback((
     event: React.KeyboardEvent<HTMLInputElement>,
@@ -389,6 +408,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
   const selectedAutoSaveOption = autoSaveOptions.find(
     (option) => option.value === autoSaveInterval,
   ) ?? autoSaveOptions[0];
+
+  const trashRetentionOptions: {
+    value: number;
+    labelKey:
+      | "trashRetentionDisabled"
+      | "trashRetention7Days"
+      | "trashRetention30Days"
+      | "trashRetention90Days"
+      | "trashRetentionForever";
+  }[] = [
+    { value: TRASH_RETENTION_DISABLED, labelKey: "trashRetentionDisabled" },
+    { value: 7, labelKey: "trashRetention7Days" },
+    { value: 30, labelKey: "trashRetention30Days" },
+    { value: 90, labelKey: "trashRetention90Days" },
+    { value: TRASH_RETENTION_FOREVER, labelKey: "trashRetentionForever" },
+  ];
+
+  const selectedTrashRetentionOption = trashRetentionOptions.find(
+    (option) => option.value === trashRetentionDays,
+  ) ?? trashRetentionOptions[2];
   const cc: CustomColors = customColors || THEME_COLORS.blue;
 
   const colorFields: {
@@ -415,6 +454,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     setActiveSection(section);
     setDropdownOpen(false);
     setAutoSaveDropdownOpen(false);
+    setTrashDropdownOpen(false);
     setRecordingField(null);
   };
 
@@ -619,6 +659,57 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                               }}
                               className={`w-full px-3 py-2 text-left text-sm transition-colors cursor-pointer
                                 ${autoSaveInterval === option.value
+                                  ? "bg-accent-light text-accent"
+                                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
+                            >
+                              {t(lang, option.labelKey)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                        <Trash2 size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-text-primary">
+                          {t(lang, "trashRetention")}
+                        </div>
+                        <div className="truncate text-xs text-text-muted">
+                          {t(lang, "trashHint")}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative" ref={trashDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setTrashDropdownOpen(!trashDropdownOpen)}
+                        aria-expanded={trashDropdownOpen}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                      >
+                        <span className="truncate">{t(lang, selectedTrashRetentionOption.labelKey)}</span>
+                        <ChevronDown
+                          size={14}
+                          className={`flex-shrink-0 transition-transform ${trashDropdownOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {trashDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-border bg-bg-primary shadow-lg">
+                          {trashRetentionOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setTrashRetentionDays(option.value);
+                                setTrashDropdownOpen(false);
+                              }}
+                              className={`w-full px-3 py-2 text-left text-sm transition-colors cursor-pointer
+                                ${trashRetentionDays === option.value
                                   ? "bg-accent-light text-accent"
                                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
                             >

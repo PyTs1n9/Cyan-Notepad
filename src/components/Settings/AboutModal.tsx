@@ -5,7 +5,8 @@ import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2
 import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { APP_VERSION, fetchLatestRelease, GITHUB_RELEASES_URL, GITHUB_URL, isVersionNewer } from "@/utils/updateChecker";
 
-const BLOG_URL = "https://pyts1n9.github.io/";
+const BLOG_URL = "https://qing.dreamisle.top/";
+const BLOG_LABEL = new URL(BLOG_URL).host;
 const QQ_GROUP_NUMBER = "902898359";
 
 const SPONSOR_IMAGES = Object.entries(
@@ -203,7 +204,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           >
             <span className="text-text-muted">{t(lang, "personalBlog")}</span>
             <span className="text-accent text-xs flex items-center gap-1">
-              pyts1n9.github.io
+              {BLOG_LABEL}
               <ExternalLink size={12} />
             </span>
           </button>
