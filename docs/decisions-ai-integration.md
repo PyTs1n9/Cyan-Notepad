@@ -1,136 +1,132 @@
-# 决策记录：AI 接入与本地知识库
+# 决策记录：AI 助手与笔记润色
 
 日期：2026-10-22
 状态：待确认后执行
-强度：拷打（4 轮问答 + 2 轮概念澄清）
 
-## 背景
+## 需求
 
-需求起点：「给笔记本接入 API AI 的调用，或者是本地的知识库」，并希望向使用者收取一定费用。
+两条，互不依赖：
 
-排查到的现状：
+1. **右侧栏增加 AI 助手**：检索内置知识库，回答「这个软件怎么用」这一类问题。
+2. **用户可配置自己的 DeepSeek API Key**：用于润色、修改本地笔记的选中内容。
+
+## 排查到的现状
 
 - 技术栈固定 Tauri v2 + React 19 + TypeScript，数据全部落在本地 `data/`（Markdown + JSON）。
-- 已有 Supabase（认证 / 工作台 / 云文档 / RPC）与 `collab-server`（Hocuspocus + Yjs 实时协作，部署在 Render，持有 service_role key）。
-- `docs/online-workspace.md` 已确立安全边界：EXE 只含公开信息，secret 仅存在于服务端。
-- `data/notes/` 当前仅 4 篇笔记，11MB 中主要是图片附件。
-- `src-tauri/src/credentials.rs` 已有 Windows DPAPI 封装（`CryptProtectData` / `CryptUnprotectData`）与两个 Tauri 命令，可直接复用。
+- `src-tauri/src/credentials.rs` 已有 Windows DPAPI 封装（`CryptProtectData` / `CryptUnprotectData`）与两个命令，可直接复用。
 - `src/components/Editor/NoteEditor.tsx` 的所有编辑最终汇聚为单一字符串 `content`，经 `saveNoteContent(noteId, content)` 落盘；Yjs 绑定在 `MarkdownSourceEditor` 的 CodeMirror 上。
-
-本轮明确了三件事：不内置生成模型、只接入 DeepSeek、收费按「软件功能费」而非「token 差价」。
+- 项目已有 Supabase 与 `collab-server`（Hocuspocus + Yjs 协作），安全边界为「EXE 只含公开信息，secret 仅存在于服务端」。
 
 ## 结论
 
-### 1. 商业模式：模式 1（软件功能费 + 用户自带 Key）
+### 1. 两个功能彼此独立，不共享检索
 
-结论：不代收模型费用，不转售 token。用户自行到 DeepSeek 开通 API 并填入本机，应用只按软件能力收费。
+结论：AI 助手只检索「功能手册」；笔记润色不检索任何东西，直接用选中段落与当前笔记作上下文。
 
-理由：国内代收 token 费用属于经营性互联网信息服务，需 ICP 许可证（要求中国大陆公司、注册资本 ≥100 万、3 名员工社保，审批 40–60 工作日）、算法备案（2–3 个月）与大模型登记；《生成式人工智能服务管理暂行办法》第二十二条明确把「通过可编程接口提供服务」纳入服务提供者范围，「只是转发管道」不构成免责。模式 1 下笔记直接经用户设备发往 DeepSeek，不经过本项目服务器，合规义务与工程复杂度同时降到最低。
+理由：助手回答的是产品问题，笔记内容是噪音；润色只需要改写眼前这段文字，检索只会引入无关材料。拆开之后，笔记侧完全不需要 embedding 与索引，工作量大幅下降。
 
-### 2. 模型接入范围：仅 DeepSeek，按 OpenAI 兼容协议实现
+### 2. 知识库内容：手写功能手册
 
-结论：只做 DeepSeek 一家的适配，但请求层按 OpenAI 兼容格式编写（`baseURL` + `apiKey` + `/chat/completions`）。
+结论：新建 `docs/user-manual.md` 作为唯一语料来源，面向使用者撰写。
 
-理由：DeepSeek 官方同时提供 OpenAI 与 Anthropic 两种 base URL，按兼容协议实现即可；后续要接 Kimi / Qwen / GLM / 硅基流动时，只需在设置里增加预设项，不改调用层。
+理由：现有 `AGENTS.md` 是开发者视角（MSVC 环境、构建命令），对用户是噪音；README 偏项目介绍，缺操作步骤。手册需覆盖：界面分区、笔记/待办/画布/便签各功能的操作路径、快捷键、导入导出、数据目录位置、常见问题。
 
-### 3. 生成模型：不内置，只接云端
+### 3. 检索实现：本地 embedding + 暴力余弦
 
-结论：不在安装包内放置任何对话生成模型（不集成 Qwen 小模型、不依赖 Ollama）。
+结论：`bge-small-zh-v1.5` int8（24MB）打进安装包，在 Web Worker 里用 transformers.js 运行；索引存 `manual-index.bin` + `manual-index.json`；检索时全量算余弦取 top-5。
 
-理由：1.5B–3B 量级的本地模型在无独显机器上体验不可接受，安装包增重 1–2GB，且效果远逊于云端；用户已确认「只自带检索」。
+理由：24MB 对 NSIS 安装包可忽略，无需下载器；手册只有几十页、几百个切块，暴力检索在毫秒级，不需要向量库。索引在**构建期**生成，随包分发，运行时只读。
 
-### 4. 检索模型：`bge-small-zh-v1.5` int8，随安装包分发
+### 4. 无 Key 时的降级
 
-结论：使用 int8 量化版（24MB）作为 Tauri resource 打进安装包，运行在 Web Worker 内的 transformers.js 上。
+结论：未配置 Key 时助手仍可用，但只做「检索 + 片段展示」；配置 Key 后才生成自然语言回答。
 
-理由：int8 把权重从约 91MB 压到 24MB，与原版余弦相似度 0.9856，检索任务无感；24MB 对 NSIS 安装包可忽略，因此不需要下载器（省掉断点续传、校验、镜像、失败重试整套逻辑）。GitHub Release 支持单文件 <2GiB 且带宽免费，但为 24MB 引入网络依赖不划算。
+理由：手册内容的答案本就是确定的，直接给原文片段带位置，比让模型复述更准，也让用户在不产生任何费用的前提下获得价值。
 
-### 5. 能力边界：检索模型只负责「找」
+### 5. 生成模型：只接 DeepSeek，云端调用
 
-结论：该模型仅输出 512 维向量，用于语义检索、相似笔记与去重；不承担任何生成任务。
+结论：只接 `deepseek-flash`，按 OpenAI 兼容协议实现（`https://api.deepseek.com` + `/chat/completions`）。
 
-理由：它是编码器，没有语言生成能力。生成必须由 DeepSeek 完成。这一点决定了「自带 RAG 知识库」不能替代模型接入，两条链路必须同时存在。
+理由：按官方文档，`deepseek-v4-pro` 已退役（2026-09-14 起请求全部路由至 V4.1 Flash），当前仅 `deepseek-flash` 一个有效模型，因此**本期不做模型选择器**，设置页只显示模型名。请求层按兼容协议写，将来接第二家只加预设项。
 
-### 6. 检索层：抽象 `retrieve()`，默认走向量检索
+### 6. Key 存储：复用现有 DPAPI
 
-结论：统一出口 `retrieve(query, opts) => RetrievedChunk[]`，提供两种实现——`vector`（默认，RAG）与 `full-context`（降级）。
+结论：API Key 经 Windows DPAPI 加密后存 `data/ai/credentials.bin`。
 
-理由：默认按用户要求做 RAG；保留全文注入实现，用于索引未建好、检索结果为空或相似度低于阈值时的回退，避免「检索没命中就答不知道」。两者共用同一接口，上层调用代码不感知差异。
+理由：`credentials.rs` 已有加解密封装，扩一对通用命令即可。不写 `settings.json`（会随数据目录被备份或分享），不进 localStorage。
 
-### 7. 向量存储：二进制文件 + 暴力余弦，不引入向量库
+### 7. 润色：预览后应用，可撤销
 
-结论：索引存 `data/ai/index.bin`（`Float32Array` 拼接）+ `data/ai/index.json`（块元数据）。
+结论：AI 生成的改写结果先进 diff 预览，用户点「应用」才写入；写入前自动保存原文快照，可一键撤回。
 
-理由：1 万条 512 维向量的全量余弦计算在 JS 中约几十毫秒，`sqlite-vec` / LanceDB 带来的依赖、迁移与打包成本在语料只有 4 篇的现状下没有对应收益。语料增长到十万级时再评估换库，届时只需替换 `indexStore`。
+理由：`NoteEditor` 的内容最终是整串 `content`，误写会覆盖正文。快照存 `data/ai/snapshots/<noteId>/<timestamp>.md`。
 
-### 8. AI 写入授权：先出建议 → diff 预览 → 用户确认 → 可撤销
+### 8. 写入路径：经编辑器状态，不直写文件
 
-结论：AI 不直接改文件。生成结果先进 diff 预览，用户确认后才写入编辑器内容。写入前自动保存原文快照。
+结论：应用改动时更新 `NoteEditor` 的 content 状态，由既有 autosave 落盘；**不直接调用 `saveNoteContent`**。
 
-理由：`content` 是整串替换，误写会覆盖正文。快照存 `data/ai/snapshots/<noteId>/<timestamp>.md`，撤销即回写快照；不依赖回收站（回收站是笔记级删除，粒度不匹配）。
+理由：绕过编辑器状态会导致界面与磁盘不一致；走同一路径还能让 Yjs 协作绑定自然跟随。
 
-### 9. 协作冲突：不处理 CRDT 合并，但协作会话期间禁用 AI 写入
+### 9. 协作会话期间禁用润色
 
-结论：检测到活跃协作会话时，AI 的「应用」按钮禁用并提示原因；只读问答不受影响。
+结论：检测到活跃协作会话时「应用」按钮禁用并说明原因；助手问答不受影响。
 
-理由：整串替换对 Yjs 是一次巨型删除+插入，会破坏他人正在编辑的文档状态。正确做法（把改动拆成 CRDT 事务）成本远高于当前收益，而「协作时禁用写入」用一行判断就能消除风险。
+理由：整串替换对 Yjs 是一次巨型删除+插入，会破坏他人正在编辑的文档。
 
-### 10. UI 入口：右侧 AI 侧栏
+### 10. 收费：模式 1（软件功能费），不代收 token
 
-结论：侧栏是唯一主入口，承载对话、引用来源展示、diff 预览与设置入口。
+结论：不做 API 中转，不代收模型费用；用户自己的 Key 直连 DeepSeek。
 
-理由：写作辅助、全文问答、通用聊天三类需求的交互都是「多轮 + 需要看到引用」，浮动菜单装不下引用与对话历史。
+理由：国内代收 token 费用属经营性互联网信息服务，需 ICP 许可证（中国大陆公司、注册资本 ≥100 万、3 名员工社保）、算法备案与大模型登记；模式 1 下笔记内容不经过本项目服务器，合规与工程成本都最低。
 
-### 11. 隐私边界：明确降级，并主动告知
+### 11. 隐私告知
 
-结论：`数据不出本机` 只对检索成立——embedding 在本地计算，笔记原文不落任何第三方；但检索出的片段与选中段落会发往 DeepSeek。首次启用云端模型时弹窗告知具体内容与接收方。
+结论：首次配置 Key 时弹窗说明：选中的笔记内容与助手提问会发送至 DeepSeek；本地检索不联网。
 
-理由：用户已选择接受云端生成；若不主动告知，「本地知识库」的说法会让人误以为数据完全不出机，信任成本更高。告知内容需写清「哪些内容、发给谁、可否撤回」。
+理由：避免用户误以为「本地知识库」等于「完全不出本机」。
 
-### 12. Key 存储：复用现有 DPAPI 通道
+## 相比前几轮砍掉的内容
 
-结论：API Key 经 Windows DPAPI 加密后存 `data/ai/credentials.bin`，不写 `settings.json`、不进 localStorage。
+以下曾出现在讨论中，因与最终需求无关而移除：
 
-理由：`src-tauri/src/credentials.rs` 已有 `CryptProtectData` / `CryptUnprotectData` 封装，扩展一对通用 `encrypt_secret` / `decrypt_secret` 命令即可；`settings.json` 会随数据目录被用户备份或分享，明文 Key 不应出现在那里。
+- 笔记向量索引、双库合并检索、相似笔记推荐 —— 助手不查笔记，没有索引对象
+- 自动摘要、标签建议、拆待办 —— 需求未提及
+- 检索层的全文注入实现 —— 只用手册索引一种检索
+- 模型选择器 —— 只有一个可用模型
+- 外部知识库平台（Dify 等）—— 手册只有几十页，本地索引零成本且可离线；将来手册膨胀到 200 页以上再评估
+- 内置本地生成模型 —— 内存与质量代价都不划算，帮助类问题用检索片段即可
 
-### 13. 上下文与成本：按 1M 窗口规划，不做人为截断
+## 实现约定
 
-结论：DeepSeek V4 系列上下文为 1M token，笔记内容作为稳定前缀可获得缓存命中价格；prompt 组装按实际需要取材，不设固定截断阈值。
-
-理由：官方定价页（2026-08-17 起峰谷计价，工作日 9:00–12:00、14:00–18:00 为高峰）显示缓存命中输入为 0.3 元/百万 token（高峰），未命中 9 元/百万；笔记作为不变前缀命中率高，4 篇笔记的单次问答成本在分级钱。参考：<https://api-docs.deepseek.com/quick_start/pricing>
-
-## 实现约定（技术默认值，无需另行确认）
-
-- 新增目录 `src/utils/ai/`：`provider.ts`（DeepSeek 适配 + 错误归一）、`chunking.ts`（切块）、`embedding.ts`（Worker 入口）、`indexStore.ts`（索引读写）、`retrieval.ts`（`retrieve` 双实现）、`snapshot.ts`（快照与撤销）、`diff.ts`（行级 diff）。
-- 切块策略：按 Markdown 标题层级切分，单块上限 512 字，相邻块重叠 64 字；元数据记 `noteId` / `heading` / `charRange`。
-- 索引失效：`notes/index.json` 或笔记文件的修改时间变化时，仅重算该笔记的块，标记为脏并在空闲时刷新。
-- embedding 全部在 Web Worker 中执行，主线程只接收 `Float32Array`，避免建索引期间 UI 卡死。
-- `src/stores/aiStore.ts`：侧栏开关、模型配置、会话列表、索引状态；持久化到 `data/ai/settings.json`（不含 Key）。
+- 新增 `src/utils/ai/`：`provider.ts`（DeepSeek 适配）、`chunking.ts`、`embedding.ts`（Worker 入口）、`manualIndex.ts`（索引读写与检索）、`snapshot.ts`、`diff.ts`。
+- 切块：按 Markdown 标题切分，单块上限 512 字，相邻重叠 64 字；元数据记 `heading` / `charRange`。
+- 构建期脚本 `scripts/build-manual-index.mjs`：读 `docs/user-manual.md` → 生成向量 → 输出 `manual-index.bin/json`；在 `npm run build` 前置执行。
+- `src-tauri/tauri.conf.json` 的 `bundle.resources` 增加模型目录与 `manual-index.*`；前端通过 `resolveResource` 定位。
+- 依赖新增仅 `@huggingface/transformers`（transformers.js v4）。
 - 组件：`src/components/AI/AiSidebar.tsx`、`AiDiffPreview.tsx`、`AiSettingsPanel.tsx`、`AiPrivacyNotice.tsx`。
-- `src-tauri/src/lib.rs` 注册 `encrypt_secret` / `decrypt_secret` 命令，复用 `credentials.rs` 的 DPAPI 调用。
-- `src-tauri/tauri.conf.json` 的 `bundle` 增加 `resources`，把模型文件目录映射进安装包；`src/utils/ai/embedding.ts` 通过 `resolveResource` 定位。
-- 依赖新增仅 `@huggingface/transformers`（transformers.js v4）一项；模型文件不入 Git，随构建产物打包。
-- AI 写入路径：生成新 `content` → diff 预览 → 确认后写入 `NoteEditor` 的 content 状态 → 交由既有 autosave 落盘，**不直接调用 `saveNoteContent`**，避免绕过编辑器状态造成不一致。
-- i18n 新增词条：`aiAssistant`、`aiSettings`、`aiApiKey`、`aiPrivacyNotice`、`aiPrivacyNoticeBody`、`aiApplyChange`、`aiRevertChange`、`aiIndexing`、`aiIndexReady`、`aiDisableWriteInCollab`、`aiNoKey`。
+- `src/stores/aiStore.ts`：侧栏开关、是否有 Key、会话、索引状态。
+- 润色的 prompt 约束：只返回改写后的段落纯文本，不带解释、不加引号、保持 Markdown 行内格式不变。
+- `src-tauri/src/lib.rs` 注册 `encrypt_secret` / `decrypt_secret`。
+- i18n 新增：`aiAssistant`、`aiSettings`、`aiApiKey`、`aiPrivacyNotice`、`aiPrivacyNoticeBody`、`aiApplyChange`、`aiRevertChange`、`aiSearchOnlyHint`、`aiNoKey`、`aiDisableWriteInCollab`。
 
 ## 待定问题
 
-1. 授权校验方式。三选一：(a) Ed25519 离线签名授权码，客户端内置公钥验签，零服务器、离线可用；(b) 复用 Supabase 账号，查 `entitlements` 表，可吊销但需联网；(c) 不做校验，靠自愿付费。推荐 (a)。
-2. 收款渠道。个人身份可选爱发电 / 面包多（有抽成）、虎皮椒 / Payjs 等聚合支付（约 1%–1.5%）；微信支付商户号需营业执照。费率与可用性以各平台当前页面为准。
-3. 定价形式：一次性买断、年度订阅，还是按大版本收费。
-4. 是否增加「仅本地模式」开关（开启后禁用一切云端调用，AI 侧栏只保留检索与相似笔记）。此开关与结论 11 的告知文案互相依赖。
-5. 低配机器（4GB 内存）占比。若占比较高，首次建索引需改为后台分批进行，并在侧栏显示进度，工作量约增加 2–3 天。
+1. 授权校验方式：(a) Ed25519 离线签名码（推荐，零服务器）；(b) 复用 Supabase 账号查授权表；(c) 不做校验。
+2. 收款渠道：爱发电 / 面包多、虎皮椒 / Payjs 等聚合支付、或微信支付商户号（需营业执照）。费率以各平台当前页面为准。
+3. 定价形式：一次性买断、年度订阅，或按大版本收费。
+4. 《功能手册》的维护归属：发布检查清单里加一条，或在 CI 里比对 UI 词条与手册覆盖度。
 
 ## 工作量估算
 
 | 模块 | 估时 |
 | --- | --- |
-| AI 基础层（provider、Key 存储、设置页） | 2–3 天 |
-| 检索层（切块、Worker、索引、`retrieve` 双实现） | 3–5 天 |
-| UI（侧栏、diff 预览、快照撤销、隐私弹窗） | 4–6 天 |
+| 《功能手册》撰写 + 构建期索引脚本 | 2–3 天 |
+| embedding Worker + 检索 + 侧栏对话（含无 Key 降级） | 2–3 天 |
+| Key 配置、DPAPI 命令、隐私弹窗 | 1 天 |
+| 润色（选区、diff 预览、应用、快照撤销） | 3–4 天 |
 | 授权校验 | 1–2 天 |
-| 合计 | 10–16 天 |
+| 合计 | 9–13 天 |
 
 ## 下一步
 
-待定问题 1–3 确认后开工，实施顺序为：AI 基础层 → 侧栏与对话 → 检索层 → 写入与撤销 → 授权校验。每段完成后跑 `npx tsc --noEmit` 与 `npm run build`。
+实施顺序：Key 配置与 provider → 手册与索引 → 侧栏对话 → 润色与撤销 → 授权校验。每段完成后跑 `npx tsc --noEmit` 与 `npm run build`。

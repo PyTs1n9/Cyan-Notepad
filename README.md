@@ -6,7 +6,7 @@
 
 <img src="./src-tauri/icons/Square142x142Logo.png" width="155" alt="Qing Notepad 图标">
 
-# Qing Notepad 青の记事本
+# QingNotepad 青记
 
 记事本仅 <strong><em><font color="#1f6feb">13MB</font></em></strong>，轻量级桌面应用<br>
 QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br>
