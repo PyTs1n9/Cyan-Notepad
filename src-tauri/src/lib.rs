@@ -7,6 +7,7 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod credentials;
+mod pdf_export;
 
 // Global flag: whether we are truly quitting the app
 static QUITTING: AtomicBool = AtomicBool::new(false);
@@ -46,6 +47,7 @@ pub fn run() {
             quit_app,
             credentials::encrypt_login_credentials,
             credentials::decrypt_login_credentials,
+            pdf_export::export_pdf,
         ])
         .setup(|app| {
             #[cfg(desktop)]
