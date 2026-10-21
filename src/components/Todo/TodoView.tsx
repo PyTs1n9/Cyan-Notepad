@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff, ListChecks } from "lucide-react";
+import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff, ListChecks, ListPlus } from "lucide-react";
 import { useTodoStore } from "@/stores/todoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
@@ -90,10 +90,18 @@ const getYearRange = (date: Date) => {
 };
 
 const TodoView: React.FC = () => {
-  const { todos, lists, activeListId, filter, priorityFilter, addTodo, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
+  const { todos, lists, activeListId, filter, priorityFilter, addTodo, addSubtask, toggleExpanded, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
   const lang = useSettingsStore((s) => s.lang);
   const activeList = lists.find((list) => list.id === activeListId);
   const listTodos = todos.filter((todo) => todo.listId === activeListId);
+  const topLevelTodos = listTodos.filter((todo) => !todo.parentId);
+  const subtasksByParent = new Map<string, Todo[]>();
+  listTodos.forEach((todo) => {
+    if (!todo.parentId) return;
+    const siblings = subtasksByParent.get(todo.parentId);
+    if (siblings) siblings.push(todo);
+    else subtasksByParent.set(todo.parentId, [todo]);
+  });
   const [newTitle, setNewTitle] = useState("");
   const [newPriority, setNewPriority] = useState<Priority>("low");
   const newTodoInputRef = useRef<HTMLInputElement>(null);
@@ -166,13 +174,13 @@ const TodoView: React.FC = () => {
     dragTodoIdRef.current = draggedTodo.id;
     dragOverPositionRef.current = "before";
 
-    const itemEls = listRef.current?.children;
+    const itemEls = listRef.current?.querySelectorAll<HTMLElement>("[data-todo-row-id]");
     if (!itemEls || !itemEls[filteredIndex]) return;
-    const startRect = (itemEls[filteredIndex] as HTMLElement).getBoundingClientRect();
+    const startRect = itemEls[filteredIndex].getBoundingClientRect();
     const offsetY = e.clientY - startRect.top;
 
     // 创建浮动克隆
-    const clone = (itemEls[filteredIndex] as HTMLElement).cloneNode(true) as HTMLElement;
+    const clone = itemEls[filteredIndex].cloneNode(true) as HTMLElement;
     clone.style.position = "fixed";
     clone.style.left = `${startRect.left}px`;
     clone.style.top = `${startRect.top}px`;
@@ -200,7 +208,7 @@ const TodoView: React.FC = () => {
         setDragOverPosition(null);
         return;
       }
-      const children = Array.from(listRef.current.children) as HTMLElement[];
+      const children = Array.from(listRef.current.querySelectorAll<HTMLElement>("[data-todo-row-id]"));
       let found = false;
       for (let i = 0; i < children.length; i++) {
         if (filteredTodos[i]?.pinned || filteredTodos[i]?.id === draggedTodo.id) continue;
@@ -396,15 +404,36 @@ const TodoView: React.FC = () => {
   };
 
   const confirmEdit = () => {
-    if (editingId && editingTitle.trim()) {
-      updateTodo(editingId, { title: editingTitle.trim() });
+    const targetId = editingId;
+    if (!targetId) return;
+
+    const current = todos.find((todo) => todo.id === targetId);
+    const nextTitle = editingTitle.trim();
+    if (!nextTitle) {
+      // 新建的空子待办未填写内容时直接丢弃，避免留下空行
+      if (current?.parentId) deleteTodo(targetId);
+    } else if (nextTitle !== current?.title) {
+      updateTodo(targetId, { title: nextTitle });
     }
     setEditingId(null);
     setEditingTitle("");
   };
 
   const cancelEdit = () => {
+    const targetId = editingId;
+    const current = targetId ? todos.find((todo) => todo.id === targetId) : undefined;
+    if (targetId && current?.parentId && !current.title) deleteTodo(targetId);
     setEditingId(null);
+    setEditingTitle("");
+  };
+
+  // 新建子待办：立即落库并进入内联编辑，未填内容则在失焦时自动丢弃
+  const handleAddSubtask = (parentId: string) => {
+    const parent = todos.find((todo) => todo.id === parentId);
+    if (!parent) return;
+    if (!parent.expanded) toggleExpanded(parentId);
+    const subtaskId = addSubtask(parentId, "");
+    setEditingId(subtaskId);
     setEditingTitle("");
   };
 
@@ -444,7 +473,8 @@ const TodoView: React.FC = () => {
     setCalendarView(view);
   };
 
-  const filteredTodos = listTodos.filter((t) => {
+  // 筛选只作用于父待办；展开后子待办始终完整显示
+  const filteredTodos = topLevelTodos.filter((t) => {
     if (filter === "active" && t.completed) return false;
     if (filter === "completed" && !t.completed) return false;
     if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
@@ -458,8 +488,8 @@ const TodoView: React.FC = () => {
     setNewPriority("low");
   };
 
-  const completedCount = listTodos.filter((t) => t.completed).length;
-  const completionRate = listTodos.length === 0 ? 0 : Math.round((completedCount / listTodos.length) * 100);
+  const completedCount = topLevelTodos.filter((t) => t.completed).length;
+  const completionRate = topLevelTodos.length === 0 ? 0 : Math.round((completedCount / topLevelTodos.length) * 100);
   const todayInputValue = getTodayInputValue();
   const priorityOptions: { value: Priority; label: string }[] = [
     { value: "low", label: t(lang, "lowPriority") },
@@ -485,12 +515,12 @@ const TodoView: React.FC = () => {
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-bold text-text-primary">{activeList?.name ?? t(lang, "todoTitle")}</h1>
           <p className="mt-1 text-sm text-text-muted">
-            {tWithParams(lang, "totalStats", { total: listTodos.length, done: completedCount })}
+            {tWithParams(lang, "totalStats", { total: topLevelTodos.length, done: completedCount })}
           </p>
         </div>
         <div className="w-32 flex-shrink-0 rounded-xl border border-border bg-bg-primary/70 px-3 py-2 shadow-sm backdrop-blur-md">
           <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-text-muted">
-            <span>{completedCount}/{listTodos.length}</span>
+            <span>{completedCount}/{topLevelTodos.length}</span>
             <span className="text-accent">{completionRate}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-bg-secondary">
@@ -631,9 +661,14 @@ const TodoView: React.FC = () => {
             const isDragOver = dragOverIndex === index && dragIndex !== index;
             const isOverdue = Boolean(todo.dueDate && todo.dueDate < todayInputValue && !todo.completed);
             const selectedDueDate = parseDateInputValue(todo.dueDate);
+            const subtasks = subtasksByParent.get(todo.id) ?? [];
+            const hasSubtasks = subtasks.length > 0;
+            const doneSubtasks = subtasks.filter((subtask) => subtask.completed).length;
+            const isExpanded = hasSubtasks && Boolean(todo.expanded);
             return (
+            <div key={todo.id} className="todo-task-group">
             <div
-              key={todo.id}
+              data-todo-row-id={todo.id}
               className={`todo-task-row group relative flex items-center gap-3 rounded-xl border px-4 py-3
                 ${todo.completed ? "border-transparent bg-bg-secondary/75 opacity-65" : "border-transparent bg-bg-primary/75 hover:border-border hover:bg-bg-primary"}
                 ${isDragging ? "opacity-30" : ""}
@@ -653,6 +688,25 @@ const TodoView: React.FC = () => {
                 />
               )}
               {todo.pinned && <Pin size={14} className="flex-shrink-0 text-accent" />}
+              {/* 固定宽度的展开位，保证有无子待办时勾选框都对齐 */}
+              <div className="flex w-4 flex-shrink-0 items-center justify-center">
+                {hasSubtasks && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(todo.id)}
+                    className="flex h-4 w-4 cursor-pointer items-center justify-center rounded text-text-muted
+                      transition-colors hover:bg-bg-hover hover:text-text-primary"
+                    title={isExpanded ? t(lang, "collapseSubtasks") : t(lang, "expandSubtasks")}
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? t(lang, "collapseSubtasks") : t(lang, "expandSubtasks")}
+                  >
+                    <ChevronRight
+                      size={13}
+                      className={`transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
+                    />
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => toggleTodo(todo.id)}
                 className={`flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center rounded-full hover:bg-accent-light ${todo.completed ? "todo-check-done" : ""}`}
@@ -689,6 +743,28 @@ const TodoView: React.FC = () => {
                   {todo.title}
                 </span>
               )}
+
+              {hasSubtasks && (
+                <span
+                  className="flex-shrink-0 rounded-full bg-bg-secondary px-1.5 py-0.5 text-[11px] leading-none
+                    tabular-nums text-text-muted"
+                  title={`${doneSubtasks}/${subtasks.length} ${t(lang, "subtask")}`}
+                >
+                  {doneSubtasks}/{subtasks.length}
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handleAddSubtask(todo.id)}
+                className="h-6 w-6 rounded-full flex items-center justify-center text-text-muted
+                  opacity-0 group-hover:opacity-100 transition-all cursor-pointer
+                  hover:bg-bg-hover hover:text-accent"
+                title={t(lang, "addSubtask")}
+                aria-label={t(lang, "addSubtask")}
+              >
+                <ListPlus size={12} />
+              </button>
 
               <button
                 type="button"
@@ -908,6 +984,70 @@ const TodoView: React.FC = () => {
                 <Trash2 size={14} />
               </button>
             </div>
+
+            {isExpanded && (
+              <div className="todo-subtask-list ml-[84px] mt-1 mb-1 space-y-0.5 border-l border-border/60 pl-3">
+                {subtasks.map((subtask) => (
+                  <div
+                    key={subtask.id}
+                    data-subtask-row-id={subtask.id}
+                    className="group/sub flex items-center gap-2 rounded-lg py-1.5 pr-2 transition-colors hover:bg-bg-hover/60"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleTodo(subtask.id)}
+                      className={`flex h-6 w-6 flex-shrink-0 cursor-pointer items-center justify-center rounded-full
+                        hover:bg-accent-light ${subtask.completed ? "todo-check-done" : ""}`}
+                      aria-label={t(lang, "subtask")}
+                    >
+                      {subtask.completed ? (
+                        <CheckCircle2 size={16} className="text-success" />
+                      ) : (
+                        <Circle size={16} className="text-text-muted transition-colors hover:text-accent" />
+                      )}
+                    </button>
+
+                    {editingId === subtask.id ? (
+                      <input
+                        ref={editInputRef}
+                        type="text"
+                        value={editingTitle}
+                        placeholder={t(lang, "addSubtask")}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") confirmEdit();
+                          if (e.key === "Escape") cancelEdit();
+                        }}
+                        onBlur={confirmEdit}
+                        className="flex-1 rounded border border-accent bg-bg-primary px-1 py-0.5 text-[13px]
+                          text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    ) : (
+                      <span
+                        onClick={() => startEditing(subtask.id, subtask.title)}
+                        className={`flex-1 cursor-text rounded px-1 py-0.5 text-[13px] transition-colors hover:bg-bg-hover
+                          ${subtask.completed ? "text-text-muted line-through" : "text-text-secondary"}`}
+                        title={subtask.title}
+                      >
+                        {subtask.title || t(lang, "subtask")}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => deleteTodo(subtask.id)}
+                      className="h-6 w-6 flex-shrink-0 flex items-center justify-center rounded-full text-text-muted
+                        opacity-0 transition-all group-hover/sub:opacity-100 hover:bg-bg-hover hover:text-danger cursor-pointer"
+                      title={t(lang, "deleteSubtask")}
+                      aria-label={t(lang, "deleteSubtask")}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            </div>
             );
           })}
         </div>
@@ -949,7 +1089,12 @@ const TodoView: React.FC = () => {
                 </div>
               </div>
               <p className="mt-4 text-sm text-text-secondary leading-relaxed">
-                {t(lang, "confirmDeleteTodoMessage").replace("{todo}", deleteConfirmTodo.title)}
+                {(subtasksByParent.get(deleteConfirmTodo.id)?.length ?? 0) > 0
+                  ? tWithParams(lang, "confirmDeleteTodoWithSubtasks", {
+                      todo: deleteConfirmTodo.title,
+                      count: subtasksByParent.get(deleteConfirmTodo.id)?.length ?? 0,
+                    })
+                  : t(lang, "confirmDeleteTodoMessage").replace("{todo}", deleteConfirmTodo.title)}
               </p>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">

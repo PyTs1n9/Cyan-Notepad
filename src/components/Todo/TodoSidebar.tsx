@@ -56,8 +56,10 @@ const TodoSidebar: React.FC<TodoSidebarProps> = ({ compact = false }) => {
     }),
     [lists],
   );
-  const completedCount = todos.filter((todo) => todo.completed).length;
-  const pendingCount = todos.length - completedCount;
+  // 侧边栏计数与列表进度只统计父待办，子待办在展开区内单独体现
+  const topLevelTodos = todos.filter((todo) => !todo.parentId);
+  const completedCount = topLevelTodos.filter((todo) => todo.completed).length;
+  const pendingCount = topLevelTodos.length - completedCount;
 
   useEffect(() => {
     const handlePortalAction = (event: Event) => {
@@ -315,7 +317,7 @@ const TodoSidebar: React.FC<TodoSidebarProps> = ({ compact = false }) => {
 
       <div ref={listContainerRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {orderedLists.map((list) => {
-          const listTodos = todos.filter((todo) => todo.listId === list.id);
+          const listTodos = todos.filter((todo) => todo.listId === list.id && !todo.parentId);
           const listPending = listTodos.filter((todo) => !todo.completed).length;
           const isActive = activeListId === list.id;
           const isEditing = editingId === list.id;

@@ -7,9 +7,23 @@ const normalizeTodos = (items: Todo[], fallbackListId: string): Todo[] =>
   normalizeTodoOrders(items.map((todo, index) => ({
     ...todo,
     listId: todo.listId || fallbackListId,
+    parentId: todo.parentId ?? null,
+    expanded: todo.expanded ?? false,
     pinned: todo.pinned ?? false,
     order: typeof todo.order === "number" ? todo.order : index,
   })));
+
+/** Subtasks may only hang below a top-level todo; orphaned or nested children are promoted. */
+function normalizeTodoParents(items: Todo[]): Todo[] {
+  const byId = new Map(items.map((todo) => [todo.id, todo]));
+  return items.map((todo) => {
+    const parentId = todo.parentId ?? null;
+    if (!parentId) return todo;
+    const parent = byId.get(parentId);
+    if (!parent || parent.parentId) return { ...todo, parentId: null };
+    return todo;
+  });
+}
 
 function normalizeTodoOrders(items: Todo[]): Todo[] {
   const nextOrderByGroup = new Map<string, number>();
@@ -18,7 +32,12 @@ function normalizeTodoOrders(items: Todo[]): Todo[] {
   [...items]
     .sort((a, b) => a.order - b.order)
     .forEach((todo) => {
-      const groupKey = JSON.stringify([todo.listId, todo.pinned ?? false, todo.completed]);
+      const groupKey = JSON.stringify([
+        todo.listId,
+        todo.parentId ?? null,
+        todo.pinned ?? false,
+        todo.completed,
+      ]);
       const nextOrder = nextOrderByGroup.get(groupKey) ?? 0;
       orderById.set(todo.id, nextOrder);
       nextOrderByGroup.set(groupKey, nextOrder + 1);
@@ -38,6 +57,7 @@ function getNextTodoOrder(
       .filter((todo) =>
         todo.id !== current.id &&
         todo.listId === current.listId &&
+        (todo.parentId ?? null) === (current.parentId ?? null) &&
         (todo.pinned ?? false) === pinned &&
         todo.completed === current.completed
       )
@@ -89,6 +109,8 @@ interface TodoState {
   filter: "all" | "active" | "completed";
   priorityFilter: "all" | "low" | "medium" | "high";
   addTodo: (title: string, priority?: Todo["priority"], dueDate?: string) => void;
+  addSubtask: (parentId: string, title: string) => string;
+  toggleExpanded: (id: string) => void;
   toggleTodo: (id: string) => void;
   deleteTodo: (id: string) => void;
   updateTodo: (id: string, updates: Partial<Todo>) => void;
@@ -115,13 +137,17 @@ export const useTodoStore = create<TodoState>((set) => ({
   addTodo: (title, priority = "low", dueDate) =>
     set((state) => {
       if (!state.activeListId) return state;
-      const listTodos = state.todos.filter((todo) => todo.listId === state.activeListId);
+      const listTodos = state.todos.filter(
+        (todo) => todo.listId === state.activeListId && !todo.parentId,
+      );
       return {
         todos: sortTodos([
           ...state.todos,
           {
             id: crypto.randomUUID(),
             listId: state.activeListId,
+            parentId: null,
+            expanded: false,
             title,
             completed: false,
             priority,
@@ -134,22 +160,72 @@ export const useTodoStore = create<TodoState>((set) => ({
       };
     }),
 
-  toggleTodo: (id) =>
+  addSubtask: (parentId, title) => {
+    const id = crypto.randomUUID();
+    set((state) => {
+      const parent = state.todos.find((todo) => todo.id === parentId);
+      if (!parent || parent.parentId) return state;
+
+      const siblings = state.todos.filter((todo) => todo.parentId === parentId);
+      const subtask: Todo = {
+        id,
+        listId: parent.listId,
+        parentId,
+        title,
+        completed: false,
+        priority: "low",
+        pinned: false,
+        createdAt: new Date().toISOString(),
+        order: Math.max(-1, ...siblings.map((todo) => todo.order)) + 1,
+      };
+
+      const todos = state.todos.map((todo) =>
+        todo.id === parentId ? { ...todo, expanded: true } : todo
+      );
+      return { todos: sortTodos([...todos, subtask]) };
+    });
+    return id;
+  },
+
+  toggleExpanded: (id) =>
     set((state) => ({
-      todos: sortTodos(
-        state.todos.map((t) =>
-          t.id === id ? { ...t, completed: !t.completed } : t
-        )
+      todos: state.todos.map((todo) =>
+        todo.id === id ? { ...todo, expanded: !todo.expanded } : todo
       ),
     })),
+
+  toggleTodo: (id) =>
+    set((state) => {
+      const target = state.todos.find((todo) => todo.id === id);
+      if (!target) return state;
+
+      // Checking a parent todo cascades down to its subtasks; unchecking does not.
+      const cascadeIds = !target.completed && !target.parentId
+        ? new Set(state.todos.filter((todo) => todo.parentId === id).map((todo) => todo.id))
+        : new Set<string>();
+
+      return {
+        todos: sortTodos(
+          state.todos.map((t) => {
+            if (t.id === id) return { ...t, completed: !target.completed };
+            if (cascadeIds.has(t.id)) return { ...t, completed: true };
+            return t;
+          })
+        ),
+      };
+    }),
 
   deleteTodo: (id) =>
     set((state) => {
       const todo = state.todos.find((t) => t.id === id);
       if (todo?.pinned) return state;
 
+      const removedIds = new Set([
+        id,
+        ...state.todos.filter((t) => t.parentId === id).map((t) => t.id),
+      ]);
       return {
-        todos: state.todos.filter((t) => t.id !== id),
+        todos: state.todos.filter((t) => !removedIds.has(t.id)),
       };
     }),
 
@@ -177,9 +253,17 @@ export const useTodoStore = create<TodoState>((set) => ({
     set((state) => {
       const moved = state.todos.find((todo) => todo.id === todoId);
       const target = state.todos.find((todo) => todo.id === targetTodoId);
-      if (!moved || !target || moved.pinned || target.pinned || moved.listId !== target.listId) return state;
+      if (
+        !moved || !target ||
+        moved.pinned || target.pinned ||
+        moved.listId !== target.listId ||
+        (moved.parentId ?? null) !== (target.parentId ?? null)
+      ) return state;
 
-      const listItems = sortTodos(state.todos.filter((todo) => todo.listId === moved.listId));
+      const parentId = moved.parentId ?? null;
+      const listItems = sortTodos(state.todos.filter((todo) =>
+        todo.listId === moved.listId && (todo.parentId ?? null) === parentId
+      ));
       const fromIndex = listItems.findIndex((todo) => todo.id === todoId);
       const toIndex = listItems.findIndex((todo) => todo.id === targetTodoId);
       if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return state;
@@ -286,11 +370,15 @@ export const useTodoStore = create<TodoState>((set) => ({
       const activeListId = listData?.activeListId && validListIds.has(listData.activeListId)
         ? listData.activeListId
         : lists[0].id;
-      const normalizedTodos = normalizeTodoOrders(
-        normalizeTodos(todos, activeListId).map((todo) =>
-          validListIds.has(todo.listId) ? todo : { ...todo, listId: activeListId }
-        ),
+      const withValidLists = normalizeTodos(todos, activeListId).map((todo) =>
+        validListIds.has(todo.listId) ? todo : { ...todo, listId: activeListId }
       );
+      const alignedParents = normalizeTodoParents(withValidLists).map((todo) => {
+        if (!todo.parentId) return todo;
+        const parent = withValidLists.find((item) => item.id === todo.parentId);
+        return parent && parent.listId !== todo.listId ? { ...todo, listId: parent.listId } : todo;
+      });
+      const normalizedTodos = normalizeTodoOrders(alignedParents);
       return { lists, activeListId, todos: sortTodos(normalizedTodos) };
     }),
 }));
