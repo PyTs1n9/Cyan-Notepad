@@ -1,6 +1,10 @@
 export interface Todo {
   id: string;
   listId: string;
+  /** Parent todo id for subtasks; null/undefined means a top-level todo. */
+  parentId?: string | null;
+  /** Whether the subtask list of this top-level todo is expanded. */
+  expanded?: boolean;
   title: string;
   completed: boolean;
   priority: "low" | "medium" | "high";
@@ -41,6 +45,10 @@ export interface NoteCategory {
   name: string;
   order: number;
   createdAt: string;
+  /** Parent folder id; null/undefined means a top-level folder. */
+  parentId?: string | null;
+  /** Pinned folders sort above their siblings in the note tree. */
+  pinned?: boolean;
 }
 
 export interface AppFont {

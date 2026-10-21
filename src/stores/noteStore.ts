@@ -69,8 +69,11 @@ interface NoteState {
   addNote: (note: Note) => void;
   updateNote: (id: string, updates: Partial<Note>, options?: { touchUpdatedAt?: boolean }) => void;
   deleteNote: (id: string) => void;
-  addCategory: (name: string) => void;
+  restoreNote: (note: Note) => void;
+  addCategory: (name: string, parentId?: string | null) => NoteCategory;
   updateCategory: (id: string, name: string) => void;
+  toggleCategoryPinned: (id: string) => void;
+  moveCategory: (id: string, parentId: string | null) => void;
   deleteCategory: (id: string) => void;
   reorderCategories: (fromIndex: number, toIndex: number, position?: DropPosition) => void;
   reorderNotes: (fromId: string, toId: string, position?: DropPosition) => void;
@@ -155,20 +158,47 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       };
     }),
 
-  addCategory: (name) =>
+  restoreNote: (note) =>
     set((state) => {
-      const now = new Date().toISOString();
-      const category: NoteCategory = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        order: Math.max(-1, ...state.categories.map((c) => c.order)) + 1,
-        createdAt: now,
+      // A restored note keeps its original category and order when both still exist.
+      const categoryStillExists = note.categoryId
+        ? state.categories.some((category) => category.id === note.categoryId)
+        : true;
+      const restored: Note = {
+        ...note,
+        categoryId: categoryStillExists ? note.categoryId ?? null : null,
+        pinned: note.pinned ?? false,
+        order: typeof note.order === "number" ? note.order : getNextNoteOrder(state.notes, null, false),
       };
+      const notes = state.notes.some((existing) => existing.id === restored.id)
+        ? state.notes.map((existing) => (existing.id === restored.id ? restored : existing))
+        : [...state.notes, restored];
       return {
-        categories: [...state.categories, category],
-        activeCategoryId: category.id,
+        notes: normalizeNoteOrders(notes),
+        activeNoteId: restored.id,
       };
     }),
+
+  addCategory: (name, parentId = null) => {
+    const state = get();
+    const target = parentId ?? null;
+    const siblings = state.categories.filter(
+      (category) => (category.parentId ?? null) === target,
+    );
+    const category: NoteCategory = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      order: Math.max(-1, ...siblings.map((item) => item.order)) + 1,
+      createdAt: new Date().toISOString(),
+      parentId: target,
+      pinned: false,
+    };
+    set({
+      categories: [...state.categories, category],
+      activeCategoryId: category.id,
+    });
+    return category;
+  },
 
   updateCategory: (id, name) =>
     set((state) => ({
@@ -176,6 +206,46 @@ export const useNoteStore = create<NoteState>((set, get) => ({
         category.id === id ? { ...category, name: name.trim() } : category
       ),
     })),
+
+  toggleCategoryPinned: (id) =>
+    set((state) => ({
+      categories: state.categories.map((category) =>
+        category.id === id ? { ...category, pinned: !(category.pinned === true) } : category
+      ),
+    })),
+
+  moveCategory: (id, parentId) =>
+    set((state) => {
+      const target = parentId ?? null;
+      if (target === id) return state;
+
+      // A folder may never be dropped into itself or one of its descendants.
+      const descendantIds = new Set<string>();
+      const collectDescendants = (parent: string) => {
+        for (const category of state.categories) {
+          if ((category.parentId ?? null) === parent && !descendantIds.has(category.id)) {
+            descendantIds.add(category.id);
+            collectDescendants(category.id);
+          }
+        }
+      };
+      collectDescendants(id);
+      if (target && descendantIds.has(target)) return state;
+
+      const siblings = state.categories.filter(
+        (category) =>
+          category.id !== id && (category.parentId ?? null) === target,
+      );
+      const nextOrder = Math.max(-1, ...siblings.map((item) => item.order)) + 1;
+
+      return {
+        categories: state.categories.map((category) =>
+          category.id === id
+            ? { ...category, parentId: target, order: nextOrder }
+            : category,
+        ),
+      };
+    }),
 
   deleteCategory: (id) =>
     set((state) => {

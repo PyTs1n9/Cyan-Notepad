@@ -104,9 +104,19 @@ type TranslationKeys = {
   categoryNamePrompt: string;
   renameCategory: string;
   deleteCategory: string;
+  newSubfolder: string;
+  unnamedFolder: string;
+  renameNote: string;
+  moveToFolder: string;
+  pinCategory: string;
+  unpinCategory: string;
   confirmDeleteCategory: string;
   dragCategory: string;
+  resizeCategoryPanel: string;
+  resizeCategoryPanelHint: string;
   dragNote: string;
+  expandFolder: string;
+  collapseFolder: string;
   moveNoteToCategoryConfirm: string;
   tags: string;
   all: string;
@@ -271,6 +281,15 @@ type TranslationKeys = {
   workspaceBackendNotReady: string;
   noNotes: string;
   untitled: string;
+  noteTabs: string;
+  closeTab: string;
+  closeOtherTabs: string;
+  closeTabsToRight: string;
+  closeAllTabs: string;
+  pinTab: string;
+  previewTabHint: string;
+  scrollTabsLeft: string;
+  scrollTabsRight: string;
   confirmDelete: string;
   confirmDeleteNoteMessage: string;
   confirmYes: string;
@@ -309,6 +328,12 @@ type TranslationKeys = {
   noTodos: string;
   pinTodo: string;
   unpinTodo: string;
+  subtask: string;
+  addSubtask: string;
+  expandSubtasks: string;
+  collapseSubtasks: string;
+  deleteSubtask: string;
+  confirmDeleteTodoWithSubtasks: string;
   low: string;
   medium: string;
   high: string;
@@ -398,6 +423,12 @@ type TranslationKeys = {
   defaultFont: string;
   importFont: string;
   exportFile: string;
+  exportFilterMarkdown: string;
+  exportFilterText: string;
+  exportFilterWord: string;
+  exportFilterPdf: string;
+  exportImagesDropped: string;
+  exportFailed: string;
   collapseSidebar: string;
   expandSidebar: string;
   enableAlwaysOnTop: string;
@@ -437,6 +468,35 @@ type TranslationKeys = {
   openDataFolder: string;
   imageCache: string;
   openImageCache: string;
+  trash: string;
+  trashRetention: string;
+  trashRetentionDisabled: string;
+  trashRetention7Days: string;
+  trashRetention30Days: string;
+  trashRetention90Days: string;
+  trashRetentionForever: string;
+  trashHint: string;
+  trashEmpty: string;
+  trashEmptyHint: string;
+  trashRestore: string;
+  trashDeleteForever: string;
+  trashDeletedAt: string;
+  trashOriginalCategory: string;
+  trashRemaining: string;
+  trashRemainingLessThanDay: string;
+  trashExpiresNever: string;
+  trashRestored: string;
+  trashRestoreMissingImages: string;
+  trashRestoreFailed: string;
+  trashConfirmDeleteMessage: string;
+  trashClearAll: string;
+  trashConfirmClearMessage: string;
+  trashDisabled: string;
+  trashDisabledHint: string;
+  trashOpenSettings: string;
+  trashLoading: string;
+  moveNoteToTrash: string;
+  confirmMoveToTrashMessage: string;
   shortcutToggleWindow: string;
   shortcutPinSticky: string;
   resetShortcuts: string;
@@ -566,9 +626,19 @@ const zh: TranslationKeys = {
   categoryNamePrompt: "输入分类名称:",
   renameCategory: "重命名分类",
   deleteCategory: "删除分类",
+  newSubfolder: "新建子文件夹",
+  unnamedFolder: "未命名文件夹",
+  renameNote: "重命名笔记",
+  moveToFolder: "移到文件夹",
+  pinCategory: "置顶分类",
+  unpinCategory: "取消置顶分类",
   confirmDeleteCategory: '删除分类"',
   dragCategory: "拖动分类",
+  resizeCategoryPanel: "调整分类区高度",
+  resizeCategoryPanelHint: "拖动调整分类区高度，双击恢复默认",
   dragNote: "拖动笔记",
+  expandFolder: "展开文件夹",
+  collapseFolder: "折叠文件夹",
   moveNoteToCategoryConfirm: '是否将"{note}"笔记移动到"{category}"文件夹中？',
   tags: "标签",
   all: "全部",
@@ -733,6 +803,15 @@ const zh: TranslationKeys = {
   workspaceBackendNotReady: "工作台数据库尚未初始化，请先在 Supabase SQL Editor 中执行项目提供的迁移脚本。",
   noNotes: '暂无笔记，点击"新建笔记"开始',
   untitled: "无标题",
+  noteTabs: "笔记标签",
+  closeTab: "关闭标签",
+  closeOtherTabs: "关闭其他标签",
+  closeTabsToRight: "关闭右侧标签",
+  closeAllTabs: "关闭全部标签",
+  pinTab: "固定标签",
+  previewTabHint: "预览标签：双击或编辑后固定",
+  scrollTabsLeft: "向左滚动标签",
+  scrollTabsRight: "向右滚动标签",
   confirmDelete: '确定删除笔记"',
   confirmDeleteNoteMessage: '是否删除"{note}"笔记？',
   confirmYes: "是",
@@ -771,6 +850,12 @@ const zh: TranslationKeys = {
   noTodos: "暂无待办事项，添加一个吧",
   pinTodo: "置顶待办",
   unpinTodo: "取消置顶",
+  subtask: "子待办",
+  addSubtask: "添加子待办",
+  expandSubtasks: "展开子待办",
+  collapseSubtasks: "收起子待办",
+  deleteSubtask: "删除子待办",
+  confirmDeleteTodoWithSubtasks: '删除"{todo}"及其 {count} 个子待办？',
   low: "低",
   medium: "中",
   high: "高",
@@ -860,6 +945,12 @@ const zh: TranslationKeys = {
   defaultFont: "默认字体",
   importFont: "导入字体",
   exportFile: "导出文件",
+  exportFilterMarkdown: "Markdown 文件",
+  exportFilterText: "纯文本文件",
+  exportFilterWord: "Word 文档",
+  exportFilterPdf: "PDF 文档",
+  exportImagesDropped: "有 {count} 张图片未能写入文档，已在导出时跳过。",
+  exportFailed: "导出失败：{message}",
   collapseSidebar: "收起边栏",
   expandSidebar: "展开边栏",
   enableAlwaysOnTop: "开启全局置顶",
@@ -899,6 +990,35 @@ const zh: TranslationKeys = {
   openDataFolder: "点击跳转",
   imageCache: "图片缓存",
   openImageCache: "点击跳转",
+  trash: "回收站",
+  trashRetention: "回收站保存时间",
+  trashRetentionDisabled: "关闭",
+  trashRetention7Days: "7 天",
+  trashRetention30Days: "30 天",
+  trashRetention90Days: "90 天",
+  trashRetentionForever: "永久",
+  trashHint: "删除的笔记先进入回收站，过期自动清理",
+  trashEmpty: "回收站是空的",
+  trashEmptyHint: "删除的笔记会出现在这里，可在保存时间内恢复。",
+  trashRestore: "恢复",
+  trashDeleteForever: "彻底删除",
+  trashDeletedAt: "删除于 {time}",
+  trashOriginalCategory: "原分类：{category}",
+  trashRemaining: "剩余 {days} 天",
+  trashRemainingLessThanDay: "不足 1 天",
+  trashExpiresNever: "不会过期",
+  trashRestored: "已恢复「{note}」",
+  trashRestoreMissingImages: "有 {count} 张图片已失效",
+  trashRestoreFailed: "恢复失败，请重试",
+  trashConfirmDeleteMessage: "将永久删除「{note}」，此操作不可恢复。",
+  trashClearAll: "清空回收站",
+  trashConfirmClearMessage: "回收站内 {count} 条笔记将被永久删除，此操作不可恢复。",
+  trashDisabled: "回收站已关闭",
+  trashDisabledHint: "关闭状态下删除的笔记无法恢复，可随时在设置中重新开启。",
+  trashOpenSettings: "打开设置",
+  trashLoading: "正在加载…",
+  moveNoteToTrash: "移入回收站",
+  confirmMoveToTrashMessage: "将「{note}」移入回收站，可恢复。保存时间：{days}。",
   shortcutToggleWindow: "显示/隐藏窗口",
   shortcutPinSticky: "钉住磁贴",
   resetShortcuts: "恢复默认",
@@ -1028,9 +1148,19 @@ const en: TranslationKeys = {
   categoryNamePrompt: "Enter category name:",
   renameCategory: "Rename Category",
   deleteCategory: "Delete Category",
+  newSubfolder: "New subfolder",
+  unnamedFolder: "Unnamed folder",
+  renameNote: "Rename note",
+  moveToFolder: "Move to folder",
+  pinCategory: "Pin category",
+  unpinCategory: "Unpin category",
   confirmDeleteCategory: 'Delete category "',
   dragCategory: "Drag Category",
+  resizeCategoryPanel: "Resize category panel",
+  resizeCategoryPanelHint: "Drag to resize the category panel, double-click to reset",
   dragNote: "Drag Note",
+  expandFolder: "Expand folder",
+  collapseFolder: "Collapse folder",
   moveNoteToCategoryConfirm: 'Move "{note}" note to "{category}" folder?',
   tags: "Tags",
   all: "All",
@@ -1195,6 +1325,15 @@ const en: TranslationKeys = {
   workspaceBackendNotReady: "The workspace database is not initialized. Run the provided migration in the Supabase SQL Editor first.",
   noNotes: 'No notes yet. Click "New Note" to start',
   untitled: "Untitled",
+  noteTabs: "Note tabs",
+  closeTab: "Close tab",
+  closeOtherTabs: "Close other tabs",
+  closeTabsToRight: "Close tabs to the right",
+  closeAllTabs: "Close all tabs",
+  pinTab: "Pin tab",
+  previewTabHint: "Preview tab - double-click or edit to pin",
+  scrollTabsLeft: "Scroll tabs left",
+  scrollTabsRight: "Scroll tabs right",
   confirmDelete: 'Delete note "',
   confirmDeleteNoteMessage: 'Delete "{note}" note?',
   confirmYes: "Yes",
@@ -1233,6 +1372,12 @@ const en: TranslationKeys = {
   noTodos: "No todos yet, add one",
   pinTodo: "Pin Todo",
   unpinTodo: "Unpin Todo",
+  subtask: "Subtask",
+  addSubtask: "Add subtask",
+  expandSubtasks: "Expand subtasks",
+  collapseSubtasks: "Collapse subtasks",
+  deleteSubtask: "Delete subtask",
+  confirmDeleteTodoWithSubtasks: 'Delete "{todo}" and its {count} subtasks?',
   low: "Low",
   medium: "Med",
   high: "High",
@@ -1322,6 +1467,12 @@ const en: TranslationKeys = {
   defaultFont: "Default Font",
   importFont: "Import Font",
   exportFile: "Export File",
+  exportFilterMarkdown: "Markdown File",
+  exportFilterText: "Plain Text File",
+  exportFilterWord: "Word Document",
+  exportFilterPdf: "PDF Document",
+  exportImagesDropped: "{count} image(s) could not be embedded and were skipped.",
+  exportFailed: "Export failed: {message}",
   collapseSidebar: "Collapse",
   expandSidebar: "Expand",
   enableAlwaysOnTop: "Keep window on top",
@@ -1361,6 +1512,35 @@ const en: TranslationKeys = {
   openDataFolder: "Open Folder",
   imageCache: "Image Cache",
   openImageCache: "Open Folder",
+  trash: "Recycle Bin",
+  trashRetention: "Keep Deleted Notes For",
+  trashRetentionDisabled: "Off",
+  trashRetention7Days: "7 days",
+  trashRetention30Days: "30 days",
+  trashRetention90Days: "90 days",
+  trashRetentionForever: "Forever",
+  trashHint: "Deleted notes go to the recycle bin and expire automatically",
+  trashEmpty: "Recycle bin is empty",
+  trashEmptyHint: "Deleted notes show up here and can be restored within the retention period.",
+  trashRestore: "Restore",
+  trashDeleteForever: "Delete permanently",
+  trashDeletedAt: "Deleted {time}",
+  trashOriginalCategory: "Category: {category}",
+  trashRemaining: "{days} days left",
+  trashRemainingLessThanDay: "Less than a day left",
+  trashExpiresNever: "Never expires",
+  trashRestored: "Restored \"{note}\"",
+  trashRestoreMissingImages: "{count} image(s) are no longer available",
+  trashRestoreFailed: "Restore failed, please try again",
+  trashConfirmDeleteMessage: "\"{note}\" will be deleted permanently. This cannot be undone.",
+  trashClearAll: "Empty recycle bin",
+  trashConfirmClearMessage: "{count} note(s) will be deleted permanently. This cannot be undone.",
+  trashDisabled: "Recycle bin is off",
+  trashDisabledHint: "Notes deleted while it is off cannot be restored. You can turn it back on in settings.",
+  trashOpenSettings: "Open settings",
+  trashLoading: "Loading…",
+  moveNoteToTrash: "Move to Recycle Bin",
+  confirmMoveToTrashMessage: "\"{note}\" will be moved to the recycle bin and can be restored. Retention: {days}.",
   shortcutToggleWindow: "Show/Hide Window",
   shortcutPinSticky: "Pin Sticky Note",
   resetShortcuts: "Reset to Default",
