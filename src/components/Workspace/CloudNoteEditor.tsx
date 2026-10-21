@@ -6,9 +6,6 @@ import {
   CircleAlert,
   Cloud,
   CloudOff,
-  Columns2,
-  Code,
-  Eye,
   Highlighter,
   Link2,
   Send,
@@ -57,6 +54,7 @@ import LoadingText from "@/components/LoadingText";
 import UserAvatar from "@/components/UserAvatar";
 import PublicationDateTimePicker from "@/components/Workspace/PublicationDateTimePicker";
 import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
+import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
 
 interface CloudNoteEditorProps {
   document: WorkspaceDocument;
@@ -66,8 +64,6 @@ interface CloudNoteEditorProps {
   publicationDialogRequested?: boolean;
   onPublicationDialogRequestHandled?: () => void;
 }
-
-type MarkdownViewMode = "source" | "preview" | "split";
 
 interface AwarenessUser {
   id: string;
@@ -662,7 +658,9 @@ export default function CloudNoteEditor({
   const showHighlightsRef = useRef(showHighlights);
   showHighlightsRef.current = showHighlights;
   const editorFontSize = useEditorZoom(editorContainerRef, { initialSize: 15 });
-  const [viewMode, setViewMode] = useState<MarkdownViewMode>("split");
+  // Default to the Markdown source view when a cloud note page is first opened,
+  // matching the local note editor.
+  const [viewMode, setViewMode] = useState<MarkdownViewMode>("source");
   const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -1372,17 +1370,18 @@ export default function CloudNoteEditor({
       setPublicationSavingAction(null);
     }
   };
-  const viewOptions: { value: MarkdownViewMode; label: string; icon: React.ReactNode }[] = [
-    { value: "source", label: t(lang, "mdViewSource"), icon: <Code size={13} /> },
-    { value: "preview", label: t(lang, "mdViewPreview"), icon: <Eye size={13} /> },
-    { value: "split", label: t(lang, "mdViewSplit"), icon: <Columns2 size={13} /> },
-  ];
-  const viewModeIndex = viewOptions.findIndex((option) => option.value === viewMode);
+  const viewLabels: Record<MarkdownViewMode, string> = {
+    source: t(lang, "mdViewSource"),
+    preview: t(lang, "mdViewPreview"),
+    split: t(lang, "mdViewSplit"),
+  };
   const highlightsToggleLabel = t(lang, "userHighlights");
 
   return (
     <div ref={editorContainerRef} className="workspace-editor-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-primary">
-      <div className="relative z-20 flex items-center gap-4 border-b border-border px-5 py-3">
+      {/* One header row. On narrow panes the status cluster wraps to a second
+          line instead of squeezing the document name out of view. */}
+      <div className="relative z-20 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-border px-4 py-2">
         <input
           value={localTitle}
           onChange={(event) => {
@@ -1407,9 +1406,44 @@ export default function CloudNoteEditor({
           }}
           disabled={!canEdit}
           maxLength={200}
-          className="min-w-0 flex-1 bg-transparent text-xl font-bold text-text-primary outline-none disabled:cursor-default"
+          className="min-w-[7rem] flex-1 bg-transparent text-lg font-bold text-text-primary outline-none disabled:cursor-default"
           aria-label={t(lang, "cloudDocumentName")}
         />
+        {/* View switching and pane controls live on the header row; icons only,
+            so the toolbar stays one line next to the document name. */}
+        <MarkdownViewSwitch value={viewMode} onChange={setViewMode} labels={viewLabels} iconSize={14} />
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showHighlights}
+            aria-label={highlightsToggleLabel}
+            title={highlightsToggleLabel}
+            onClick={() => setShowHighlights(!showHighlights)}
+            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors ${
+              showHighlights
+                ? "bg-accent/10 text-accent hover:bg-accent/15"
+                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            }`}
+          >
+            <Highlighter size={14} />
+          </button>
+          <button
+            type="button"
+            aria-pressed={scrollSyncEnabled}
+            onClick={toggleScrollSync}
+            title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
+            aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
+            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors ${
+              scrollSyncEnabled
+                ? "bg-accent/10 text-accent hover:bg-accent/15"
+                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            }`}
+          >
+            {scrollSyncEnabled ? <Link2 size={14} /> : <Unlink2 size={14} />}
+          </button>
+        </div>
+        <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border/70" />
         <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-text-muted">
           {canEdit ? (
             <WorkspaceDropdown
@@ -1569,67 +1603,6 @@ export default function CloudNoteEditor({
         </div>
       </div>
 
-      <div className="flex items-center border-b border-border bg-bg-secondary/50 px-4 py-2">
-        <div className="relative grid h-8 grid-cols-3 items-center overflow-hidden rounded-full bg-bg-secondary p-0.5">
-          <div
-            className="markdown-view-pill pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full"
-            style={{
-              width: "calc((100% - 4px) / 3)",
-              transform: `translateX(${viewModeIndex * 100}%)`,
-            }}
-          >
-            <span key={viewMode} className="markdown-view-pill-fill" />
-          </div>
-          {viewOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setViewMode(option.value)}
-              title={option.label}
-              className={`workspace-toolbar-button relative z-10 flex h-7 min-w-[4.25rem] cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium leading-none transition-colors duration-150 ${
-                viewMode === option.value
-                  ? "text-white"
-                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-              }`}
-            >
-              {option.icon}
-              <span className="workspace-toolbar-label">{option.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
-          <button
-            type="button"
-            aria-pressed={scrollSyncEnabled}
-            onClick={toggleScrollSync}
-            title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-            className={`workspace-toolbar-button flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs transition-colors ${
-              scrollSyncEnabled
-                ? "border-accent/30 bg-accent/10 text-accent hover:bg-accent/15"
-                : "border-border bg-bg-primary text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-            }`}
-          >
-            {scrollSyncEnabled ? <Link2 size={14} /> : <Unlink2 size={14} />}
-            <span className="workspace-toolbar-label">{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
-          </button>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={showHighlights}
-            aria-label={highlightsToggleLabel}
-            title={highlightsToggleLabel}
-            onClick={() => setShowHighlights(!showHighlights)}
-            className="workspace-toolbar-button flex h-8 cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-border bg-bg-primary px-2.5 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-          >
-            <Highlighter size={14} />
-            <span className="workspace-toolbar-label">{highlightsToggleLabel}</span>
-            <span className={`relative h-4 w-7 rounded-full transition-colors ${showHighlights ? "bg-accent" : "bg-border"}`}>
-              <span className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${showHighlights ? "translate-x-3" : "translate-x-0"}`} />
-            </span>
-          </button>
-        </div>
-      </div>
-
       <div ref={splitContainerRef} className="flex min-h-0 flex-1 overflow-hidden" style={{ fontSize: editorFontSize }}>
         <div
           className={`${viewMode === "preview" ? "hidden" : "flex"} ${viewMode === "split" ? "flex-none" : "w-full"} min-h-0 min-w-0 flex-col overflow-hidden`}
@@ -1671,7 +1644,7 @@ export default function CloudNoteEditor({
           className={`${viewMode === "source" ? "hidden" : "block"} ${viewMode === "split" ? "min-w-0 flex-1" : "w-full"} overflow-y-auto px-5 py-4`}
         >
           <div
-            className="markdown-preview prose mx-auto w-full max-w-[820px] text-text-primary [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-bg-secondary [&_code]:px-1 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:leading-[1.7] [&_ul]:list-disc"
+            className="markdown-preview prose mr-auto w-full max-w-[820px] text-text-primary [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-bg-secondary [&_code]:px-1 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:leading-[1.7] [&_ul]:list-disc"
             dangerouslySetInnerHTML={{ __html: previewHtml }}
           />
         </div>

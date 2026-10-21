@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import TurndownService from "turndown";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useNoteStore } from "@/stores/noteStore";
+import { useTabStore } from "@/stores/tabStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import {
@@ -11,16 +12,15 @@ import {
 } from "@/utils/storage";
 import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
-import { Save, Pin, Code, Eye, Columns2, Undo2, Redo2, Link2, Unlink2 } from "lucide-react";
+import { Save, Pin, Undo2, Redo2, Link2, Unlink2 } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
 import { useEditorZoom } from "@/utils/editorZoom";
 import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
-import LoadingText from "@/components/LoadingText";
+import { registerNoteFlusher } from "@/utils/noteFlush";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
-
-type MarkdownViewMode = "source" | "preview" | "split";
+import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
 
 // TipTap stores WYSIWYG documents as HTML internally. User-authored HTML in
 // Markdown mode is still treated as plain text.
@@ -66,6 +66,33 @@ function htmlToMarkdown(html: string): string {
     .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, "$1");
 }
 
+const DERIVED_TITLE_MAX_LENGTH = 40;
+
+/**
+ * The note page no longer has a title field. A note keeps whatever title it was
+ * created with (imported files carry their file name); a note whose title is
+ * still blank adopts its first non-empty body line so the sidebar, tab strip and
+ * sticky windows stay readable instead of all showing "untitled".
+ */
+function deriveTitleFromContent(content: string): string {
+  const firstLine = content
+    .slice(0, 600)
+    .split(/\r?\n/)
+    .find((line) => line.trim().length > 0);
+  if (!firstLine) return "";
+
+  return firstLine
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/[*_~`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, DERIVED_TITLE_MAX_LENGTH)
+    .trim();
+}
+
 const NoteEditor: React.FC = () => {
   const { notes, activeNoteId, updateNote } = useNoteStore();
   const lang = useSettingsStore((s) => s.lang);
@@ -79,14 +106,19 @@ const NoteEditor: React.FC = () => {
   const activeNoteIdRef = useRef<string | null>(null);
   const mdContentRef = useRef("");
 
-  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>("split");
+  // Default to the Markdown source view when a note page is first opened.
+  // The user can still switch to preview or split from the toolbar.
+  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>("source");
   const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
   const [mdContent, setMdContent] = useState("");
   const [editorSessionVersion, setEditorSessionVersion] = useState(0);
   const [previewHtml, setPreviewHtml] = useState("");
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
+  // Dirty state is tracked per note in the tab store, so each tab can show its
+  // own unsaved dot and switching notes can never leak a stale flag.
+  const dirtyIds = useTabStore((s) => s.dirtyIds);
+  const markDirty = useTabStore((s) => s.markDirty);
   const [isSaving, setIsSaving] = useState(false);
   const [showSaveStatus, setShowSaveStatus] = useState(false);
   const [stickyOpen, setStickyOpen] = useState(false);
@@ -96,6 +128,7 @@ const NoteEditor: React.FC = () => {
   const isSavingRef = useRef(false);
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
+  const isDirty = activeNoteId ? dirtyIds.includes(activeNoteId) : false;
 
   const resetEditorContent = useCallback((value: string) => {
     mdContentRef.current = value;
@@ -147,7 +180,7 @@ const NoteEditor: React.FC = () => {
     try {
       await saveNoteContent(noteId, contentToSave);
       await cleanupUnusedImageAttachments();
-      setIsDirty(false);
+      markDirty(noteId, false);
       // Notify open sticky windows to update
       emit("sticky:note-updated", { noteId, content: contentToSave });
       // Brief flash of "saved" status
@@ -157,60 +190,105 @@ const NoteEditor: React.FC = () => {
       isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [getCurrentEditorContent]);
+  }, [getCurrentEditorContent, markDirty]);
+
+  // Expose a flush hook so the sidebar can persist pending edits before deleting.
+  useEffect(() => {
+    registerNoteFlusher(async (noteId) => {
+      if (noteId !== activeNoteIdRef.current) return;
+      await doSave();
+    });
+    return () => registerNoteFlusher(null);
+  }, [doSave]);
 
   // Track previous activeNoteId to detect switches
   const prevNoteIdRef = useRef<string | null>(null);
   // Guard against stale async loadNoteContent callbacks (race condition)
   const loadingNoteIdRef = useRef<string | null>(null);
+  // Note id whose content is actually sitting in the buffer right now. The
+  // buffer is cleared before a load resolves, so "which note does the buffer
+  // belong to" cannot be derived from activeNoteId alone.
+  const loadedNoteIdRef = useRef<string | null>(null);
 
-  // When activeNoteId changes: save old note, clear editor, load new note
+  // When activeNoteId changes: persist the previous note, then load the new one.
+  // The two steps are serialized on purpose. With a tab strip, switching is a
+  // one-click operation users repeat quickly; letting the load run ahead of the
+  // pending write made the editor re-read stale disk content and drop keystrokes.
   useEffect(() => {
     const prevId = prevNoteIdRef.current;
     const currentId = activeNoteId;
-
-    // Save previous note's content to disk before switching
-    if (prevId && prevId !== currentId) {
-      const contentToSave = getCurrentEditorContent();
-      saveNoteContent(prevId, contentToSave)
-        .then(cleanupUnusedImageAttachments)
-        .catch((e) => console.error("Failed to save previous note:", e));
-    }
-
-    // Update ref for next comparison
     prevNoteIdRef.current = currentId;
+
+    let cancelled = false;
+    // Capture the outgoing buffer before the editor is cleared below.
+    const pendingContent =
+      prevId && prevId !== currentId ? getCurrentEditorContent() : null;
+
+    const persistPrevious = async () => {
+      if (!prevId || prevId === currentId || pendingContent === null) return;
+      // The buffer only holds prevId's text once that note finished loading.
+      // Two tabs closed in quick succession (Ctrl+W, or a fast double click on
+      // the close button) leave the buffer empty while the next note is still
+      // being read; writing it back would truncate that note on disk.
+      if (loadedNoteIdRef.current !== prevId) return;
+      // Never resurrect a note that was just deleted (it may already live in the
+      // recycle bin); writing it back would create an orphan .md file.
+      const stillExists = useNoteStore.getState().notes.some((note) => note.id === prevId);
+      if (!stillExists) return;
+      try {
+        await saveNoteContent(prevId, pendingContent);
+        await cleanupUnusedImageAttachments();
+        // Only clear the flag once the write landed, otherwise a failed save
+        // would silently look saved in the tab strip.
+        markDirty(prevId, false);
+      } catch (e) {
+        console.error("Failed to save previous note:", e);
+      }
+    };
 
     if (!currentId) {
       loadingNoteIdRef.current = null;
       resetEditorContent("");
-      setIsDirty(false);
+      void persistPrevious();
+      // Clear the marker only after the flush above has been invoked: it reads
+      // this ref to decide whether the buffer belonged to the closing note.
+      loadedNoteIdRef.current = null;
       return;
     }
 
-    // Clear editor immediately before loading
+    // Clear editor immediately before loading. The dirty flag belongs to the
+    // note, not the component, so it is intentionally left alone here.
     resetEditorContent("");
-    setIsDirty(false);
-
-    // Load new note content
     loadingNoteIdRef.current = currentId;
-    loadNoteContent(currentId).then((content) => {
-      // Discard stale result if user already switched to another note
-      if (loadingNoteIdRef.current !== currentId) return;
-      if (content) {
-        if (isStoredEditorHtml(content)) {
-          const markdownContent = htmlToMarkdown(content);
-          resetEditorContent(markdownContent);
-          updateNote(currentId, { content: markdownContent }, { touchUpdatedAt: false });
-        } else {
-          resetEditorContent(content);
-          updateNote(currentId, { content }, { touchUpdatedAt: false });
+
+    void persistPrevious()
+      .then(() => loadNoteContent(currentId))
+      .then((content) => {
+        // Discard stale result if user already switched to another note
+        if (cancelled || loadingNoteIdRef.current !== currentId) return;
+        let markdownContent = "";
+        if (content) {
+          markdownContent = isStoredEditorHtml(content) ? htmlToMarkdown(content) : content;
         }
-      } else {
-        resetEditorContent("");
-        updateNote(currentId, { content: "" }, { touchUpdatedAt: false });
-      }
-      setIsDirty(false);
-    });
+        resetEditorContent(markdownContent);
+        loadedNoteIdRef.current = currentId;
+        // A note stored without a title (older data, quick capture) picks up its
+        // first line here too, so opening it is enough to make it identifiable.
+        const loadedNote = useNoteStore.getState().notes.find((note) => note.id === currentId);
+        const derivedTitle =
+          loadedNote && !loadedNote.title.trim() ? deriveTitleFromContent(markdownContent) : "";
+        updateNote(
+          currentId,
+          derivedTitle ? { content: markdownContent, title: derivedTitle } : { content: markdownContent },
+          { touchUpdatedAt: false },
+        );
+        markDirty(currentId, false);
+      })
+      .catch((e) => console.error("Failed to load note:", e));
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeNoteId, getCurrentEditorContent, resetEditorContent]); // eslint-disable-line
 
   useEffect(() => {
@@ -236,7 +314,7 @@ const NoteEditor: React.FC = () => {
         } else {
           resetEditorContent(content);
         }
-        setIsDirty(false);
+        markDirty(savedId, false);
       },
     );
     return () => {
@@ -270,8 +348,12 @@ const NoteEditor: React.FC = () => {
       setMdContent(value);
       const noteId = activeNoteIdRef.current;
       if (noteId) {
-        updateNote(noteId, { content: value });
-        setIsDirty(true);
+        // Only a still-blank title is filled in; an existing one (imported file
+        // name, previously derived value) is never overwritten by later edits.
+        const current = useNoteStore.getState().notes.find((note) => note.id === noteId);
+        const derivedTitle = current && !current.title.trim() ? deriveTitleFromContent(value) : "";
+        updateNote(noteId, derivedTitle ? { content: value, title: derivedTitle } : { content: value });
+        markDirty(noteId, true);
       }
     },
     [updateNote],
@@ -394,16 +476,11 @@ const NoteEditor: React.FC = () => {
   const showMarkdownSource = markdownViewMode === "source" || markdownViewMode === "split";
   const showMarkdownPreview = markdownViewMode === "preview" || markdownViewMode === "split";
 
-  const markdownViewOptions: {
-    value: MarkdownViewMode;
-    label: string;
-    icon: React.ReactNode;
-  }[] = [
-    { value: "source", label: t(lang, "mdViewSource"), icon: <Code size={13} /> },
-    { value: "preview", label: t(lang, "mdViewPreview"), icon: <Eye size={13} /> },
-    { value: "split", label: t(lang, "mdViewSplit"), icon: <Columns2 size={13} /> },
-  ];
-  const markdownViewIndex = markdownViewOptions.findIndex((option) => option.value === markdownViewMode);
+  const markdownViewLabels: Record<MarkdownViewMode, string> = {
+    source: t(lang, "mdViewSource"),
+    preview: t(lang, "mdViewPreview"),
+    split: t(lang, "mdViewSplit"),
+  };
 
   // Word count: Chinese characters + English words
   const currentText = mdContent;
@@ -413,89 +490,70 @@ const NoteEditor: React.FC = () => {
 
   return (
     <div ref={editorContainerRef} className="note-editor-surface flex min-h-0 min-w-0 h-full flex-1 flex-col overflow-hidden">
-      {/* Markdown view controls */}
-      <div className="note-editor-toolbar flex items-center gap-2 px-8 pt-4 pb-1">
-        <div className="relative grid h-8 grid-cols-3 items-center overflow-hidden rounded-full bg-bg-secondary p-0.5">
-          <div
-            className="markdown-view-pill pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full"
-            style={{
-              width: "calc((100% - 4px) / 3)",
-              transform: `translateX(${markdownViewIndex * 100}%)`,
-            }}
-          >
-            <span key={markdownViewMode} className="markdown-view-pill-fill" />
-          </div>
-          {markdownViewOptions.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setMarkdownViewMode(option.value)}
-              title={option.label}
-              className={`note-toolbar-button relative z-10 flex h-7 min-w-[4.25rem] items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium leading-none cursor-pointer transition-colors duration-150
-                ${markdownViewMode === option.value
-                  ? "text-white"
-                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-            >
-              {option.icon}
-              <span className="note-toolbar-label">{option.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={handleUndo}
-            disabled={!canUndo}
-            title={t(lang, "undo")}
-            aria-label={t(lang, "undo")}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors
-              hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <Undo2 size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={handleRedo}
-            disabled={!canRedo}
-            title={t(lang, "redo")}
-            aria-label={t(lang, "redo")}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors
-              hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <Redo2 size={14} />
-          </button>
-        </div>
+      {/* Single-row toolbar: view switch, history, then right-aligned actions.
+          Every action is icon-only with a tooltip so the row stays compact. */}
+      <div className="note-editor-toolbar flex items-center gap-1 px-4 pt-3 pb-1">
+        <MarkdownViewSwitch
+          value={markdownViewMode}
+          onChange={setMarkdownViewMode}
+          labels={markdownViewLabels}
+        />
+        <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" />
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={!canUndo}
+          title={t(lang, "undo")}
+          aria-label={t(lang, "undo")}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
+            hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          <Undo2 size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={handleRedo}
+          disabled={!canRedo}
+          title={t(lang, "redo")}
+          aria-label={t(lang, "redo")}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
+            hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          <Redo2 size={15} />
+        </button>
         <div className="flex-1" />
         <button
           type="button"
           aria-pressed={scrollSyncEnabled}
           onClick={toggleScrollSync}
           title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-          className={`note-toolbar-button flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium leading-none transition-colors ${
+          aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
             scrollSyncEnabled
               ? "border-accent/30 bg-accent/10 text-accent hover:bg-accent/15"
-              : "border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              : "border-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
-          {scrollSyncEnabled ? <Link2 size={13} /> : <Unlink2 size={13} />}
-          <span className="note-toolbar-label">{t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}</span>
-        </button>
-        {/* Save Button */}
-          <button
-            onClick={doSave}
-          disabled={!isDirty || isSaving}
-          aria-busy={isSaving}
-            className={`note-toolbar-button flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
-            ${isDirty
-              ? "bg-accent text-white hover:bg-accent-hover"
-              : "bg-bg-secondary text-text-muted cursor-not-allowed opacity-60"}`}
-          title={t(lang, "save")}
-        >
-          <Save size={12} className={isSaving ? "animate-pulse" : undefined} />
-          <span className="note-toolbar-label">
-            {isSaving ? <LoadingText label={t(lang, "save")} variant="bounce" /> : t(lang, "save")}
-          </span>
+          {scrollSyncEnabled ? <Link2 size={15} /> : <Unlink2 size={15} />}
         </button>
         <button
+          type="button"
+          onClick={doSave}
+          disabled={!isDirty || isSaving}
+          aria-busy={isSaving}
+          title={t(lang, "save")}
+          aria-label={t(lang, "save")}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+            isDirty
+              ? "bg-accent text-white hover:bg-accent-hover"
+              : "text-text-muted cursor-not-allowed opacity-50"
+          }`}
+        >
+          <Save size={15} className={isSaving ? "animate-pulse" : undefined} />
+        </button>
+        <button
+          type="button"
+          aria-pressed={stickyOpen}
           onClick={() => {
             if (!activeNoteId) return;
             if (stickyOpen) {
@@ -504,59 +562,30 @@ const NoteEditor: React.FC = () => {
               createStickyNote(activeNoteId);
             }
           }}
-          className={`note-toolbar-button flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium leading-none cursor-pointer transition-colors
-            ${stickyOpen
-              ? "bg-accent text-white"
-              : "bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-          title={t(lang, "pinSticky")}
+          title={t(lang, stickyOpen ? "unpinSticky" : "pinSticky")}
+          aria-label={t(lang, stickyOpen ? "unpinSticky" : "pinSticky")}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+            stickyOpen
+              ? "bg-accent text-white hover:bg-accent-hover"
+              : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          }`}
         >
-          <Pin size={12} />
-          <span className="note-toolbar-label">{t(lang, "pinSticky")}</span>
+          <Pin size={15} />
         </button>
       </div>
 
-      <div className="app-work-area-overlay mx-4 mb-3 mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/65">
-        {/* Note Title */}
-        <div className="px-5 sm:px-6 pt-4 pb-3 border-b border-border bg-bg-primary/80">
-          <div className="flex items-center gap-4">
-            <input
-              type="text"
-              value={activeNote.title}
-              onChange={(e) => updateNote(activeNote.id, { title: e.target.value })}
-              placeholder={t(lang, "noteTitlePlaceholder")}
-              className="min-w-0 flex-1 text-2xl font-bold text-text-primary bg-transparent border-none outline-none
-                placeholder:text-text-muted/50"
-            />
-            <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-text-muted">
-              <span>{t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
-              {/* Save Status Indicator */}
-              <span>·</span>
-              <span className={isDirty ? "text-amber-500" : showSaveStatus ? "text-green-500" : "text-text-muted"}>
-                {isDirty ? t(lang, "unsaved") : t(lang, "saved")}
-              </span>
-              <span>·</span>
-              <span>{tWithParams(lang, "wordCount", { count: wordCountNum })}</span>
-            </div>
-          </div>
-          {activeNote.tags.length > 0 && (
-            <div className="mt-2 flex gap-1 text-xs">
-              {activeNote.tags.map((tag) => (
-                <span key={tag} className="px-1.5 py-0.5 rounded-full bg-accent-light text-accent">
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
+      <div className="app-work-area-overlay relative mx-4 mb-3 mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/65">
         {/* Editor Content */}
         <div className="flex min-h-0 flex-1 overflow-hidden" style={{ fontSize: editorFontSize }}>
           <div
             className={`${showMarkdownSource ? "flex" : "hidden"} ${showMarkdownPreview ? "w-1/2 border-r border-border" : "w-full"} min-h-0 flex-col overflow-hidden`}
           >
-              <div className="px-3 py-1.5 text-xs text-text-muted bg-bg-secondary border-b border-border font-medium">
-                {t(lang, "sourceEditor")}
-              </div>
+              {/* Pane captions only earn their space when both panes are visible. */}
+              {markdownViewMode === "split" && (
+                <div className="border-b border-border bg-bg-secondary px-3 py-1 text-[11px] font-medium text-text-muted">
+                  {t(lang, "sourceEditor")}
+                </div>
+              )}
               <MarkdownSourceEditor
                 key={`${activeNote.id}:${editorSessionVersion}`}
                 value={mdContent}
@@ -570,17 +599,19 @@ const NoteEditor: React.FC = () => {
           </div>
           {showMarkdownPreview && (
             <div className={`${showMarkdownSource ? "w-1/2" : "w-full"} flex min-h-0 flex-col overflow-hidden`}>
-              <div className="px-3 py-1.5 text-xs text-text-muted bg-bg-secondary border-b border-border font-medium">
-                {t(lang, "preview")}
-              </div>
+              {markdownViewMode === "split" && (
+                <div className="border-b border-border bg-bg-secondary px-3 py-1 text-[11px] font-medium text-text-muted">
+                  {t(lang, "preview")}
+                </div>
+              )}
               <div
                 ref={previewRef}
                 onScroll={handlePreviewScroll}
                 onClick={handleExternalLinkClick}
-                className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+                className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-10"
               >
                 <div
-                  className="markdown-preview prose mx-auto w-full max-w-[820px] text-text-primary
+                  className="markdown-preview prose mr-auto w-full max-w-[820px] text-text-primary
                     [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-4
                     [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3
                     [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mb-2 [&_h3]:mt-2
@@ -600,6 +631,32 @@ const NoteEditor: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Meta strip pinned to the bottom-right corner: updated time, save
+            state and word count stay reachable without a dedicated header row. */}
+        <div className="pointer-events-none absolute bottom-1.5 right-2.5 z-10 flex items-center gap-1.5 rounded-full bg-bg-primary/85 px-2 py-1 text-[11px] leading-none text-text-muted shadow-sm backdrop-blur-sm">
+          <span className="tabular-nums">
+            {t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+          </span>
+          <span aria-hidden="true" className="opacity-50">·</span>
+          <span className={isDirty ? "text-amber-500" : showSaveStatus ? "text-green-500" : "text-text-muted"}>
+            {isDirty ? t(lang, "unsaved") : t(lang, "saved")}
+          </span>
+          <span aria-hidden="true" className="opacity-50">·</span>
+          <span className="tabular-nums">{tWithParams(lang, "wordCount", { count: wordCountNum })}</span>
+        </div>
+        {activeNote.tags.length > 0 && (
+          <div className="pointer-events-none absolute bottom-1.5 left-2.5 z-10 flex max-w-[55%] flex-wrap items-center gap-1">
+            {activeNote.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent backdrop-blur-sm"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

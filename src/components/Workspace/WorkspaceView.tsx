@@ -41,6 +41,10 @@ import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
 
 interface WorkspaceViewProps {
   sidebarCollapsed: boolean;
+  /** True while a resize drag is active, so the handle survives a mid-drag collapse. */
+  sidebarResizing?: boolean;
+  /** Keeps the collapse/expand width transition alive during a drag. */
+  sidebarCollapseAnimating?: boolean;
   onSidebarResizeStart: () => void;
   onOpenAuth: () => void;
 }
@@ -83,6 +87,8 @@ function isMissingSchemaError(error: string): boolean {
 
 export default function WorkspaceView({
   sidebarCollapsed,
+  sidebarResizing = false,
+  sidebarCollapseAnimating = false,
   onSidebarResizeStart,
   onOpenAuth,
 }: WorkspaceViewProps) {
@@ -928,7 +934,7 @@ export default function WorkspaceView({
     <div className="workspace-surface app-interactive-surface flex min-h-0 flex-1 bg-bg-primary">
       <div
         style={{ width: sidebarCollapsed ? 0 : "var(--workspace-sidebar-width)" }}
-        className="sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+        className={`sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out${sidebarCollapseAnimating ? " sidebar-collapse-anim" : ""}`}
       >
         <aside
           className="flex h-full flex-shrink-0 flex-col bg-bg-sidebar"
@@ -1169,7 +1175,7 @@ export default function WorkspaceView({
           </div>
         </aside>
       </div>
-      {!sidebarCollapsed && (
+      {(!sidebarCollapsed || sidebarResizing) && (
         <SidebarResizeHandle onPointerDown={onSidebarResizeStart} />
       )}
 
