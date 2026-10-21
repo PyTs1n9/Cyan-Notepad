@@ -153,11 +153,11 @@ const DRAG_START_THRESHOLD_PX = 6;
 const TEXT_DOUBLE_CLICK_INTERVAL_MS = 360;
 const TEXT_DOUBLE_CLICK_DISTANCE_PX = 8;
 const DEFAULT_FONT = "Segoe UI, PingFang SC, Microsoft YaHei, sans-serif";
-const CANVAS_ITEM_CLIPBOARD_MIME = "application/x-cyan-notepad-canvas-items";
-const CANVAS_ITEM_CLIPBOARD_PREFIX = "cyan-notepad:canvas-items:";
+const CANVAS_ITEM_CLIPBOARD_MIME = "application/x-qing-notepad-canvas-items";
+const CANVAS_ITEM_CLIPBOARD_PREFIX = "qing-notepad:canvas-items:";
 
 interface CanvasClipboardPayload {
-  kind: "cyan-notepad-canvas-items";
+  kind: "qing-notepad-canvas-items";
   version: 1;
   items: CanvasClipboardItem[];
 }
@@ -315,7 +315,7 @@ function readCanvasClipboard(clipboardData: DataTransfer | null): { raw: string;
   }
   try {
     const payload = JSON.parse(raw) as Partial<CanvasClipboardPayload>;
-    if (payload.kind !== "cyan-notepad-canvas-items"
+    if (payload.kind !== "qing-notepad-canvas-items"
       || payload.version !== 1
       || !Array.isArray(payload.items)
       || payload.items.length === 0
@@ -991,7 +991,7 @@ export default function CanvasView() {
     if (items.length === 0) return;
 
     const raw = JSON.stringify({
-      kind: "cyan-notepad-canvas-items",
+      kind: "qing-notepad-canvas-items",
       version: 1,
       items,
     } satisfies CanvasClipboardPayload);

@@ -115,7 +115,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
         <div className="flex flex-col items-center text-center">
           <img
             src="/default-icon.png"
-            alt="Cyan Notepad"
+            alt="Qing Notepad"
             className="w-16 h-16 rounded-2xl object-cover mb-4"
           />
 
@@ -125,7 +125,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             onClick={openGitHubPage}
             className="text-lg font-semibold text-accent hover:underline inline-flex items-center gap-1.5"
           >
-            Cyan Notepad
+            Qing Notepad
             <ExternalLink size={15} />
           </button>
 

@@ -12,7 +12,7 @@ function readCargoNames() {
   const cargoToml = join(repoRoot, "src-tauri", "Cargo.toml");
 
   if (!existsSync(cargoToml)) {
-    return ["cyan-notepad", "cyan_notepad_lib"];
+    return ["qing-notepad", "qing_notepad_lib"];
   }
 
   const content = readFileSync(cargoToml, "utf8");
@@ -32,7 +32,7 @@ function readCargoNames() {
     }
   }
 
-  return names.size > 0 ? [...names] : ["cyan-notepad", "cyan_notepad_lib"];
+  return names.size > 0 ? [...names] : ["qing-notepad", "qing_notepad_lib"];
 }
 
 function pruneOldBuildDirs(keepCount = KEEP_BUILD_COUNT) {

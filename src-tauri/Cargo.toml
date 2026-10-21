@@ -1,7 +1,7 @@
 [package]
-name = "cyan-notepad"
+name = "qing-notepad"
 version = "0.4.4"
-description = "Cyan Notepad - A lightweight note-taking app built with Tauri"
+description = "Qing Notepad - A lightweight note-taking app built with Tauri"
 authors = ["PyTs1N9"]
 edition = "2021"
 
@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "cyan_notepad_lib"
+name = "qing_notepad_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

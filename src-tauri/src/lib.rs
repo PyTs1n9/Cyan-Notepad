@@ -49,7 +49,7 @@ pub fn run() {
         ])
         .setup(|app| {
             #[cfg(desktop)]
-            app.deep_link().register("cyan-notepad")?;
+            app.deep_link().register("qing-notepad")?;
 
             // Create tray menu
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
@@ -59,7 +59,7 @@ pub fn run() {
             // Create tray icon
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Cyan Notepad")
+                .tooltip("Qing Notepad")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {

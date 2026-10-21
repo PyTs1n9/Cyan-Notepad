@@ -4,7 +4,7 @@ This file helps AI coding agents quickly understand and work safely in this repo
 
 ## Project Overview
 
-Cyan Notepad is a Windows desktop app built with **Tauri v2 + React 19 + TypeScript**.
+Qing Notepad is a Windows desktop app built with **Tauri v2 + React 19 + TypeScript**.
 
 Core features:
 - **Todo List**: CRUD, inline editing, drag reorder, three priority levels, status and priority filters.
@@ -13,6 +13,46 @@ Core features:
 - **Theme System**: dark/blue/yellow/green presets, custom palette, up to 5 saved custom presets.
 - **i18n**: Chinese/English UI strings through a typed translation table.
 - **System Integration**: custom title bar, tray icon, hide-to-tray close behavior, global shortcut.
+
+## Session Workflow (Required)
+
+Every conversation in this repo runs two skills, in this order. This is a standing
+project convention, not a one-off preference.
+
+### 1. `grill` — clarify before acting
+
+- Open the work round with the `grill` skill before any non-trivial implementation.
+- Ask for intensity first (浅问 / 常规 / 细问 / 深挖 / 拷打) unless the user already stated it.
+- Ask in rounds; every question uses the `❓ Q1｜标题` / `➡️ 建议` format. Only ask what the
+  current round has enough context for; defer dependent questions to the next round.
+- Ask about goals, constraints, trade-offs and default assumptions — not about facts that can
+  be verified directly in the repo or on official sites.
+- When a decision log is wanted, create or append to `docs/decisions-<topic>.md` with
+  "结论 + 理由" entries plus an open-questions list.
+- Close with 已确定 / 暂未确定 / 下一步 and wait for confirmation before significant execution.
+- Skip it only for pure lookups, single-line typo fixes, or when the user explicitly says to
+  skip questioning and act directly.
+
+### 2. `architect` — choose the stack deliberately
+
+- Run the `architect` skill whenever the work involves a technical choice: a new dependency or
+  library, storage/persistence layer, state or sync model, hosting, deployment, or build tooling.
+- Read existing `docs/decisions-*.md` first and reuse settled conclusions instead of re-litigating them.
+- Produce two or three options using the fixed template (技术栈 / 为什么适合 / 开发难度 / 维护成本 /
+  目标地区可用性 / 你得自己管的东西 / 主要风险), ordered by boring-technology preference, then
+  state `推荐：方案 X` plus the deciding reason.
+- Verify pricing, quotas, regional availability and official support on current official pages;
+  never quote remembered numbers.
+- After the user picks, append the option and reason to `docs/decisions-<topic>.md`.
+
+### Ordering and interaction
+
+- `grill` runs first and feeds `architect`; unresolved grill questions that change the stack
+  become the architect's "still-open questions" and may bounce back into the next grill round.
+- `architect` stays silent when the conversation does not touch a technical choice — do not
+  produce stack options for ordinary feature or bug work.
+- This app already has a fixed stack (Tauri v2 + React 19 + TypeScript). Architect therefore
+  applies to incremental choices inside that stack, not to greenfield re-selection.
 
 ## Commands
 
@@ -73,7 +113,7 @@ public/                      Static renderer assets
   - `?tile=1&noteId=...`: `<TileView />`
   - `?sticky=...`: `<StickyNote />`
 - `src/App.tsx` owns app initialization, data loading, theme application, autosave wiring, sidebar resize/collapse, import handlers, settings/about modals, shortcut setup, and tile theme sync.
-- `src-tauri/src/main.rs` must call `cyan_notepad_lib::run()`.
+- `src-tauri/src/main.rs` must call `qing_notepad_lib::run()`.
 - `src-tauri/src/lib.rs` configures Tauri plugins, tray behavior, close-to-tray behavior, and the `quit_app` command.
 
 ## Frontend State
@@ -211,8 +251,8 @@ Rust side responsibilities:
 There are no custom Rust file-I/O commands; frontend code uses Tauri plugins directly.
 
 Critical backend details:
-- `src-tauri/Cargo.toml` `[lib] name` is `cyan_notepad_lib`.
-- `src-tauri/src/main.rs` must call `cyan_notepad_lib::run()`.
+- `src-tauri/Cargo.toml` `[lib] name` is `qing_notepad_lib`.
+- `src-tauri/src/main.rs` must call `qing_notepad_lib::run()`.
 - Tauri v2 permissions live in `src-tauri/capabilities/default.json`, not in `tauri.conf.json`.
 - `tauri.conf.json` uses `devUrl` `http://localhost:8787`; Vite is configured with fixed port `8787`.
 
@@ -230,7 +270,7 @@ Prefer `@/...` imports for app source modules where existing code does so.
 
 - Read the relevant store/component/util before editing; behavior is split between Zustand state, Tauri plugin calls, and React effects.
 - Keep changes scoped. Do not refactor unrelated areas while fixing a feature.
-- Preserve local user data formats under `%APPDATA%/com.cyan-notepad.app/data/`.
+- Preserve local user data formats under `%APPDATA%/com.qing-notepad.app/data/`.
 - Be careful with note content format: `.md` files are not guaranteed to be Markdown.
 - When adding UI text, update both translations and use `t()`/`tWithParams()`.
 - When adding Tauri APIs, update capabilities in `src-tauri/capabilities/default.json`.

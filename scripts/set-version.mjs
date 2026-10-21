@@ -65,7 +65,7 @@ replaceRequired(
 
 replaceRequired(
   "src-tauri/Cargo.lock",
-  /(\[\[package\]\]\s*\nname = "cyan-notepad"\s*\nversion = ")[^"]+(")/,
+  /(\[\[package\]\]\s*\nname = "qing-notepad"\s*\nversion = ")[^"]+(")/,
   (_match, before, after) => `${before}${version}${after}`,
 );
 

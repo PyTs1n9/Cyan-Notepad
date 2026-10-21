@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: cyan-notepad-collab
+    name: qing-notepad-collab
     runtime: docker
     plan: free
     rootDir: collab-server

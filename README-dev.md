@@ -1,4 +1,4 @@
-# Cyan Notepad - 开发者文档
+# Qing Notepad - 开发者文档
 
 本文档面向开发者和 AI coding agent，描述当前项目结构、开发命令、数据模型、发布流程和常见维护约束。产品功能和下载说明请阅读 [README.md](./README.md)。
 
@@ -77,7 +77,7 @@ CI 发布流程使用 `windows-latest`、Node.js 22、Rust stable 和 `tauri-app
 ## 项目结构
 
 ```text
-Todolist-vibe/
+QingNotepad/
 ├── src/
 │   ├── components/
 │   │   ├── Editor/
@@ -115,7 +115,7 @@ Todolist-vibe/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── lib.rs                  # 插件、托盘、单实例、关闭到托盘、quit_app
-│   │   └── main.rs                 # 调用 cyan_notepad_lib::run()
+│   │   └── main.rs                 # 调用 qing_notepad_lib::run()
 │   ├── capabilities/
 │   │   └── default.json            # main / sticky-* / tile-* 权限
 │   ├── Cargo.toml
@@ -229,7 +229,7 @@ Tauri 权限在 `src-tauri/capabilities/default.json` 中声明，窗口 label �
 所有持久化集中在 `src/utils/storage.ts`，通过 Tauri fs 插件读写：
 
 ```text
-%APPDATA%/com.cyan-notepad.app/data/
+%APPDATA%/com.qing-notepad.app/data/
 ├── todos.json
 ├── fonts.json
 ├── settings.json
@@ -351,8 +351,8 @@ Tauri 权限在 `src-tauri/capabilities/default.json` 中声明，窗口 label �
 
 关键约束：
 
-- `src-tauri/Cargo.toml` 的 `[lib] name` 必须是 `cyan_notepad_lib`。
-- `src-tauri/src/main.rs` 必须调用 `cyan_notepad_lib::run()`。
+- `src-tauri/Cargo.toml` 的 `[lib] name` 必须是 `qing_notepad_lib`。
+- `src-tauri/src/main.rs` 必须调用 `qing_notepad_lib::run()`。
 - Tauri v2 权限写在 `src-tauri/capabilities/default.json`，不是 `tauri.conf.json`。
 - `tauri.conf.json` 的 `devUrl` 是 `http://localhost:8787`，Vite 端口必须匹配。
 

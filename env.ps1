@@ -1,4 +1,4 @@
-# Cyan Notepad 开发环境配置脚本
+# Qing Notepad 开发环境配置脚本
 # 用法: . .\env.ps1
 
 # 1. Rust 工具链

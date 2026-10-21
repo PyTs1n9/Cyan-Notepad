@@ -1,4 +1,4 @@
-export const PORTAL_ACTION_EVENT = "cyan-notepad:portal-action";
+export const PORTAL_ACTION_EVENT = "qing-notepad:portal-action";
 
 export type PortalAction =
   | "open-note-sticky"

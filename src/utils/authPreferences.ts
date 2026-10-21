@@ -1,6 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-const LOGIN_PREFERENCES_KEY = "cyan-notepad-login-preferences";
+const LOGIN_PREFERENCES_KEY = "qing-notepad-login-preferences";
 
 export interface LoginPreferences {
   configured: boolean;

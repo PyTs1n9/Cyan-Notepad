@@ -4,19 +4,19 @@
 
 <div align="center">
 
-<img src="./src-tauri/icons/Square142x142Logo.png" width="155" alt="Cyan Notepad 图标">
+<img src="./src-tauri/icons/Square142x142Logo.png" width="155" alt="Qing Notepad 图标">
 
-# Cyan Notepad 青の记事本
+# Qing Notepad 青の记事本
 
 记事本仅 <strong><em><font color="#1f6feb">13MB</font></em></strong>，轻量级桌面应用<br>
 QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br>
 本地优先的MD记事、待办、画布与在线协作工作台<br>
 基于 **Tauri v2 + React 19 + TypeScript** 构建
 
-[反馈问题](https://github.com/PyTs1n9/Cyan-Notepad/issues) · [更新日志](https://github.com/PyTs1n9/Cyan-Notepad/releases)<br>
+[反馈问题](https://github.com/PyTs1n9/Qing-Notepad/issues) · [更新日志](https://github.com/PyTs1n9/Qing-Notepad/releases)<br>
 [快速开始](#快速开始) · [在线工作台部署](#在线工作台部署) · [从源码构建](#从源码构建)
 
-[![Version](https://img.shields.io/github/v/release/PyTs1n9/Cyan-Notepad?label=版本)](https://github.com/PyTs1n9/Cyan-Notepad/releases/latest)
+[![Version](https://img.shields.io/github/v/release/PyTs1n9/Qing-Notepad?label=版本)](https://github.com/PyTs1n9/Qing-Notepad/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 </br>
 ![React 19](https://img.shields.io/badge/React-19-blue?logo=react)
@@ -31,7 +31,7 @@ QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br
 
 ## 项目简介
 
-Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 记事、待办清单、自由画布、桌面便签和可选的在线协作空间放在同一个应用中：本地内容无需登录即可使用，联网工作台则用于跨设备保存和多人协作。
+Qing Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 记事、待办清单、自由画布、桌面便签和可选的在线协作空间放在同一个应用中：本地内容无需登录即可使用，联网工作台则用于跨设备保存和多人协作。
 
 当前版本为 **v0.4** 最终版。本地数据默认保存在应用数据目录；启用在线工作台后，账户、工作台元数据和云文档会通过你配置的 Supabase 与协作服务同步。
 
@@ -46,7 +46,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 5️⃣ 粘贴本地图片时会保存为应用附件，并在预览中解析本地附件、文件路径和网络图片
 
 <p align="center">
-  <img src="./src-tauri/icons/test01.webp" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test01.webp" width="600" alt="Qing Notepad 图标">
 </p>
 
 ### 🗓️ 待办清单
@@ -56,7 +56,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 3️⃣ 任务支持截止日期日历选择
 
 <p align="center">
-  <img src="./src-tauri/icons/test02.webp" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test02.webp" width="600" alt="Qing Notepad 图标">
 </p>
 
 ### 🎨 自由画布
@@ -67,7 +67,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 4️⃣ 画布内容和图片资源保存在本地，目前不参与在线工作台的实时协作。
 
 <p align="center">
-  <img src="./src-tauri/icons/test03.webp" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test03.webp" width="600" alt="Qing Notepad 图标">
 </p>
 
 ### 💻 在线工作台与实时协作
@@ -79,7 +79,7 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 5️⃣ 完整的数据库迁移、协作服务和 Render 部署说明见 [在线工作台部署](docs/online-workspace.md)。
 
 <p align="center">
-  <img src="./src-tauri/icons/test04.webp" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test04.webp" width="600" alt="Qing Notepad 图标">
 </p>
 
 ### 💎 个性化与系统集成
@@ -91,14 +91,14 @@ Cyan Notepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 
 - 5️⃣ 关于窗口检查 GitHub 最新版本和 Releases 下载入口。
 
 <p align="center">
-  <img src="./src-tauri/icons/test05.webp" width="600" alt="Cyan Notepad 图标">
+  <img src="./src-tauri/icons/test05.webp" width="600" alt="Qing Notepad 图标">
 </p>
 
 ## 快速开始
 
 ### 下载安装
 
-请前往 [Releases 页面](https://github.com/PyTs1n9/Cyan-Notepad/releases/latest) 下载最新版本。
+请前往 [Releases 页面](https://github.com/PyTs1n9/Qing-Notepad/releases/latest) 下载最新版本。
 
 | 系统 | 架构 | 推荐文件 |
 | --- | --- | --- |
@@ -140,7 +140,7 @@ VITE_COLLAB_URL=wss://你的协作服务域名
 
 ## 数据存储
 
-应用会优先尝试使用安装包资源目录下的 `data/`；如果该目录不可写，则自动回退到 `%APPDATA%/com.cyan-notepad.app/data/`。开发模式默认使用后者。主要内容包括：
+应用会优先尝试使用安装包资源目录下的 `data/`；如果该目录不可写，则自动回退到 `%APPDATA%/com.qing-notepad.app/data/`。开发模式默认使用后者。主要内容包括：
 
 ```text
 data/
@@ -183,7 +183,7 @@ data/
 
 ## 反馈与支持
 
-- [提交 Issue](https://github.com/PyTs1n9/Cyan-Notepad/issues)
+- [提交 Issue](https://github.com/PyTs1n9/Qing-Notepad/issues)
 - 发送邮件至 1990629881@qq.com
 
 ## 许可证

@@ -1,8 +1,8 @@
 # 贡献指南
 
-感谢你为 Cyan Notepad 提交代码、文档、问题反馈或功能建议。
+感谢你为 Qing Notepad 提交代码、文档、问题反馈或功能建议。
 
-Cyan Notepad 是一个以 Windows 为主要目标平台的 Tauri v2 + React 19 + TypeScript 桌面应用。提交贡献前，建议先阅读 [README.md](README.md)、[README-dev.md](README-dev.md) 和仓库根目录的 `AGENTS.md`，了解项目结构、开发命令与数据格式。
+Qing Notepad 是一个以 Windows 为主要目标平台的 Tauri v2 + React 19 + TypeScript 桌面应用。提交贡献前，建议先阅读 [README.md](README.md)、[README-dev.md](README-dev.md) 和仓库根目录的 `AGENTS.md`，了解项目结构、开发命令与数据格式。
 
 ## 开始之前
 
@@ -98,7 +98,7 @@ PowerShell 如果因脚本执行策略拦截 `npx.ps1`，可以使用上面的 `
 ### 数据兼容性
 
 - 所有本地持久化都通过 `src/utils/storage.ts` 处理。
-- 不要随意改变 `%APPDATA%/com.cyan-notepad.app/data/` 下的文件结构。
+- 不要随意改变 `%APPDATA%/com.qing-notepad.app/data/` 下的文件结构。
 - `notes/index.json` 存储笔记元数据；`.md` 内容文件历史上可能保存 Markdown，也可能保存 TipTap HTML，读取时必须保持兼容。
 - 修改数据结构时，提供旧数据的读取兼容或迁移逻辑，并在 Pull Request 中说明。
 - 不要把真实用户数据复制进仓库或测试截图。

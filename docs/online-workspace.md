@@ -23,10 +23,10 @@ supabase/migrations/202607220002_document_unpublishing.sql
 在 Supabase Dashboard 打开 `Authentication → URL Configuration`，将下面的地址加入 Redirect URLs：
 
 ```text
-cyan-notepad://auth/recovery
+qing-notepad://auth/recovery
 ```
 
-桌面应用会注册 `cyan-notepad://` 协议。用户点击找回密码邮件后，Supabase 会把恢复会话交回 Cyan Notepad，由应用显示新密码窗口并完成修改。若未加入白名单，Supabase 会回退到 Site URL，链接可能仍然打开网站而不是应用。
+桌面应用会注册 `qing-notepad://` 协议。用户点击找回密码邮件后，Supabase 会把恢复会话交回 Qing Notepad，由应用显示新密码窗口并完成修改。若未加入白名单，Supabase 会回退到 Site URL，链接可能仍然打开网站而不是应用。
 
 ## 2. 本地启动协作服务
 
@@ -60,7 +60,7 @@ npm.cmd run tauri dev
 仓库根目录的 `render.yaml` 可创建 Docker Web Service。部署时只需要在托管平台手动填写 `SUPABASE_SERVICE_ROLE_KEY`。部署成功后使用服务的 HTTPS 域名生成 WebSocket 地址，例如：
 
 ```text
-wss://cyan-notepad-collab.example.com
+wss://qing-notepad-collab.example.com
 ```
 
 ## 5. GitHub Release

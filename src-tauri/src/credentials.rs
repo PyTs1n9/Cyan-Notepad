@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn hex_round_trip() {
-        let input = b"cyan-notepad";
+        let input = b"qing-notepad";
         assert_eq!(decode_hex(&encode_hex(input)).unwrap(), input);
     }
 

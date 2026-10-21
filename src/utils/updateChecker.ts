@@ -1,10 +1,10 @@
 import packageJson from "../../package.json";
 
 export const APP_VERSION = packageJson.version;
-export const GITHUB_URL = "https://github.com/PyTs1n9/Cyan-Notepad";
+export const GITHUB_URL = "https://github.com/PyTs1n9/Qing-Notepad";
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 
-const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/Cyan-Notepad/releases/latest";
+const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/Qing-Notepad/releases/latest";
 
 interface ParsedVersion {
   numbers: [number, number, number];

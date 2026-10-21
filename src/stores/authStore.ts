@@ -48,7 +48,7 @@ function extractRecoveryTokenHash(link: string, depth = 0): string | null {
     }
 
     for (const candidate of candidates) {
-      if (!/^(?:https?:\/\/|cyan-notepad:\/\/)/i.test(candidate.trim())) continue;
+      if (!/^(?:https?:\/\/|qing-notepad:\/\/)/i.test(candidate.trim())) continue;
       const nestedTokenHash = extractRecoveryTokenHash(candidate, depth + 1);
       if (nestedTokenHash) return nestedTokenHash;
     }

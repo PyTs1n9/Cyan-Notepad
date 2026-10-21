@@ -370,7 +370,7 @@ function subscribeToPermissionChanges(): void {
 }
 
 server.listen().then(() => {
-  console.log(`Cyan Notepad collaboration server listening on port ${port}`);
+  console.log(`Qing Notepad collaboration server listening on port ${port}`);
   subscribeToPermissionChanges();
   void synchronizePublicationSchedule();
   setInterval(() => { void synchronizePublicationSchedule(); }, PUBLICATION_DISCOVERY_INTERVAL_MS);

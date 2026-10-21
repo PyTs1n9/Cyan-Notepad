@@ -2,9 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
-const authStorageKey = "cyan-notepad-auth";
+const authStorageKey = "qing-notepad-auth";
 
-export const APP_DEEP_LINK_SCHEME = "cyan-notepad";
+export const APP_DEEP_LINK_SCHEME = "qing-notepad";
 export const PASSWORD_RECOVERY_REDIRECT_URL = `${APP_DEEP_LINK_SCHEME}://auth/recovery`;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);

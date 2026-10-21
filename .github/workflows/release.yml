@@ -55,7 +55,7 @@ jobs:
           VITE_COLLAB_URL: "${{ vars.VITE_COLLAB_URL }}"
         with:
           tagName: "${{ github.ref_name }}"
-          releaseName: 'Cyan Notepad v__VERSION__'
+          releaseName: 'Qing Notepad v__VERSION__'
           releaseBody: |
             ## 公告：
 
@@ -67,7 +67,7 @@ jobs:
 
             ## 下载 | Download
 
-            - `CyanNotepad_<version>_x64-setup.exe` — Windows NSIS 安装包。
-            - `CyanNotepad.exe` — 自包含可执行文件（无需额外运行时，开箱即用）。
+            - `QingNotepad_<version>_x64-setup.exe` — Windows NSIS 安装包。
+            - `QingNotepad.exe` — 自包含可执行文件（无需额外运行时，开箱即用）。
           releaseDraft: "false"
           prerelease: "false"

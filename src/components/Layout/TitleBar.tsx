@@ -440,8 +440,8 @@ export default function TitleBar({
 
         {/* Drag region */}
         <div data-tauri-drag-region className="flex h-full flex-1 items-center justify-center text-sm font-semibold text-text-primary">
-          <span data-tauri-drag-region className="flex whitespace-nowrap" aria-label="Cyan Notepad">
-            {Array.from("Cyan Notepad").map((char, index) => (
+          <span data-tauri-drag-region className="flex whitespace-nowrap" aria-label="Qing Notepad">
+            {Array.from("Qing Notepad").map((char, index) => (
               <span
                 key={`${char}-${index}`}
                 data-tauri-drag-region
