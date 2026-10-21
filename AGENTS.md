@@ -145,9 +145,13 @@ the repository root. Both resolve to a `data` directory with this structure:
 ├── fonts.json
 ├── settings.json
 ├── app-icon.png
-└── notes/
+├── notes/
+│   ├── index.json
+│   └── <uuid>.md
+└── trash/notes/
     ├── index.json
-    └── <uuid>.md
+    ├── <uuid>.md
+    └── img/
 ```
 
 Do not silently fall back to `%APPDATA%`: the install/project `data` directory is
@@ -162,6 +166,11 @@ Important details:
 - `saveNoteContent()` writes the current editor payload directly.
 - `App.tsx` autosaves todos, note index, fonts, and settings after initialization.
 - Note editor/sticky note content uses an 800ms debounce pattern for save-related flows.
+- Deleting a note goes through `moveNoteToTrash()`: the `.md` plus its image attachments move into
+  `trash/notes/`, and `trash/notes/index.json` keeps the metadata (including `deletedAt`).
+  Retention comes from the `trashRetentionDays` setting (`0` = off, `-1` = forever) and also
+  governs the `img-trash` quarantine window. `purgeExpiredNoteTrash()` runs on startup and
+  whenever the setting changes.
 
 ## Note Editor Flow
 
