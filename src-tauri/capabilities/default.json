@@ -66,6 +66,13 @@
     "core:event:default",
     "core:event:allow-emit",
     "core:event:allow-listen",
-    "deep-link:default"
+    "deep-link:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.deepseek.com/*" },
+        { "url": "https://api.bochaai.com/*" }
+      ]
+    }
   ]
 }

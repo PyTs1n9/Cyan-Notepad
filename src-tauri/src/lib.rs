@@ -36,6 +36,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|_app, _shortcut, _event| {
@@ -47,6 +48,8 @@ pub fn run() {
             quit_app,
             credentials::encrypt_login_credentials,
             credentials::decrypt_login_credentials,
+            credentials::encrypt_secret,
+            credentials::decrypt_secret,
             pdf_export::export_pdf,
         ])
         .setup(|app| {

@@ -12,6 +12,7 @@ import {
 } from "@tauri-apps/plugin-fs";
 import { join, resourceDir } from "@tauri-apps/api/path";
 import type { Note, NoteCategory, TodoListData } from "@/types";
+import { markKnowledgeDirty, markNoteContentDirty } from "@/utils/ai/knowledgeDirty";
 import {
   TRASH_RETENTION_DISABLED,
   TRASH_RETENTION_FOREVER,
@@ -41,6 +42,11 @@ const CUSTOM_BACKGROUND_PREFIX = "background-";
 const FONTS_FILE = "fonts.json";
 const SETTINGS_FILE = "settings.json";
 const UI_STATE_FILE = "ui-state.json";
+const AI_DIR = "ai";
+const AI_CREDENTIALS_FILE = "credentials.bin";
+const AI_SEARCH_CREDENTIALS_FILE = "search-credentials.bin";
+const AI_PREFERENCES_FILE = "preferences.json";
+const AI_CHATS_FILE = "chats.json";
 const DATA_DIR_NAME = "data";
 
 let dataDirectoryPromise: Promise<string> | null = null;
@@ -98,8 +104,256 @@ export async function getDataDirectory(): Promise<string> {
   return getDataRoot();
 }
 
-/** Current recycle-bin retention in days (0 = disabled, -1 = forever). */
-export function getTrashRetentionDays(): number {
+async function ensureAiDir() {
+  const base = await getDataRoot();
+  const dir = await join(base, AI_DIR);
+  await ensureDirectory(dir);
+  return dir;
+}
+
+export async function getAiDirectory(): Promise<string> {
+  return ensureAiDir();
+}
+
+/**
+ * DPAPI-encrypted AI provider API key as hex, or null when never configured.
+ * Decryption happens in Rust; this layer only stores the opaque cipher text.
+ */
+export async function loadAiCredentialCipher(): Promise<string | null> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_CREDENTIALS_FILE);
+    if (!(await exists(path))) return null;
+    const value = (await readTextFile(path)).trim();
+    return value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveAiCredentialCipher(cipher: string): Promise<void> {
+  const dir = await ensureAiDir();
+  const path = await join(dir, AI_CREDENTIALS_FILE);
+  await writeTextFile(path, cipher);
+}
+
+export async function deleteAiCredentialCipher(): Promise<void> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_CREDENTIALS_FILE);
+    if (await exists(path)) await remove(path);
+  } catch {
+    // Missing or locked file: treat as already cleared.
+  }
+}
+
+/**
+ * Search-provider API key (博查 etc.), DPAPI-encrypted hex. A second cipher
+ * file next to the chat key so the two BYOK credentials stay independent.
+ */
+export async function loadSearchCredentialCipher(): Promise<string | null> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_SEARCH_CREDENTIALS_FILE);
+    if (!(await exists(path))) return null;
+    const value = (await readTextFile(path)).trim();
+    return value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSearchCredentialCipher(cipher: string): Promise<void> {
+  const dir = await ensureAiDir();
+  const path = await join(dir, AI_SEARCH_CREDENTIALS_FILE);
+  await writeTextFile(path, cipher);
+}
+
+export async function deleteSearchCredentialCipher(): Promise<void> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_SEARCH_CREDENTIALS_FILE);
+    if (await exists(path)) await remove(path);
+  } catch {
+    // Missing or locked file: treat as already cleared.
+  }
+}
+
+/**
+ * AI assistant preferences (model selection etc.), kept beside the AI
+ * credentials so the AI module owns its own restore path. Plain JSON —
+ * nothing secret lives here.
+ */
+export interface StoredAiPreferences {
+  /** "local" (小青) or a chat provider id, e.g. "deepseek". */
+  chatModel?: string;
+  /** Generative provider id used by 润色. */
+  polishModel?: string;
+  /** Whether DeepSeek-mode turns run a real-time web search. */
+  searchEnabled?: boolean;
+  /** Note-write permission for the chat assistant (default "readonly"). */
+  noteWriteMode?: "readonly" | "full";
+}
+
+export async function loadAiPreferences(): Promise<StoredAiPreferences> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_PREFERENCES_FILE);
+    if (!(await exists(path))) return {};
+    const parsed = JSON.parse(await readTextFile(path)) as StoredAiPreferences;
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveAiPreferences(prefs: StoredAiPreferences): Promise<void> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_PREFERENCES_FILE);
+    await writeTextFile(path, JSON.stringify(prefs, null, 2));
+  } catch (e) {
+    console.error("Failed to save AI preferences:", e);
+  }
+}
+
+/**
+ * AI chat conversations, plain JSON beside the other AI state. Each entry
+ * carries its full message list so switching sessions restores exactly what
+ * was on screen. Nothing secret lives here.
+ */
+export interface StoredAiChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string;
+  hits: unknown[];
+  streaming?: boolean;
+  errorCode?: string;
+  /** Web search failed on this turn; drives a hint under the answer. */
+  searchError?: boolean;
+  /** Note writes performed in this turn (full-permission mode), for undo. */
+  edits?: {
+    noteId: string;
+    noteTitle: string;
+    snapshotPath: string;
+    undone?: boolean;
+  }[];
+  createdAt: number;
+}
+
+export interface StoredAiConversation {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: StoredAiChatMessage[];
+}
+
+export async function loadAiConversations(): Promise<StoredAiConversation[]> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_CHATS_FILE);
+    if (!(await exists(path))) return [];
+    const parsed = JSON.parse(await readTextFile(path)) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is StoredAiConversation =>
+        typeof item === "object" && item !== null &&
+        typeof (item as StoredAiConversation).id === "string" &&
+        Array.isArray((item as StoredAiConversation).messages),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function saveAiConversations(conversations: StoredAiConversation[]): Promise<void> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_CHATS_FILE);
+    await writeTextFile(path, JSON.stringify(conversations, null, 2));
+  } catch (e) {
+    console.error("Failed to save AI conversations:", e);
+  }
+}
+
+const AI_SNAPSHOTS_DIR = "snapshots";
+
+/**
+ * Save a pre-apply content snapshot before an AI rewrite touches a note.
+ * Safety net only: a failed snapshot must never block the apply itself.
+ * Returns the snapshot path, or null when it could not be written.
+ */
+export async function savePolishSnapshot(
+  noteId: string,
+  content: string,
+): Promise<string | null> {
+  try {
+    const aiDir = await ensureAiDir();
+    const snapshotDir = await join(aiDir, AI_SNAPSHOTS_DIR, noteId);
+    await ensureDirectory(snapshotDir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const path = await join(snapshotDir, `${stamp}.md`);
+    await writeTextFile(path, content);
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+/** Pre-edit state of a note (title + body) captured before an AI write. */
+export interface NoteSnapshot {
+  title: string;
+  content: string;
+}
+
+/**
+ * Snapshot used by chat-driven note edits. Unlike the polish snapshot it
+ * also carries the title, so a rename can be rolled back too. JSON beside
+ * the polish snapshots, one file per edit. Safety net only — a failed
+ * snapshot must never block the write itself.
+ */
+export async function saveNoteSnapshot(
+  noteId: string,
+  snapshot: NoteSnapshot,
+): Promise<string | null> {
+  try {
+    const aiDir = await ensureAiDir();
+    const snapshotDir = await join(aiDir, AI_SNAPSHOTS_DIR, noteId);
+    await ensureDirectory(snapshotDir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const path = await join(snapshotDir, `${stamp}.json`);
+    await writeTextFile(path, JSON.stringify(snapshot));
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadNoteSnapshot(path: string): Promise<NoteSnapshot | null> {
+  try {
+    if (!(await exists(path))) return null;
+    const parsed = JSON.parse(await readTextFile(path)) as NoteSnapshot;
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return {
+      title: typeof parsed.title === "string" ? parsed.title : "",
+      content: typeof parsed.content === "string" ? parsed.content : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteNoteSnapshot(path: string): Promise<void> {
+  try {
+    if (await exists(path)) await remove(path);
+  } catch {
+    // Best effort: an orphan snapshot is harmless.
+  }
+}
+
+/** Current recycle-bin retention in days (0 = disabled, -1 = forever). */export function getTrashRetentionDays(): number {
   return normalizeTrashRetentionDays(useSettingsStore.getState().trashRetentionDays);
 }
 
@@ -251,6 +505,7 @@ export async function saveTodos<T>(todos: T[]): Promise<void> {
     const base = await ensureDataDir();
     const path = await join(base, TODOS_FILE);
     await writeTextFile(path, JSON.stringify(todos, null, 2));
+    markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save todos:", e);
   }
@@ -326,6 +581,7 @@ export async function saveTodoLists(data: TodoListData): Promise<void> {
     const base = await ensureDataDir();
     const path = await join(base, TODO_LISTS_FILE);
     await writeTextFile(path, JSON.stringify(data, null, 2));
+    markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save todo lists:", e);
   }
@@ -392,6 +648,7 @@ export async function saveNoteIndex(
     await writeTextFile(tempPath, JSON.stringify({ notes, categories }, null, 2));
     if (await exists(indexPath)) await remove(indexPath);
     await rename(tempPath, indexPath);
+    markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save note index:", e);
   }
@@ -415,6 +672,8 @@ export async function saveNoteContent(id: string, content: string): Promise<void
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
     await writeTextFile(path, content);
+    // Name the note so the knowledge index only re-reads this one body.
+    markNoteContentDirty(id);
   } catch (e) {
     console.error("Failed to save note content:", e);
   }

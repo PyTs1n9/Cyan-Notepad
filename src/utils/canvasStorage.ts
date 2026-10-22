@@ -3,6 +3,10 @@ import { join } from "@tauri-apps/api/path";
 import type { CanvasBoard, CanvasDocument } from "@/types";
 import { createEmptyCanvasBoard, normalizeCanvasBoard } from "@/types/canvas";
 import { getDataDirectory, getImageTrashDirectory } from "@/utils/storage";
+import {
+  markCanvasContentDirty,
+  markKnowledgeDirty,
+} from "@/utils/ai/knowledgeDirty";
 
 const CANVAS_DIR = "canvas";
 const CANVAS_ASSETS_DIR = "img-canvas";
@@ -288,6 +292,7 @@ export async function saveCanvasList(canvases: CanvasDocument[]): Promise<void> 
     const { canvasDir } = await getCanvasDirectories();
     const path = await join(canvasDir, CANVAS_INDEX_FILE);
     await writeTextFile(path, JSON.stringify(canvases, null, 2));
+    markKnowledgeDirty();
   } catch (error) {
     console.error("Failed to save canvas list:", error);
   }
@@ -319,6 +324,8 @@ export async function saveCanvasBoard(board: CanvasBoard, id = DEFAULT_CANVAS_ID
     const previousBoard = await loadCanvasBoard(id);
     await writeTextFile(path, JSON.stringify(board, null, 2));
     await syncCanvasAssetStorage(previousBoard, board, id);
+    // Name the board so the knowledge index only re-reads this one.
+    markCanvasContentDirty(id);
   } catch (error) {
     console.error("Failed to save canvas board:", error);
   }
@@ -335,6 +342,7 @@ export async function deleteCanvasBoard(id: string): Promise<void> {
       if (await exists(legacyPath)) await remove(legacyPath);
     }
     if (board) await archiveCanvasBoardAssets(board, id);
+    markCanvasContentDirty(id);
   } catch (error) {
     console.error("Failed to delete canvas board:", error);
   }

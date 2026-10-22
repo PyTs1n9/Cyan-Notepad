@@ -1,136 +1,189 @@
-# 决策记录：AI 接入与本地知识库
+# 决策记录：AI 助手与笔记润色
 
-日期：2026-10-22
-状态：待确认后执行
-强度：拷打（4 轮问答 + 2 轮概念澄清）
+日期：2026-10-22（同日第二轮增补：双模型）
+状态：第一轮已落地并通过构建；第二轮结论与选型均已确认，实施中
 
-## 背景
+## 需求
 
-需求起点：「给笔记本接入 API AI 的调用，或者是本地的知识库」，并希望向使用者收取一定费用。
+第一轮（已落地）：
 
-排查到的现状：
+1. **右侧栏 AI 助手「小青」**：检索知识库，回答「这个软件怎么用」这一类问题。
+2. **用户可配置自己的 DeepSeek API Key**：用于润色、修改本地笔记的选中内容。
+
+第二轮（本轮新增）：
+
+1. **两个可切换模型**：小青（本地读取知识库）+ DeepSeek（调 API），侧栏下拉切换。
+2. **知识库范围扩到全部本地内容**：笔记、便签、待办、画布文本。
+3. **DeepSeek 支持实时网页搜索**；**预留接入更多 API 的接口**。
+
+## 排查到的现状
 
 - 技术栈固定 Tauri v2 + React 19 + TypeScript，数据全部落在本地 `data/`（Markdown + JSON）。
-- 已有 Supabase（认证 / 工作台 / 云文档 / RPC）与 `collab-server`（Hocuspocus + Yjs 实时协作，部署在 Render，持有 service_role key）。
-- `docs/online-workspace.md` 已确立安全边界：EXE 只含公开信息，secret 仅存在于服务端。
-- `data/notes/` 当前仅 4 篇笔记，11MB 中主要是图片附件。
-- `src-tauri/src/credentials.rs` 已有 Windows DPAPI 封装（`CryptProtectData` / `CryptUnprotectData`）与两个 Tauri 命令，可直接复用。
-- `src/components/Editor/NoteEditor.tsx` 的所有编辑最终汇聚为单一字符串 `content`，经 `saveNoteContent(noteId, content)` 落盘；Yjs 绑定在 `MarkdownSourceEditor` 的 CodeMirror 上。
-
-本轮明确了三件事：不内置生成模型、只接入 DeepSeek、收费按「软件功能费」而非「token 差价」。
+- `src-tauri/src/credentials.rs` 已有 Windows DPAPI 封装与两个命令，可直接复用。
+- `NoteEditor.tsx` 的编辑最终汇聚为单一字符串 `content`，经 `saveNoteContent` 落盘。
+- 第一轮已落地：DeepSeek 适配（`provider.ts`）、手册 + FAQ 的 BM25 检索（`manualEngine.ts`）、侧栏对话、润色 diff/快照/撤销。
+- 项目已有 Supabase 与 `collab-server`，安全边界为「EXE 只含公开信息，secret 仅存在于服务端」。
 
 ## 结论
 
-### 1. 商业模式：模式 1（软件功能费 + 用户自带 Key）
+### 1. 双模型并存，侧栏下拉切换
 
-结论：不代收模型费用，不转售 token。用户自行到 DeepSeek 开通 API 并填入本机，应用只按软件能力收费。
+结论：AI 侧栏顶部模型下拉两项——「小青（本地）」「DeepSeek（API）」，切换后整会话生效并记住上次选择；后续接入的 API 模型追加进同一列表。
 
-理由：国内代收 token 费用属于经营性互联网信息服务，需 ICP 许可证（要求中国大陆公司、注册资本 ≥100 万、3 名员工社保，审批 40–60 工作日）、算法备案（2–3 个月）与大模型登记；《生成式人工智能服务管理暂行办法》第二十二条明确把「通过可编程接口提供服务」纳入服务提供者范围，「只是转发管道」不构成免责。模式 1 下笔记直接经用户设备发往 DeepSeek，不经过本项目服务器，合规义务与工程复杂度同时降到最低。
+理由：本地/云端职责清晰，用户按场景切换，与常见 agent 产品的模型切换心智一致。
+（第二轮修订：取消第一轮「不做模型选择器」。）
 
-### 2. 模型接入范围：仅 DeepSeek，按 OpenAI 兼容协议实现
+### 2. 小青：本地文本检索模型，只出检索片段
 
-结论：只做 DeepSeek 一家的适配，但请求层按 OpenAI 兼容格式编写（`baseURL` + `apiKey` + `/chat/completions`）。
+结论：小青只做知识库检索，答案 = 原文片段 + 来源位置，不生成自然语言、不联网、不需 Key。「本地模型」指文本检索（embedding）模型；**仍不内置本地生成模型**。
 
-理由：DeepSeek 官方同时提供 OpenAI 与 Anthropic 两种 base URL，按兼容协议实现即可；后续要接 Kimi / Qwen / GLM / 硅基流动时，只需在设置里增加预设项，不改调用层。
+理由：帮助类问题的答案就在文档里，片段直出比小模型复述更准、更可信；生成型本地 LLM 的内存与质量代价维持第一轮否决。检索接口保持与语义检索同形，将来可升级。
 
-### 3. 生成模型：不内置，只接云端
+### 3. DeepSeek：RAG 问答 + 实时网页搜索 + 润色
 
-结论：不在安装包内放置任何对话生成模型（不集成 Qwen 小模型、不依赖 Ollama）。
+结论：选中 DeepSeek 时，知识库检索片段注入上下文后生成回答（RAG）；「联网问答」= 实时网页搜索，**默认开启、可关闭**；文章润色走 DeepSeek。当前有效模型 `deepseek-flash`（V4.1 Flash，1M ctx）。
 
-理由：1.5B–3B 量级的本地模型在无独显机器上体验不可接受，安装包增重 1–2GB，且效果远逊于云端；用户已确认「只自带检索」。
+理由：用户明确「要实时搜索」「默认开可关」。
 
-### 4. 检索模型：`bge-small-zh-v1.5` int8，随安装包分发
+### 4. 知识库范围：全部本地内容
 
-结论：使用 int8 量化版（24MB）作为 Tauri resource 打进安装包，运行在 Web Worker 内的 transformers.js 上。
+结论：索引范围 = 功能手册 +《常见问答》+ 用户笔记 + 便签 + 待办 + 画布文本；回收站内容不进索引。
 
-理由：int8 把权重从约 91MB 压到 24MB，与原版余弦相似度 0.9856，检索任务无感；24MB 对 NSIS 安装包可忽略，因此不需要下载器（省掉断点续传、校验、镜像、失败重试整套逻辑）。GitHub Release 支持单文件 <2GiB 且带宽免费，但为 24MB 引入网络依赖不划算。
+理由：用户选定「全部本地内容」，「我记过什么」与「软件怎么用」同属助手职责。
+（第二轮修订：第一轮「助手只检索功能手册」作废；「AI 助手不检索笔记」的隔离随之取消——笔记进上下文已获准许。）
 
-### 5. 能力边界：检索模型只负责「找」
+### 5. 隐私边界
 
-结论：该模型仅输出 512 维向量，用于语义检索、相似笔记与去重；不承担任何生成任务。
+结论：小青模式完全离线；DeepSeek 模式下笔记内容（检索片段、选中段落、提问）会发往 DeepSeek 与搜索服务，配置 Key 时隐私告知。
 
-理由：它是编码器，没有语言生成能力。生成必须由 DeepSeek 完成。这一点决定了「自带 RAG 知识库」不能替代模型接入，两条链路必须同时存在。
+理由：用户明确允许笔记进 DeepSeek 上下文；边界从「笔记不出机」调整为「出机需告知」。告知沿用第一轮的设置页内联说明。
 
-### 6. 检索层：抽象 `retrieve()`，默认走向量检索
+### 6. Key 存储：复用 DPAPI
 
-结论：统一出口 `retrieve(query, opts) => RetrievedChunk[]`，提供两种实现——`vector`（默认，RAG）与 `full-context`（降级）。
+结论：API Key（DeepSeek、搜索服务）经 Windows DPAPI 加密存 `data/ai/credentials.bin`，不进 `settings.json`。
 
-理由：默认按用户要求做 RAG；保留全文注入实现，用于索引未建好、检索结果为空或相似度低于阈值时的回退，避免「检索没命中就答不知道」。两者共用同一接口，上层调用代码不感知差异。
+理由：`credentials.rs` 已有封装；密文不随数据目录备份/分享泄露。（不变）
 
-### 7. 向量存储：二进制文件 + 暴力余弦，不引入向量库
+### 7. 润色：独立模型选择器 + 预览后应用
 
-结论：索引存 `data/ai/index.bin`（`Float32Array` 拼接）+ `data/ai/index.json`（块元数据）。
+结论：润色面板自带模型选择器（只列生成型 API 模型），与侧栏对话下拉互不影响；生成结果先 diff 预览，应用走编辑器状态变更管线，写入前存快照可撤销。
 
-理由：1 万条 512 维向量的全量余弦计算在 JS 中约几十毫秒，`sqlite-vec` / LanceDB 带来的依赖、迁移与打包成本在语料只有 4 篇的现状下没有对应收益。语料增长到十万级时再评估换库，届时只需替换 `indexStore`。
+理由：用户明确「润色单独选模型」；润色与对话的模型偏好可能不同。（第一轮润色结论保留。）
 
-### 8. AI 写入授权：先出建议 → diff 预览 → 用户确认 → 可撤销
+### 8. 协作会话期间禁用润色：不适用
 
-结论：AI 不直接改文件。生成结果先进 diff 预览，用户确认后才写入编辑器内容。写入前自动保存原文快照。
+结论：已核实 Yjs/Hocuspocus 只存在于云文档，本地 NoteEditor 无协作绑定，无需禁用逻辑。（第一轮该条经实施核实作废，保留一行备查。）
 
-理由：`content` 是整串替换，误写会覆盖正文。快照存 `data/ai/snapshots/<noteId>/<timestamp>.md`，撤销即回写快照；不依赖回收站（回收站是笔记级删除，粒度不匹配）。
+### 9. 收费：模式 1（软件功能费），不代收 token
 
-### 9. 协作冲突：不处理 CRDT 合并，但协作会话期间禁用 AI 写入
+结论：不做 API 中转，用户自己的 Key 直连服务商；授权校验随收款一并暂缓。（不变）
 
-结论：检测到活跃协作会话时，AI 的「应用」按钮禁用并提示原因；只读问答不受影响。
+### 10. 检索实现：BM25 + 向量混合（RRF 融合），模型打进安装包
 
-理由：整串替换对 Yjs 是一次巨型删除+插入，会破坏他人正在编辑的文档状态。正确做法（把改动拆成 CRDT 事务）成本远高于当前收益，而「协作时禁用写入」用一行判断就能消除风险。
+结论：混合检索——现有 BM25（`manualEngine.ts`）+ `bge-small-zh-v1.5` int8（Xenova ONNX，约 24MB）向量层，RRF 合并（k=60）；语义检索模型随 NSIS 安装包分发，Web Worker 内运行，Rust 侧零改动。实际打包增量约 51MB：模型 24MB + onnxruntime-web WASM 运行时 27MB。模型文件从 ModelScope 的 Xenova 镜像取得（HF 直连被网络环境拦截）。
 
-### 10. UI 入口：右侧 AI 侧栏
+理由：语料一半术语密集（手册/FAQ 的菜单名、快捷键）、一半口语（笔记/待办/便签），两路各补盲区；BM25 是现成资产，增量只在向量侧。
+（第二轮修订：第一轮「纯 BM25、零安装包增量」降级为混合的一路；2026-10-22 选型确认混合方案。）
 
-结论：侧栏是唯一主入口，承载对话、引用来源展示、diff 预览与设置入口。
+### 11. API 扩展：Provider 适配器接口（2026-10-22 选型确认）
 
-理由：写作辅助、全文问答、通用聊天三类需求的交互都是「多轮 + 需要看到引用」，浮动菜单装不下引用与对话历史。
+结论：请求层做成 `ChatProvider` 适配器接口（`stream` / `testKey`），本期只内置 DeepSeek 预设（第一个实现）；扩展位分两类留好——OpenAI 兼容协议（Kimi/GLM/通义等共用一个适配器）与非兼容协议（每家一个小适配器挂同一接口）；搜索侧同理挂 `SearchProvider`，默认预设博查 Web Search（用户自配 Key，BYOK）。不做用户自定义 endpoint UI。
 
-### 11. 隐私边界：明确降级，并主动告知
+理由：用户明确「预留接口、仅代码层抽象」「后续可能接入更多 API」；博查国内直连、引用字段（标题/摘要/站点/时间）齐备。API 费用全部用户自理，选型不比价。
 
-结论：`数据不出本机` 只对检索成立——embedding 在本地计算，笔记原文不落任何第三方；但检索出的片段与选中段落会发往 DeepSeek。首次启用云端模型时弹窗告知具体内容与接收方。
+## 实现约定（按实际落地更新）
 
-理由：用户已选择接受云端生成；若不主动告知，「本地知识库」的说法会让人误以为数据完全不出机，信任成本更高。告知内容需写清「哪些内容、发给谁、可否撤回」。
+- `src/utils/ai/`：
+  - `chat/`：`types.ts`（ChatProvider 接口）、`openaiCompat.ts`（OpenAI 兼容通用适配器）、`deepseek.ts`（首个预设）、`index.ts`（注册表，加厂商 = 加一个预设文件）。
+  - `search/`：`types.ts`（SearchProvider 接口）、`bocha.ts`（博查预设，POST /v1/web-search）、`index.ts`（注册表，Tavily 留位）。
+  - `provider.ts` 降级为兼容门面（re-export），`errors.ts`/`http.ts` 为共享底座。
+  - `knowledgeRetrieval.ts`：全语料（手册+FAQ+笔记+便签/磁贴同源+待办+画布文本）单 BM25 索引，分块 ≤370 字；`knowledgeDirty.ts`（叶子模块，storage/canvasStorage 写入点标脏）；`vectorIndex.ts` + `vectorWorker.ts`（bge-small-zh-v1.5 int8，Web Worker，chunk 向量缓存，RRF 融合；模型不可用时静默退化为纯 BM25）。
+  - 索引维护：标脏重建 + 30s TTL 兜底（覆盖进程外写入）。
+- 手册以 Vite `?raw` 导入打进前端包；FAQ 已并入同一索引（`## Qn｜` 自动分块）。
+- Key 存储：DPAPI 密文两个文件——`data/ai/credentials.bin`（对话）与 `data/ai/search-credentials.bin`（搜索），偏好 `data/ai/preferences.json`（chatModel/polishModel/searchEnabled）。（较原文的单文件方案更名独立，避免两类密钥耦合。）
+- 模型文件：`public/models/bge-small-zh-v1.5/`（config/tokenizer/model_quantized.onnx），经 Vite 原样拷入 dist，随 NSIS 分发；`env.allowRemoteModels=false` 保证离线。
+- 依赖新增：`@tauri-apps/plugin-http`、`@huggingface/transformers`（+ motion 等 UI 依赖）。
+- i18n：`ai*` 系列词条，中英双语（含模型下拉、搜索开关）。
+- 问答呈现（2026-10-22 12:20 终版，用户定稿）：**完全不输出摘要/来源卡片**，本地小青与外部 API 模型一律文字流式进同一个回答气泡。本地回答 = top-1 命中（标题加粗首行 + 整段正文，分块 ≤370 字不截断），经 `pacedStreamText` 分片写入 `message.content`（约 8ms/字，clamp 600–2400ms，`prefers-reduced-motion` 直出），与模型 token 流共用 `AssistantBubble` 渐进 Markdown 渲染与「停止」（共用 AbortController，可掐断本地打字）；其余命中不展示（仍进模型上下文）。无命中显「手册里没有找到相关内容」；出错/中止回合显错误文案、不回退出卡。此前「4 张来源卡整批弹出」「默认折叠」「逐张流出」「top-1 答案卡」各版呈现均已作废。
 
-### 12. Key 存储：复用现有 DPAPI 通道
+## 实施中发现并修正的两个事实
 
-结论：API Key 经 Windows DPAPI 加密后存 `data/ai/credentials.bin`，不写 `settings.json`、不进 localStorage。
+1. **协作期间禁用润色不适用**：Yjs/Hocuspocus 只在云文档，本地 NoteEditor 纯 CodeMirror。
+2. **隐私告知以设置页内联说明实现**（原设想首次弹窗）：说明文字与填 Key 同屏，更不容易被忽略。
 
-理由：`src-tauri/src/credentials.rs` 已有 `CryptProtectData` / `CryptUnprotectData` 封装，扩展一对通用 `encrypt_secret` / `decrypt_secret` 命令即可；`settings.json` 会随数据目录被用户备份或分享，明文 Key 不应出现在那里。
+## 状态
 
-### 13. 上下文与成本：按 1M 窗口规划，不做人为截断
-
-结论：DeepSeek V4 系列上下文为 1M token，笔记内容作为稳定前缀可获得缓存命中价格；prompt 组装按实际需要取材，不设固定截断阈值。
-
-理由：官方定价页（2026-08-17 起峰谷计价，工作日 9:00–12:00、14:00–18:00 为高峰）显示缓存命中输入为 0.3 元/百万 token（高峰），未命中 9 元/百万；笔记作为不变前缀命中率高，4 篇笔记的单次问答成本在分级钱。参考：<https://api-docs.deepseek.com/quick_start/pricing>
-
-## 实现约定（技术默认值，无需另行确认）
-
-- 新增目录 `src/utils/ai/`：`provider.ts`（DeepSeek 适配 + 错误归一）、`chunking.ts`（切块）、`embedding.ts`（Worker 入口）、`indexStore.ts`（索引读写）、`retrieval.ts`（`retrieve` 双实现）、`snapshot.ts`（快照与撤销）、`diff.ts`（行级 diff）。
-- 切块策略：按 Markdown 标题层级切分，单块上限 512 字，相邻块重叠 64 字；元数据记 `noteId` / `heading` / `charRange`。
-- 索引失效：`notes/index.json` 或笔记文件的修改时间变化时，仅重算该笔记的块，标记为脏并在空闲时刷新。
-- embedding 全部在 Web Worker 中执行，主线程只接收 `Float32Array`，避免建索引期间 UI 卡死。
-- `src/stores/aiStore.ts`：侧栏开关、模型配置、会话列表、索引状态；持久化到 `data/ai/settings.json`（不含 Key）。
-- 组件：`src/components/AI/AiSidebar.tsx`、`AiDiffPreview.tsx`、`AiSettingsPanel.tsx`、`AiPrivacyNotice.tsx`。
-- `src-tauri/src/lib.rs` 注册 `encrypt_secret` / `decrypt_secret` 命令，复用 `credentials.rs` 的 DPAPI 调用。
-- `src-tauri/tauri.conf.json` 的 `bundle` 增加 `resources`，把模型文件目录映射进安装包；`src/utils/ai/embedding.ts` 通过 `resolveResource` 定位。
-- 依赖新增仅 `@huggingface/transformers`（transformers.js v4）一项；模型文件不入 Git，随构建产物打包。
-- AI 写入路径：生成新 `content` → diff 预览 → 确认后写入 `NoteEditor` 的 content 状态 → 交由既有 autosave 落盘，**不直接调用 `saveNoteContent`**，避免绕过编辑器状态造成不一致。
-- i18n 新增词条：`aiAssistant`、`aiSettings`、`aiApiKey`、`aiPrivacyNotice`、`aiPrivacyNoticeBody`、`aiApplyChange`、`aiRevertChange`、`aiIndexing`、`aiIndexReady`、`aiDisableWriteInCollab`、`aiNoKey`。
+| 模块 | 状态 |
+| --- | --- |
+| Key 配置、DPAPI 命令、设置页、隐私说明 | 第一轮完成 |
+| 《功能手册》《常见问答》+ BM25 检索 | 第一轮完成（12 组查询冒烟全中） |
+| 侧栏对话（来源卡片、无 Key 降级、流式、可中断） | 第一轮完成 |
+| 润色（选区、指令、diff、应用、快照、撤销） | 第一轮完成 |
+| provider 抽象（ChatProvider/SearchProvider + DeepSeek/博查预设） | 2026-10-22 完成，构建通过 |
+| 双模型切换（侧栏下拉、偏好持久化、润色独立选模型） | 2026-10-22 完成，构建通过 |
+| 小青本地检索（全语料 + BM25/向量混合 RRF + 标脏重建） | 2026-10-22 完成，构建通过（混合质量待 GUI 手测） |
+| 实时网页搜索（博查接入、搜索 Key、默认开可关、来源标注） | 2026-10-22 完成，构建通过（联网链路待真 Key 手测） |
 
 ## 待定问题
 
-1. 授权校验方式。三选一：(a) Ed25519 离线签名授权码，客户端内置公钥验签，零服务器、离线可用；(b) 复用 Supabase 账号，查 `entitlements` 表，可吊销但需联网；(c) 不做校验，靠自愿付费。推荐 (a)。
-2. 收款渠道。个人身份可选爱发电 / 面包多（有抽成）、虎皮椒 / Payjs 等聚合支付（约 1%–1.5%）；微信支付商户号需营业执照。费率与可用性以各平台当前页面为准。
-3. 定价形式：一次性买断、年度订阅，还是按大版本收费。
-4. 是否增加「仅本地模式」开关（开启后禁用一切云端调用，AI 侧栏只保留检索与相似笔记）。此开关与结论 11 的告知文案互相依赖。
-5. 低配机器（4GB 内存）占比。若占比较高，首次建索引需改为后台分批进行，并在侧栏显示进度，工作量约增加 2–3 天。
+1. ~~检索模型与算法选型~~：已定——BM25 + `bge-small-zh-v1.5` int8 混合（RRF），模型打进安装包。
+2. ~~搜索 API 选型~~：已定——博查 Web Search 默认预设（BYOK，不比价），Tavily 留作后续预设位。
+3. ~~便签/待办/画布文本的索引维护~~：已实现——storage/canvasStorage 写入点标脏 + 30s TTL 兜底重建（便签内容与笔记同源，无需单独索引）。
+4. 《功能手册》的维护归属：发布检查清单或 CI 比对 UI 词条与手册覆盖度。
+5. 非兼容协议第一个适配器接哪家厂商（本期不接，留位即可）。
 
-## 工作量估算
+## 暂缓事项：收费与授权（本期不做）
 
-| 模块 | 估时 |
-| --- | --- |
-| AI 基础层（provider、Key 存储、设置页） | 2–3 天 |
-| 检索层（切块、Worker、索引、`retrieve` 双实现） | 3–5 天 |
-| UI（侧栏、diff 预览、快照撤销、隐私弹窗） | 4–6 天 |
-| 授权校验 | 1–2 天 |
-| 合计 | 10–16 天 |
+不开放收款与定价，授权校验一并移出范围。收费上线时再定三项：授权校验方式（Ed25519 离线签名码 / Supabase 在线校验 / 不校验）、收款渠道、定价形式。需认清：客户端校验挡不住破解，宜「不封锁功能、只显示激活状态」的轻量做法。
 
 ## 下一步
 
-待定问题 1–3 确认后开工，实施顺序为：AI 基础层 → 侧栏与对话 → 检索层 → 写入与撤销 → 授权校验。每段完成后跑 `npx tsc --noEmit` 与 `npm run build`。
+1. ~~选型~~：已完成（混合检索 / Provider 适配器 / 博查），见结论 10、11。
+2. ~~实施~~：provider 抽象、双模型切换、小青本地检索（扩范围 + 混合）、博查搜索均已落地（2026-10-22）。
+3. GUI 手测（需真实 Key）：双模型切换、离线小青、混合检索召回质量、DeepSeek 联网问答与来源标注、润色独立选模型。
+4. 打包验证：NSIS 体积增量（约 51MB）与 WebView2 WASM 多线程兼容性（`ort-wasm-simd-threaded` 需要跨源隔离头，Tauri 资源协议下如遇 SharedArrayBuffer 不可用，向量层会自动退化为 BM25，可改用单线程 wasm 兜底）。
+
+## 第三轮：缺陷审查与修复（2026-10-22）
+
+审查范围：AI 模块全部新增文件（约 4,600 行）+ capability/依赖/打包产物。结论与处置：
+
+1. **联网搜索无法出网（P0，已修）**：`capabilities/default.json` 的 `http:default` 只放行 DeepSeek 域名，博查请求被 `tauri-plugin-http` 以 `UrlNotAllowed` 拒绝（源码 `commands.rs` 已核），失败又被 `catch` 静默吞掉。处置：白名单加 `https://api.bochaai.com/*`；失败时在回答下方显示「本次联网搜索未成功」而非无声降级。
+2. **「停止」被当成网络错误（P0，已修）**：`aborted` 原本映射到 `aiErrorNetwork`。处置：新增 `aiErrorAborted`（已停止生成），设置页与侧栏同源。
+3. **当前提问在 prompt 中出现两次（P1，已修）**：`runGeneration` 的 history 未排除本轮用户消息，随后又以「检索片段 + 问题」重发一次。处置：按 `questionIndex` 截断 history（重新生成时也一并排除被替换的旧回答）。
+4. **清空对话留下空会话（P1，已修）**：`clearChat` 只清 messages 又回写快照。处置：连会话一起删除，与 `stashActiveConversation` 的空会话策略一致。
+5. **检索失败导致提问丢失（P1，已修）**：提问先 `await` 检索再出气泡，而向量层无超时、worker 崩溃时 Promise 永不 settle。处置：先出气泡与 `sending` 再检索；embedding 增加超时（查询 10s / 每批 32 条 10s）；worker 报错时拒绝全部在途请求；`fuseHits` 失败回落 BM25。
+6. **索引重建代价（P2，已修）**：任何保存都标脏，重建会重读所有笔记与画布。处置：`saveNoteContent` / `saveCanvasBoard` 带 id 标脏，重建只重读变动过的正文，其余走缓存；标脏标志改为重建开始时清除，避免构建期间的写入丢失。
+7. **向量缓存无上限（P2，已修）**：chunk 向量按 `heading+text` 只增不减。处置：每次融合前按当前 chunk 集合裁剪。
+8. **默认值与规格不一致（已对齐）**：结论 3 要求联网问答默认开启，实现原为关闭。处置：默认改为开启（无搜索 Key 时不发请求）。
+9. **文档缺口（已补）**：《功能手册》补「联网搜索」条目，FAQ 补 Q20（含费用归属），并修正 Q1「不联网、不上传」的表述与设置页隐私告知（补搜索服务）。
+
+## 第四轮：小青回答组装层（2026-10-22）
+
+问题：小青（本地检索模式）的回答与提问的**问法**无关，只与命中的 chunk 有关。`composeLocalAnswer` 取 top-1 后直接拼成 `**标题**\n\n正文`，BM25 与 RRF 都是确定性的，于是同一个问题逐字重复，不同问法命中同一段时也一字不差。「死板」的根因是本地模式**没有生成环节**，不是模板写少了。
+
+结论：新增 `src/utils/ai/answerComposer.ts`，把「chunk → 回答」的搬运换成两段式组装——**先定位块内最相关的一行，再按提问意图从该行展开**。仍是零模型、零依赖、零新增安装体积，素材全部来自知识库原文。
+
+四类意图与结构：操作步骤（`怎么/如何/怎样`）、位置定位（`在哪/哪里/去哪`）、能力确认（`能不能/支持吗/吗？`）、概念解释（`是什么/区别`），识别不出则沿用原样直出。
+
+理由：
+
+1. **用户选定的边界是「纯离线、不增体积」**（2026-10-22 澄清），因此端侧小模型（约 300–500MB）与「强制调用云端 Key」两条路都被排除。能做的只有重排输出，不能同义改写——这一条已明确告知，不是实现缺陷。
+2. **变化必须来自问法，不能来自随机**。同一意图配 2–3 套小标题变体，按**轮换游标**取下一套（确定性递增，可复现、可测试），而不是 `Math.random()`。同一句问两次会换模板；不同问法命中同一段则结构不同（实测：`待办能设优先级吗` → 结论式，`待办怎么设优先级` → 步骤式）。
+3. **有意不做句子顺序轮换**：步骤一旦乱序就会引导用户做错事，收益远小于风险。展开始终沿原文顺序。
+4. **完整优先**：摘句只覆盖原文八成以下时，追加 `> 原文补充：…` 引回全段，保证结构化摘要失真时不丢信息。
+
+三处实现上的实测修正（都是先写错、跑真实语料才发现）：
+
+1. **`manualEngine` 增加 `ManualChunk.lineBreaks`**。原先把 `lines` 用空格拼平，组装层拿不到行边界，「活动栏底部点「设置」：」与紧跟的「主题：…」粘成一句，导致问「怎么切换主题」时把主题描述混成第 1 步。改为记录行末在 `text` 中的偏移（几个整数，不是文本副本），`text` 本身不变，BM25 / 向量 / `chunkKey` / 已持久化的 hits 全部不受影响。
+2. **中文分号不算单元边界**。曾把 `；` 当边界，「找到 data 文件夹（…；找不到就看 …）；」被切成两半，第二半以「找不到」开头，阻断了步骤起点回溯，迁移笔记的答案只剩第二步。
+3. **意图识别按提问的语言，不按命中块的语言**。英文提问命中中文手册时，用中文规则匹配 `How do I…` 必然落到 fallback；英文规则还漏了大小写折叠（`How` 未匹配小写 `how`）。
+
+不做的：跨段合成（仍只用 top-1，用户未选此项）；检索相关性下限（完全无关的提问仍会拿到某个 chunk，组装层只在块内零重合时退回原样直出）。
+
+验证：`scripts/smoke-manual-bm25.mts` 21/21 通过（检索层未受影响）；12 个侧栏示例问题逐条人工核对组装结果；连续两次同问确认模板轮换；`tsc --noEmit` 与 `npm run build` 通过。
+
+## 下一步（第四轮之后）
+
+1. GUI 手测：真实侧栏里连问两次、追问、以及对同一知识点的不同问法。
+2. 同档句子的重合阈值（当前 `keepsGoing` 取 2）是用 12 个示例问题的先验值，语料扩充后需复测；有 `scripts/smoke-manual-bm25.mts` 的语料一变就该重跑。
+3. 遗留：`hits` 会随对话持久化，新增的 `lineBreaks` 字段会让旧会话在读取时缺失（组装层容错为纯标点切分，质量略降但不报错）。

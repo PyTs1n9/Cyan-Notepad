@@ -5,6 +5,17 @@ import type { LangType } from "@/stores/settingsStore";
 export const SIDEBAR_MIN_WIDTH = 240;
 export const SIDEBAR_MAX_WIDTH = 400;
 
+// The AI assistant docks to the right edge and shares the left sidebar's
+// collapse shell and resize semantics in App.tsx: the shell animates between 0
+// and the stored width, a drag handle resizes it within the bounds below, and
+// dragging past the collapse threshold hides it. This is the default width a
+// fresh launch (or expand) returns to; the panel keeps its natural width inside
+// the shell so the slide never reflows the chat.
+export const AI_SIDEBAR_WIDTH = 340;
+// The right handle drags up to 500 (the left sidebars keep SIDEBAR_MAX_WIDTH);
+// the minimum and collapse threshold stay shared with the left handle.
+export const AI_SIDEBAR_MAX_WIDTH = 500;
+
 // Dragging narrower than this collapses the sidebar instead of clamping it at
 // SIDEBAR_MIN_WIDTH, and the same threshold brings it back, so the boundary is
 // deterministic in both directions. The 60px between this and the minimum is the
@@ -24,6 +35,23 @@ export function isBelowSidebarCollapseThreshold(
   activityBarWidth: number,
 ): boolean {
   return pointerX - activityBarWidth < SIDEBAR_COLLAPSE_THRESHOLD;
+}
+
+/**
+ * The AI sidebar hugs the right edge, so its width is the distance from the
+ * pointer to the right of the window. It shares the left handle's minimum and
+ * collapse threshold, but its own wider ceiling (AI_SIDEBAR_MAX_WIDTH).
+ */
+export function resolveRightSidebarWidth(pointerX: number, viewportWidth: number): number {
+  return Math.min(AI_SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, viewportWidth - pointerX));
+}
+
+/** True when the pointer has crossed far enough right to collapse the AI sidebar. */
+export function isBelowRightSidebarCollapseThreshold(
+  pointerX: number,
+  viewportWidth: number,
+): boolean {
+  return viewportWidth - pointerX < SIDEBAR_COLLAPSE_THRESHOLD;
 }
 
 export const SIDEBAR_LABEL_MIN_WIDTH: Record<LangType, number> = {

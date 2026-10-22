@@ -20,6 +20,7 @@ import {
   Save,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   UserRound,
   X,
@@ -59,6 +60,7 @@ import type { StoredImageHistoryItem } from "@/utils/storage";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import AvatarCropper from "@/components/Settings/AvatarCropper";
+import AiSettingsPanel from "@/components/AI/AiSettingsPanel";
 import LoadingText from "@/components/LoadingText";
 
 interface SettingsModalProps {
@@ -67,7 +69,7 @@ interface SettingsModalProps {
   onOpenAuth: () => void;
 }
 
-type SettingsSection = "basic" | "theme" | "language" | "personal";
+type SettingsSection = "basic" | "theme" | "language" | "ai" | "personal";
 type DisplayHistoryItem = StoredImageHistoryItem & { url: string };
 
 function getUploadImageExtension(file: File): string | null {
@@ -445,6 +447,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     { id: "basic" as const, label: t(lang, "settingsBasic"), icon: SlidersHorizontal },
     { id: "theme" as const, label: t(lang, "settingsTheme"), icon: Palette },
     { id: "language" as const, label: t(lang, "language"), icon: Globe },
+    { id: "ai" as const, label: t(lang, "aiSettings"), icon: Sparkles },
     { id: "personal" as const, label: t(lang, "personal"), icon: UserRound },
   ];
 
@@ -621,6 +624,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
           <main className="min-w-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl p-5 sm:p-7">
               <h2 className="mb-5 text-lg font-semibold text-text-primary">{sectionTitle}</h2>
+
+              {activeSection === "ai" && <AiSettingsPanel />}
 
               {activeSection === "basic" && (
                 <div className="overflow-visible rounded-xl border border-border bg-bg-secondary/35">

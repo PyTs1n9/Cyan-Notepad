@@ -3,8 +3,11 @@ import Sidebar from "@/components/Layout/Sidebar";
 import ActivityBar from "@/components/Layout/ActivityBar";
 import SidebarResizeHandle from "@/components/Layout/SidebarResizeHandle";
 import {
+  AI_SIDEBAR_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  isBelowRightSidebarCollapseThreshold,
   isBelowSidebarCollapseThreshold,
+  resolveRightSidebarWidth,
   resolveSidebarWidth,
 } from "@/components/Layout/sidebarLayout";
 import TitleBar from "@/components/Layout/TitleBar";
@@ -13,6 +16,8 @@ import TodoView from "@/components/Todo/TodoView";
 import TodoSidebar from "@/components/Todo/TodoSidebar";
 import NoteEditor from "@/components/Editor/NoteEditor";
 import CanvasView from "@/components/Canvas/CanvasView";
+import AiSidebar from "@/components/AI/AiSidebar";
+import { useAiStore } from "@/stores/aiStore";
 import SettingsModal from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
 import UpdateModal from "@/components/Settings/UpdateModal";
@@ -69,7 +74,7 @@ const COLLAPSED_WIDTH = 0;
 const ACTIVITY_BAR_WIDTH = 48;
 const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
 const WorkspaceView = lazy(loadWorkspaceView);
-type ResizableSidebar = "notebook" | "workspace";
+type ResizableSidebar = "notebook" | "workspace" | "ai";
 const handledPasswordRecoveryUrls = new Set<string>();
 
 function escapeHtml(text: string): string {
@@ -164,6 +169,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workspaceSidebarWidth, setWorkspaceSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [workspaceSidebarCollapsed, setWorkspaceSidebarCollapsed] = useState(false);
+  const [aiSidebarWidth, setAiSidebarWidth] = useState(AI_SIDEBAR_WIDTH);
   // Mirrors resizingSidebar as state so the resize handle stays mounted while a
   // drag crosses the collapse threshold (see SIDEBAR_COLLAPSE_THRESHOLD).
   const [resizingSidebarState, setResizingSidebarState] = useState<ResizableSidebar | null>(null);
@@ -209,6 +215,7 @@ export default function App() {
   const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
   const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
+  const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
   const expandedFolderIds = useSettingsStore((s) => s.expandedFolderIds);
   const setUpdateReminderDisabledForVersion = useSettingsStore((s) => s.setUpdateReminderDisabledForVersion);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
@@ -583,6 +590,9 @@ export default function App() {
   const setSidebarCollapsedState = useCallback((sidebar: ResizableSidebar, collapsed: boolean) => {
     if (sidebar === "workspace") {
       setWorkspaceSidebarCollapsed(collapsed);
+    } else if (sidebar === "ai") {
+      // The AI store tracks the panel as open, so collapse maps to closed.
+      useAiStore.getState().setSidebarOpen(!collapsed);
     } else {
       setSidebarCollapsed(collapsed);
     }
@@ -608,18 +618,28 @@ export default function App() {
   const handleSidebarPointerDown = useCallback((sidebar: ResizableSidebar) => {
     resizingSidebar.current = sidebar;
     setResizingSidebarState(sidebar);
-    latestSidebarCollapsed.current = sidebar === "workspace"
-      ? workspaceSidebarCollapsed
-      : sidebarCollapsed;
-    latestSidebarWidth.current = sidebar === "workspace" ? workspaceSidebarWidth : sidebarWidth;
+    if (sidebar === "workspace") {
+      latestSidebarCollapsed.current = workspaceSidebarCollapsed;
+      latestSidebarWidth.current = workspaceSidebarWidth;
+    } else if (sidebar === "ai") {
+      latestSidebarCollapsed.current = !aiSidebarOpen;
+      latestSidebarWidth.current = aiSidebarWidth;
+    } else {
+      latestSidebarCollapsed.current = sidebarCollapsed;
+      latestSidebarWidth.current = sidebarWidth;
+    }
     appRootRef.current?.classList.add("sidebar-resizing");
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
-  }, [sidebarCollapsed, sidebarWidth, workspaceSidebarCollapsed, workspaceSidebarWidth]);
+  }, [aiSidebarOpen, aiSidebarWidth, sidebarCollapsed, sidebarWidth, workspaceSidebarCollapsed, workspaceSidebarWidth]);
 
   useEffect(() => {
     const sidebarProperty = (sidebar: ResizableSidebar) =>
-      sidebar === "workspace" ? "--workspace-sidebar-width" : "--notebook-sidebar-width";
+      sidebar === "workspace"
+        ? "--workspace-sidebar-width"
+        : sidebar === "ai"
+          ? "--ai-sidebar-width"
+          : "--notebook-sidebar-width";
 
     const applyWidth = () => {
       rafId.current = null;
@@ -648,13 +668,21 @@ export default function App() {
     const handlePointerMove = (event: PointerEvent) => {
       const sidebar = resizingSidebar.current;
       if (!sidebar) return;
-      if (isBelowSidebarCollapseThreshold(event.clientX, ACTIVITY_BAR_WIDTH)) {
+      // The AI handle measures its width from the right edge of the window;
+      // the left handles measure from the right edge of the activity bar.
+      const viewportWidth = document.documentElement.clientWidth;
+      const collapsing = sidebar === "ai"
+        ? isBelowRightSidebarCollapseThreshold(event.clientX, viewportWidth)
+        : isBelowSidebarCollapseThreshold(event.clientX, ACTIVITY_BAR_WIDTH);
+      if (collapsing) {
         // Collapse as soon as the drag crosses the threshold. The stored width is
         // left untouched so expanding returns to the last usable width.
         if (!latestSidebarCollapsed.current) syncCollapsed(sidebar, true);
         return;
       }
-      latestSidebarWidth.current = resolveSidebarWidth(event.clientX, ACTIVITY_BAR_WIDTH);
+      latestSidebarWidth.current = sidebar === "ai"
+        ? resolveRightSidebarWidth(event.clientX, viewportWidth)
+        : resolveSidebarWidth(event.clientX, ACTIVITY_BAR_WIDTH);
       if (latestSidebarCollapsed.current) syncCollapsed(sidebar, false);
       if (rafId.current === null) {
         rafId.current = requestAnimationFrame(applyWidth);
@@ -668,11 +696,16 @@ export default function App() {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
       }
+      const viewportWidth = document.documentElement.clientWidth;
       const collapsed = pointerX === undefined
         ? latestSidebarCollapsed.current
-        : isBelowSidebarCollapseThreshold(pointerX, ACTIVITY_BAR_WIDTH);
+        : sidebar === "ai"
+          ? isBelowRightSidebarCollapseThreshold(pointerX, viewportWidth)
+          : isBelowSidebarCollapseThreshold(pointerX, ACTIVITY_BAR_WIDTH);
       if (pointerX !== undefined && !collapsed) {
-        latestSidebarWidth.current = resolveSidebarWidth(pointerX, ACTIVITY_BAR_WIDTH);
+        latestSidebarWidth.current = sidebar === "ai"
+          ? resolveRightSidebarWidth(pointerX, viewportWidth)
+          : resolveSidebarWidth(pointerX, ACTIVITY_BAR_WIDTH);
       }
       const width = latestSidebarWidth.current;
       appRootRef.current?.style.setProperty(sidebarProperty(sidebar), `${width}px`);
@@ -686,6 +719,8 @@ export default function App() {
       if (!collapsed) {
         if (sidebar === "workspace") {
           setWorkspaceSidebarWidth(width);
+        } else if (sidebar === "ai") {
+          setAiSidebarWidth(width);
         } else {
           setSidebarWidth(width);
         }
@@ -884,6 +919,7 @@ export default function App() {
   const appStyle = {
     "--notebook-sidebar-width": `${sidebarWidth}px`,
     "--workspace-sidebar-width": `${workspaceSidebarWidth}px`,
+    "--ai-sidebar-width": `${aiSidebarWidth}px`,
     ...(customBackgroundUrl ? {
       backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 34%, transparent), color-mix(in srgb, var(--color-bg-primary) 34%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
       backgroundPosition: "center",
@@ -973,6 +1009,24 @@ export default function App() {
                   </>
                 )}
         </main>
+        {/* Resize handle for the AI sidebar, mirroring the notebook handle. Kept
+            mounted while dragging so the collapse that happens mid-drag does not
+            remove the element holding the pointer. */}
+        {(aiSidebarOpen || resizingSidebarState === "ai") && (
+          <SidebarResizeHandle onPointerDown={() => handleSidebarPointerDown("ai")} />
+        )}
+        {/* AI assistant sidebar. Same collapse shell as the notebook sidebar:
+            the width animates between 0 and the stored width while the panel
+            stays mounted at its natural width and is clipped by the shell, so
+            open/close slides without reflowing the chat. While collapsed the
+            shell is inert so the hidden panel keeps no keyboard focus stops. */}
+        <div
+          inert={aiSidebarOpen ? undefined : true}
+          style={{ width: aiSidebarOpen ? "var(--ai-sidebar-width)" : COLLAPSED_WIDTH }}
+          className={`sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out${collapseAnimating ? " sidebar-collapse-anim" : ""}`}
+        >
+          <AiSidebar onOpenSettings={() => setSettingsOpen(true)} />
+        </div>
       </div>
 
       <SettingsModal

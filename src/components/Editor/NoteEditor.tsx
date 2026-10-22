@@ -9,10 +9,13 @@ import {
   cleanupUnusedImageAttachments,
   saveNoteContent,
   loadNoteContent,
+  savePolishSnapshot,
 } from "@/utils/storage";
+import { useAiStore } from "@/stores/aiStore";
+import { NOTE_EXTERNAL_SAVE_EVENT } from "@/utils/ai/noteWrite";
 import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
-import { Save, Pin, Undo2, Redo2, Link2, Unlink2 } from "lucide-react";
+import { Save, Pin, Sparkles, Undo2, Redo2, Link2, Unlink2 } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
@@ -300,25 +303,26 @@ const NoteEditor: React.FC = () => {
     return () => clearInterval(timer);
   }, [autoSaveInterval, activeNoteId, isDirty, doSave]);
 
-  // Listen for sticky save events — update editor when sticky saves same note
+  // External writes reload the open buffer: sticky-window saves and AI note
+  // edits (permission mode "full") both land here.
   useEffect(() => {
-    const unlisten = listen<{ noteId: string; content: string }>(
-      "sticky:note-saved",
-      (event) => {
-        const { noteId: savedId, content } = event.payload;
-        if (savedId !== activeNoteIdRef.current) return;
-        // Reload content into editor (avoid echo loop)
-        if (!content) return;
-        if (isStoredEditorHtml(content)) {
-          resetEditorContent(htmlToMarkdown(content));
-        } else {
-          resetEditorContent(content);
-        }
-        markDirty(savedId, false);
-      },
-    );
+    const handler = (event: { payload: { noteId: string; content: string } }) => {
+      const { noteId: savedId, content } = event.payload;
+      if (savedId !== activeNoteIdRef.current) return;
+      if (typeof content !== "string") return;
+      if (isStoredEditorHtml(content)) {
+        resetEditorContent(htmlToMarkdown(content));
+      } else {
+        resetEditorContent(content);
+      }
+      markDirty(savedId, false);
+    };
+    const unlisten = [
+      listen<{ noteId: string; content: string }>("sticky:note-saved", handler),
+      listen<{ noteId: string; content: string }>(NOTE_EXTERNAL_SAVE_EVENT, handler),
+    ];
     return () => {
-      unlisten.then((fn) => fn());
+      unlisten.forEach((pending) => pending.then((fn) => fn()));
     };
   }, [resetEditorContent]);
 
@@ -359,11 +363,55 @@ const NoteEditor: React.FC = () => {
     [updateNote],
   );
 
+  // AI polish entry: capture the source editor's current selection and hand the
+  // rewrite flow to the AI sidebar. The rewrite is written back through the
+  // CodeMirror change pipeline, so autosave, dirty tracking and undo history
+  // all stay intact.
+  const handleAiPolish = useCallback(() => {
+    const view = codeMirrorViewRef.current;
+    const noteId = activeNoteIdRef.current;
+    if (!view || !noteId) return;
+    const selection = view.state.selection.main;
+    const originalText = view.state.sliceDoc(selection.from, selection.to);
+    let appliedSpan: { from: number; to: number; current: string } | null = null;
+
+    useAiStore.getState().startPolish({
+      noteId,
+      originalText,
+      apply: (newText: string) => {
+        const expected = appliedSpan ? appliedSpan.current : originalText;
+        let from = appliedSpan ? appliedSpan.from : selection.from;
+        let to = appliedSpan ? appliedSpan.to : selection.to;
+        // The remembered span is plain offsets; intervening edits can shift it.
+        // Fall back to locating the passage once, and refuse when ambiguous.
+        if (view.state.sliceDoc(from, to) !== expected) {
+          const doc = view.state.doc.toString();
+          const index = doc.indexOf(expected);
+          if (index < 0 || doc.indexOf(expected, index + 1) >= 0) return false;
+          from = index;
+          to = index + expected.length;
+        }
+        void savePolishSnapshot(noteId, mdContentRef.current);
+        view.dispatch({ changes: { from, to, insert: newText } });
+        appliedSpan = { from, to: from + newText.length, current: newText };
+        return true;
+      },
+      undo: () => {
+        if (!appliedSpan) return;
+        const { from, to, current } = appliedSpan;
+        // Later manual edits own the text now; leave it to the editor's undo.
+        if (view.state.sliceDoc(from, to) !== current) return;
+        view.dispatch({ changes: { from, to, insert: originalText } });
+        appliedSpan = null;
+      },
+    });
+    useAiStore.getState().setSidebarOpen(true);
+  }, []);
+
   const handleUndo = useCallback(() => {
     const view = codeMirrorViewRef.current;
     if (view) codeMirrorUndo(view);
   }, []);
-
   const handleRedo = useCallback(() => {
     const view = codeMirrorViewRef.current;
     if (view) codeMirrorRedo(view);
@@ -535,6 +583,16 @@ const NoteEditor: React.FC = () => {
           }`}
         >
           {scrollSyncEnabled ? <Link2 size={15} /> : <Unlink2 size={15} />}
+        </button>
+        <button
+          type="button"
+          onClick={handleAiPolish}
+          title={t(lang, "aiPolishEntry")}
+          aria-label={t(lang, "aiPolishEntry")}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
+            hover:bg-bg-hover hover:text-text-primary"
+        >
+          <Sparkles size={15} />
         </button>
         <button
           type="button"

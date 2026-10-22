@@ -520,6 +520,112 @@ type TranslationKeys = {
   updateNow: string;
   updateLater: string;
   neverRemind: string;
+  aiAssistant: string;
+  aiSettings: string;
+  aiApiKey: string;
+  aiApiKeyPlaceholder: string;
+  aiApiKeyHint: string;
+  aiSaveKey: string;
+  aiClearKey: string;
+  aiVerifyKey: string;
+  aiKeySaved: string;
+  aiKeyCleared: string;
+  aiKeyMissing: string;
+  aiVerifySuccess: string;
+  aiPrivacyNoticeTitle: string;
+  aiPrivacyNoticeBody: string;
+  aiPrivacyAgree: string;
+  aiErrorUnauthorized: string;
+  aiErrorBalance: string;
+  aiErrorRateLimit: string;
+  aiErrorNetwork: string;
+  aiErrorServer: string;
+  aiErrorBadResponse: string;
+  aiErrorMissingKey: string;
+  aiErrorAborted: string;
+  aiSearchFailed: string;
+  aiSidebarHint: string;
+  aiInputPlaceholder: string;
+  aiSend: string;
+  aiStop: string;
+  aiClearChat: string;
+  aiSources: string;
+  aiThinking: string;
+  aiReasoning: string;
+  aiNoResult: string;
+  aiNoKeyHint: string;
+  aiModelLabel: string;
+  aiModelLocal: string;
+  aiPolishModelLabel: string;
+  aiSearchTitle: string;
+  aiSearchToggleLabel: string;
+  aiSearchToggleHint: string;
+  aiAnswerSteps: string;
+  aiAnswerHowto: string;
+  aiAnswerWhere: string;
+  aiAnswerWhereAlt: string;
+  aiAnswerVerdict: string;
+  aiAnswerExplain: string;
+  aiAnswerExcerpt: string;
+  aiExampleQ1: string;
+  aiExampleQ2: string;
+  aiExampleQ3: string;
+  aiExampleQ4: string;
+  aiExampleQ5: string;
+  aiExampleQ6: string;
+  aiExampleQ7: string;
+  aiExampleQ8: string;
+  aiExampleQ9: string;
+  aiExampleQ10: string;
+  aiExampleQ11: string;
+  aiExampleQ12: string;
+  aiShuffleExamples: string;
+  aiClose: string;
+  aiCopy: string;
+  aiCopied: string;
+  aiRegenerate: string;
+  aiDeleteMessage: string;
+  aiClearConfirmTitle: string;
+  aiClearConfirmBody: string;
+  aiClearConfirmOk: string;
+  aiCancel: string;
+  aiGreeting: string;
+  aiStatusReady: string;
+  aiStatusNoKey: string;
+  aiNewChat: string;
+  aiHistory: string;
+  aiRename: string;
+  aiDeleteConversation: string;
+  aiDeleteConversationTitle: string;
+  aiDeleteConversationBody: string;
+  aiNoConversations: string;
+  aiUntitled: string;
+  aiPolishTitle: string;
+  aiPolishEntry: string;
+  aiPolishNoSelection: string;
+  aiPolishPlaceholder: string;
+  aiPolishGenerate: string;
+  aiPolishApply: string;
+  aiPolishUndo: string;
+  aiPolishApplied: string;
+  aiPolishBack: string;
+  aiPolishStylePolish: string;
+  aiPolishStyleConcise: string;
+  aiPolishStyleFormal: string;
+  aiPolishStyleCasual: string;
+  aiDiffBefore: string;
+  aiDiffAfter: string;
+  aiPolishStale: string;
+  aiPermLabel: string;
+  aiPermReadOnly: string;
+  aiPermFull: string;
+  aiPermLocalOnly: string;
+  aiPermConfirmTitle: string;
+  aiPermConfirmBody: string;
+  aiPermConfirmOk: string;
+  aiEditApplied: string;
+  aiUndoEdit: string;
+  aiEditUndone: string;
 };
 
 const zh: TranslationKeys = {
@@ -1042,6 +1148,113 @@ const zh: TranslationKeys = {
   updateNow: "立刻更新",
   updateLater: "稍后更新",
   neverRemind: "不再提醒",
+  aiAssistant: "小青",
+  aiSettings: "AI 设置",
+  aiApiKey: "DeepSeek API Key",
+  aiApiKeyPlaceholder: "sk-...",
+  aiApiKeyHint: "在 platform.deepseek.com 创建。仅保存在本机，经系统加密。",
+  aiSaveKey: "保存",
+  aiClearKey: "清除",
+  aiVerifyKey: "测试连接",
+  aiKeySaved: "API Key 已保存",
+  aiKeyCleared: "API Key 已清除",
+  aiKeyMissing: "尚未配置 API Key",
+  aiVerifySuccess: "连接正常",
+  aiPrivacyNoticeTitle: "隐私说明",
+  aiPrivacyNoticeBody:
+    "使用 AI 功能时，你选中的段落、检索到的笔记片段与提问会发送至 DeepSeek（深度求索）以生成回复；开启联网搜索后，提问还会发送至博查搜索服务。知识库检索在你本机完成。API Key 经系统加密后仅存于本机。",
+  aiPrivacyAgree: "我知道了",
+  aiErrorUnauthorized: "API Key 无效，请检查后重试",
+  aiErrorBalance: "账户余额不足",
+  aiErrorRateLimit: "请求过于频繁，请稍后再试",
+  aiErrorNetwork: "网络连接失败，请检查网络后重试",
+  aiErrorServer: "DeepSeek 服务暂时不可用",
+  aiErrorBadResponse: "返回内容异常，请重试",
+  aiErrorMissingKey: "请先配置 API Key",
+  aiErrorAborted: "已停止生成",
+  aiSearchFailed: "本次联网搜索未成功，回答仅基于本地知识库。",
+  aiSidebarHint: "我是小青，问我任何关于青记使用的问题，答案来自内置功能手册。",
+  aiInputPlaceholder: "例如：怎么把笔记导出为 PDF？",
+  aiSend: "发送",
+  aiStop: "停止",
+  aiClearChat: "清空对话",
+  aiSources: "参考来源",
+  aiThinking: "正在思考…",
+  aiReasoning: "思考过程",
+  aiNoResult: "手册里没有找到相关内容，换个说法试试。",
+  aiNoKeyHint: "未配置 API Key，当前由小青离线检索、流式作答。在「设置 → AI 设置」中配置 DeepSeek Key 后可获得生成式完整回答。",
+  aiModelLabel: "对话模型",
+  aiModelLocal: "小青",
+  aiPolishModelLabel: "润色模型",
+  aiSearchTitle: "实时网页搜索（博查）",
+  aiSearchToggleLabel: "联网搜索",
+  aiSearchToggleHint: "开启后，DeepSeek 模式回答问题时实时搜索网页，并在回答中标注来源。搜索 Key 由你在博查开放平台自行申请，费用自理，仅加密存于本机。",
+  aiAnswerSteps: "操作步骤",
+  aiAnswerHowto: "这样做",
+  aiAnswerWhere: "在哪找",
+  aiAnswerWhereAlt: "位置",
+  aiAnswerVerdict: "结论",
+  aiAnswerExplain: "说明",
+  aiAnswerExcerpt: "原文补充",
+  aiExampleQ1: "怎么把笔记导出为 PDF？",
+  aiExampleQ2: "关闭窗口后程序去哪了？",
+  aiExampleQ3: "如何备份我的笔记？",
+  aiExampleQ4: "怎么把笔记导出为 Word 文档？",
+  aiExampleQ5: "笔记能按标签分类吗？",
+  aiExampleQ6: "怎么同时打开多篇笔记？",
+  aiExampleQ7: "删掉的笔记能恢复吗？",
+  aiExampleQ8: "便签和磁贴有什么区别？",
+  aiExampleQ9: "怎么自定义全局快捷键？",
+  aiExampleQ10: "怎么切换深色主题？",
+  aiExampleQ11: "换电脑后怎么迁移笔记？",
+  aiExampleQ12: "待办能设优先级吗？",
+  aiShuffleExamples: "换一批",
+  aiClose: "关闭",
+  aiCopy: "复制",
+  aiCopied: "已复制",
+  aiRegenerate: "重新生成",
+  aiDeleteMessage: "删除这条对话",
+  aiClearConfirmTitle: "清空对话？",
+  aiClearConfirmBody: "将删除当前所有问答记录，此操作不可撤销。",
+  aiClearConfirmOk: "清空",
+  aiCancel: "取消",
+  aiGreeting: "你好，我是小青。有什么关于青记的问题，直接问我就好。",
+  aiStatusReady: "已连接",
+  aiStatusNoKey: "未配置 Key",
+  aiNewChat: "新建会话",
+  aiHistory: "历史会话",
+  aiRename: "重命名",
+  aiDeleteConversation: "删除会话",
+  aiDeleteConversationTitle: "删除该会话？",
+  aiDeleteConversationBody: "该会话的所有问答记录将被删除，不可恢复。",
+  aiNoConversations: "暂无历史会话",
+  aiUntitled: "未命名会话",
+  aiPolishTitle: "AI 润色",
+  aiPolishEntry: "AI 润色选中内容",
+  aiPolishNoSelection: "请先在编辑器中选中要润色的文字",
+  aiPolishPlaceholder: "可选：补充改写要求，如「改成更正式的语气」",
+  aiPolishGenerate: "生成改写",
+  aiPolishApply: "应用到笔记",
+  aiPolishUndo: "撤销本次修改",
+  aiPolishApplied: "已应用到笔记",
+  aiPolishBack: "返回对话",
+  aiPolishStylePolish: "润色",
+  aiPolishStyleConcise: "更简洁",
+  aiPolishStyleFormal: "更正式",
+  aiPolishStyleCasual: "更口语化",
+  aiDiffBefore: "修改前",
+  aiDiffAfter: "修改后",
+  aiPolishStale: "笔记内容已变化，请重新选择后重试",
+  aiPermLabel: "笔记修改权限",
+  aiPermReadOnly: "仅助手",
+  aiPermFull: "完全开放",
+  aiPermLocalOnly: "小青为本地只读检索；切换到 API 模型后可开启笔记写入",
+  aiPermConfirmTitle: "开启「完全开放」权限？",
+  aiPermConfirmBody: "AI 将可以直接修改笔记正文与标题，修改立即生效。每次修改都会保存快照，可在对应消息下逐条撤销。",
+  aiPermConfirmOk: "开启",
+  aiEditApplied: "已修改笔记",
+  aiUndoEdit: "撤销此次修改",
+  aiEditUndone: "已撤销",
 };
 
 const en: TranslationKeys = {
@@ -1564,6 +1777,113 @@ const en: TranslationKeys = {
   updateNow: "Update now",
   updateLater: "Later",
   neverRemind: "Don't remind again",
+  aiAssistant: "XiaoQing",
+  aiSettings: "AI Settings",
+  aiApiKey: "DeepSeek API Key",
+  aiApiKeyPlaceholder: "sk-...",
+  aiApiKeyHint: "Create one at platform.deepseek.com. Stored locally, encrypted.",
+  aiSaveKey: "Save",
+  aiClearKey: "Clear",
+  aiVerifyKey: "Test connection",
+  aiKeySaved: "API key saved",
+  aiKeyCleared: "API key cleared",
+  aiKeyMissing: "No API key configured",
+  aiVerifySuccess: "Connection OK",
+  aiPrivacyNoticeTitle: "Privacy notice",
+  aiPrivacyNoticeBody:
+    "When you use AI features, the passage you select, retrieved note excerpts and your questions are sent to DeepSeek to generate replies. With web search enabled, your question is also sent to the Bocha search service. Knowledge base search runs locally. Your API keys are encrypted by the system and stored on this machine only.",
+  aiPrivacyAgree: "Got it",
+  aiErrorUnauthorized: "Invalid API key. Check it and try again.",
+  aiErrorBalance: "Insufficient account balance",
+  aiErrorRateLimit: "Too many requests. Try again later.",
+  aiErrorNetwork: "Network request failed. Check your connection.",
+  aiErrorServer: "DeepSeek service is temporarily unavailable",
+  aiErrorBadResponse: "Unexpected response. Please retry.",
+  aiErrorMissingKey: "Configure an API key first",
+  aiErrorAborted: "Generation stopped",
+  aiSearchFailed: "Web search failed for this turn — the answer used the local knowledge base only.",
+  aiSidebarHint: "I'm XiaoQing. Ask anything about using Qing Notepad. Answers come from the built-in user manual.",
+  aiInputPlaceholder: "e.g. How do I export a note to PDF?",
+  aiSend: "Send",
+  aiStop: "Stop",
+  aiClearChat: "Clear chat",
+  aiSources: "Sources",
+  aiThinking: "Thinking…",
+  aiReasoning: "Reasoning",
+  aiNoResult: "Nothing relevant in the manual. Try rephrasing.",
+  aiNoKeyHint: "No API key configured — XiaoQing answers offline with streamed retrieval results. Add your DeepSeek key in Settings → AI Settings for generated answers.",
+  aiModelLabel: "Chat model",
+  aiModelLocal: "XiaoQing",
+  aiPolishModelLabel: "Polish model",
+  aiSearchTitle: "Real-time web search (Bocha)",
+  aiSearchToggleLabel: "Search the web",
+  aiSearchToggleHint: "When enabled, DeepSeek-mode answers run a real-time web search and cite sources inline. Bring your own key from the Bocha open platform; it is stored encrypted on this device only.",
+  aiAnswerSteps: "Steps",
+  aiAnswerHowto: "Do this",
+  aiAnswerWhere: "Where to find it",
+  aiAnswerWhereAlt: "Location",
+  aiAnswerVerdict: "Short answer",
+  aiAnswerExplain: "Overview",
+  aiAnswerExcerpt: "From the manual",
+  aiExampleQ1: "How do I export a note to PDF?",
+  aiExampleQ2: "Where does the app go when I close the window?",
+  aiExampleQ3: "How do I back up my notes?",
+  aiExampleQ4: "How do I export a note to Word?",
+  aiExampleQ5: "Can I organize notes with tags?",
+  aiExampleQ6: "How do I open several notes at once?",
+  aiExampleQ7: "Can I recover a deleted note?",
+  aiExampleQ8: "What's the difference between sticky notes and tiles?",
+  aiExampleQ9: "How do I customize the global shortcut?",
+  aiExampleQ10: "How do I switch to the dark theme?",
+  aiExampleQ11: "How do I move my notes to a new computer?",
+  aiExampleQ12: "Can todos have priorities?",
+  aiShuffleExamples: "Shuffle",
+  aiClose: "Close",
+  aiCopy: "Copy",
+  aiCopied: "Copied",
+  aiRegenerate: "Regenerate",
+  aiDeleteMessage: "Delete this exchange",
+  aiClearConfirmTitle: "Clear the chat?",
+  aiClearConfirmBody: "All current questions and answers will be removed. This cannot be undone.",
+  aiClearConfirmOk: "Clear",
+  aiCancel: "Cancel",
+  aiGreeting: "Hi, I'm XiaoQing. Ask me anything about using Qing Notepad.",
+  aiStatusReady: "Connected",
+  aiStatusNoKey: "No key",
+  aiNewChat: "New chat",
+  aiHistory: "History",
+  aiRename: "Rename",
+  aiDeleteConversation: "Delete conversation",
+  aiDeleteConversationTitle: "Delete this conversation?",
+  aiDeleteConversationBody: "All messages in this conversation will be removed. This cannot be undone.",
+  aiNoConversations: "No conversations yet",
+  aiUntitled: "Untitled chat",
+  aiPolishTitle: "AI Polish",
+  aiPolishEntry: "Polish selection with AI",
+  aiPolishNoSelection: "Select some text in the editor first",
+  aiPolishPlaceholder: "Optional: extra instruction, e.g. \"make it more formal\"",
+  aiPolishGenerate: "Generate rewrite",
+  aiPolishApply: "Apply to note",
+  aiPolishUndo: "Undo this change",
+  aiPolishApplied: "Applied to note",
+  aiPolishBack: "Back to chat",
+  aiPolishStylePolish: "Polish",
+  aiPolishStyleConcise: "More concise",
+  aiPolishStyleFormal: "More formal",
+  aiPolishStyleCasual: "More casual",
+  aiDiffBefore: "Before",
+  aiDiffAfter: "After",
+  aiPolishStale: "The note changed. Select again and retry.",
+  aiPermLabel: "Note edit permission",
+  aiPermReadOnly: "Assistant only",
+  aiPermFull: "Full access",
+  aiPermLocalOnly: "XiaoQing is a read-only local search; switch to an API model to enable note editing",
+  aiPermConfirmTitle: "Enable full note access?",
+  aiPermConfirmBody: "The AI can directly edit note bodies and titles; changes apply immediately. Every edit keeps a snapshot and can be undone from its message.",
+  aiPermConfirmOk: "Enable",
+  aiEditApplied: "Edited note",
+  aiUndoEdit: "Undo this edit",
+  aiEditUndone: "Undone",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

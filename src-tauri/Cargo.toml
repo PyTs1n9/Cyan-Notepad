@@ -1,6 +1,6 @@
 [package]
 name = "qing-notepad"
-version = "0.5.0"
+version = "0.6.0"
 description = "Qing Notepad - A lightweight note-taking app built with Tauri"
 authors = ["PyTs1N9"]
 edition = "2021"
@@ -27,6 +27,7 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
+tauri-plugin-http = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

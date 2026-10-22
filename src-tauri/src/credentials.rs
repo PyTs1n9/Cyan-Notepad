@@ -147,6 +147,20 @@ pub fn decrypt_login_credentials(
     serde_json::from_slice(&serialized).map_err(|error| error.to_string())
 }
 
+/// Encrypt an arbitrary secret (e.g. an AI provider API key) with DPAPI.
+#[tauri::command]
+pub fn encrypt_secret(plain: String) -> Result<String, String> {
+    protect(plain.as_bytes()).map(|data| encode_hex(&data))
+}
+
+/// Decrypt a secret previously produced by [`encrypt_secret`].
+#[tauri::command]
+pub fn decrypt_secret(encrypted: String) -> Result<String, String> {
+    let encrypted = decode_hex(&encrypted)?;
+    let serialized = unprotect(&encrypted)?;
+    String::from_utf8(serialized).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +178,14 @@ mod tests {
         let encrypted = protect(input).unwrap();
         assert_ne!(encrypted, input);
         assert_eq!(unprotect(&encrypted).unwrap(), input);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn secret_round_trip() {
+        let plain = "sk-1234567890abcdef";
+        let encrypted = encrypt_secret(plain.to_string()).unwrap();
+        assert_ne!(encrypted, plain);
+        assert_eq!(decrypt_secret(encrypted).unwrap(), plain);
     }
 }

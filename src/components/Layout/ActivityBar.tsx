@@ -1,7 +1,8 @@
 import React from "react";
-import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Settings, Users } from "lucide-react";
+import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, Users } from "lucide-react";
 import type { ViewType } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useAiStore } from "@/stores/aiStore";
 import { t } from "@/utils/i18n";
 
 interface ActivityBarProps {
@@ -23,6 +24,8 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   const lang = useSettingsStore((s) => s.lang);
   const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
   const setAlwaysOnTop = useSettingsStore((s) => s.setAlwaysOnTop);
+  const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
+  const setAiSidebarOpen = useAiStore((s) => s.setSidebarOpen);
 
   const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
@@ -59,6 +62,19 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
       </nav>
 
       <div className="mt-auto flex w-full flex-col items-center gap-1 pb-2">
+        <button
+          type="button"
+          onClick={() => setAiSidebarOpen(!aiSidebarOpen)}
+          title={t(lang, "aiAssistant")}
+          aria-label={t(lang, "aiAssistant")}
+          aria-pressed={aiSidebarOpen}
+          className={`relative flex h-10 w-11 items-center justify-center transition-colors hover:bg-bg-hover hover:text-text-primary ${
+            aiSidebarOpen ? "bg-bg-active text-accent" : "text-text-muted"
+          }`}
+        >
+          {aiSidebarOpen && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent" />}
+          <Sparkles size={20} strokeWidth={1.7} />
+        </button>
         <button
           type="button"
           onClick={onToggleCollapse}

@@ -1368,3 +1368,48 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 
   .print-sheet li { break-inside: avoid; }
 }
+
+/* AI sidebar: streaming cursor + typing dots (opacity/transform only) */
+.ai-stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  border-radius: 1px;
+  animation: ai-cursor-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes ai-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.ai-typing-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.ai-typing-dots > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: ai-typing-bounce 1.2s ease-in-out infinite;
+}
+
+.ai-typing-dots > span:nth-child(2) { animation-delay: 0.15s; }
+.ai-typing-dots > span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes ai-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-stream-cursor,
+  .ai-typing-dots > span {
+    animation: none;
+  }
+}
