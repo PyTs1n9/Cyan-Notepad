@@ -19,18 +19,21 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
-tauri-plugin-opener = "2"
+tauri-plugin-opener = "2.7.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-fs = "2.5.1"
-tauri-plugin-dialog = "2.7.1"
-tauri-plugin-global-shortcut = "2"
+# Keep each plugin on the same minor as its @tauri-apps/plugin-* JS package:
+# Tauri refuses to build on a JS/Rust minor mismatch.
+tauri-plugin-fs = "2.7.1"
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-tauri-plugin-deep-link = "2"
-tauri-plugin-http = "2"
+tauri-plugin-deep-link = "2.6.2"
+tauri-plugin-http = "2.8.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
-# Same versions wry resolves internally: no duplicate crates, no binary growth.
-webview2-com = "0.38"
-windows = { version = "0.61", default-features = false }
+# Same versions wry 0.57 resolves internally: no duplicate crates, no binary growth.
+# Re-check with `cargo tree -i webview2-com` after any tauri/wry bump.
+webview2-com = "0.39"
+windows = { version = "0.62", default-features = false }
