@@ -34,6 +34,7 @@ import type {
 } from "@/types/workspace";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useWorkspaceUiStore } from "@/stores/workspaceUi";
 import { supabase } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
 import { renderMarkdown } from "@/utils/markdown";
@@ -643,7 +644,6 @@ export default function CloudNoteEditor({
   const showHighlights = useSettingsStore((state) => state.showWorkspaceHighlights);
   const setShowHighlights = useSettingsStore((state) => state.setShowWorkspaceHighlights);
   const loadDocuments = useWorkspaceStore((state) => state.loadDocuments);
-  const updateDocumentTitle = useWorkspaceStore((state) => state.updateDocumentTitle);
   const setDocumentPublication = useWorkspaceStore((state) => state.setDocumentPublication);
   const setDocumentAccessLevel = useWorkspaceStore((state) => state.setDocumentAccessLevel);
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -675,14 +675,7 @@ export default function CloudNoteEditor({
   const [content, setContent] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
   const [onlineUsers, setOnlineUsers] = useState<AwarenessUser[]>([]);
-  const [localTitle, setLocalTitle] = useState(document.title);
-  const localTitleRef = useRef(document.title);
-  const persistedTitleRef = useRef(document.title);
-  const titleDirtyRef = useRef(false);
-  const titleSaveTimerRef = useRef<number | null>(null);
-  const titleSaveInProgressRef = useRef(false);
-  const queuedTitleRef = useRef<string | null>(null);
-  localTitleRef.current = localTitle;
+  const setOnlineCollaborators = useWorkspaceUiStore((state) => state.setOnlineCollaborators);
   const canEdit = role !== "viewer";
   const [publicationDialogOpen, setPublicationDialogOpen] = useState(false);
   const [publicationDialogStatus, setPublicationDialogStatus] = useState<WorkspaceDocumentPublicationStatus>("draft");
@@ -698,6 +691,13 @@ export default function CloudNoteEditor({
     setPublicationValidationError(null);
     setAccessSaving(false);
   }, [document.id]);
+  // The card's strip reports the room size, so the awareness list is mirrored
+  // into the UI store instead of being lifted into props. Zeroing on unmount
+  // keeps a closed document from leaving a stale count behind.
+  useEffect(() => {
+    setOnlineCollaborators(onlineUsers.length);
+  }, [onlineUsers.length, setOnlineCollaborators]);
+  useEffect(() => () => setOnlineCollaborators(0), [setOnlineCollaborators]);
   const collabUrl = import.meta.env.VITE_COLLAB_URL?.trim();
   const network = useCollaborationNetwork(
     collabUrl,
@@ -759,77 +759,6 @@ export default function CloudNoteEditor({
     }
   }, [handleCodeMirrorScroll, scrollSyncEnabled]);
 
-  const clearTitleSaveTimer = useCallback(() => {
-    if (titleSaveTimerRef.current === null) return;
-    window.clearTimeout(titleSaveTimerRef.current);
-    titleSaveTimerRef.current = null;
-  }, []);
-
-  const flushQueuedTitle = useCallback(async () => {
-    if (titleSaveInProgressRef.current) return;
-    titleSaveInProgressRef.current = true;
-    try {
-      while (queuedTitleRef.current !== null) {
-        const title = queuedTitleRef.current;
-        queuedTitleRef.current = null;
-        if (title === persistedTitleRef.current) {
-          if (localTitleRef.current.trim() === title) titleDirtyRef.current = false;
-          continue;
-        }
-
-        const saved = await updateDocumentTitle(document.id, title);
-        if (!saved) break;
-        persistedTitleRef.current = title;
-        if (localTitleRef.current.trim() === title) titleDirtyRef.current = false;
-        if (!titleDirtyRef.current && localTitleRef.current !== title) {
-          localTitleRef.current = title;
-          setLocalTitle(title);
-        }
-      }
-    } finally {
-      titleSaveInProgressRef.current = false;
-    }
-  }, [document.id, updateDocumentTitle]);
-
-  const requestTitleSave = useCallback(() => {
-    if (!canEdit) return;
-    const title = localTitleRef.current.trim();
-    if (!title) return;
-    queuedTitleRef.current = title;
-    void flushQueuedTitle();
-  }, [canEdit, flushQueuedTitle]);
-
-  const commitTitle = useCallback(() => {
-    clearTitleSaveTimer();
-    const title = localTitleRef.current.trim();
-    if (!title) {
-      queuedTitleRef.current = null;
-      titleDirtyRef.current = false;
-      localTitleRef.current = persistedTitleRef.current;
-      setLocalTitle(persistedTitleRef.current);
-      return;
-    }
-    if (localTitleRef.current !== title) {
-      localTitleRef.current = title;
-      setLocalTitle(title);
-    }
-    titleDirtyRef.current = title !== persistedTitleRef.current;
-    requestTitleSave();
-  }, [clearTitleSaveTimer, requestTitleSave]);
-
-  useEffect(() => {
-    if (
-      !titleDirtyRef.current
-      && !titleSaveInProgressRef.current
-      && queuedTitleRef.current === null
-    ) {
-      persistedTitleRef.current = document.title;
-      if (localTitleRef.current === document.title) return;
-      localTitleRef.current = document.title;
-      setLocalTitle(document.title);
-    }
-  }, [document.id, document.title]);
-
   useEffect(() => {
     if (!resizingSplit) return;
 
@@ -855,16 +784,6 @@ export default function CloudNoteEditor({
       window.document.body.style.userSelect = "";
     };
   }, [resizingSplit]);
-
-  useEffect(() => {
-    if (!canEdit || !titleDirtyRef.current || !localTitle.trim()) return;
-    const timer = window.setTimeout(requestTitleSave, 600);
-    titleSaveTimerRef.current = timer;
-    return () => {
-      window.clearTimeout(timer);
-      if (titleSaveTimerRef.current === timer) titleSaveTimerRef.current = null;
-    };
-  }, [canEdit, localTitle, requestTitleSave]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1378,73 +1297,47 @@ export default function CloudNoteEditor({
   const highlightsToggleLabel = t(lang, "userHighlights");
 
   return (
-    <div ref={editorContainerRef} className="workspace-editor-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-primary">
-      {/* One header row. On narrow panes the status cluster wraps to a second
-          line instead of squeezing the document name out of view. */}
-      <div className="relative z-20 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-border px-4 py-2">
-        <input
-          value={localTitle}
-          onChange={(event) => {
-            localTitleRef.current = event.target.value;
-            titleDirtyRef.current = true;
-            setLocalTitle(event.target.value);
-          }}
-          onBlur={commitTitle}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.currentTarget.blur();
-            }
-            if (event.key === "Escape") {
-              clearTitleSaveTimer();
-              queuedTitleRef.current = null;
-              titleDirtyRef.current = false;
-              localTitleRef.current = persistedTitleRef.current;
-              setLocalTitle(persistedTitleRef.current);
-              event.currentTarget.blur();
-            }
-          }}
-          disabled={!canEdit}
-          maxLength={200}
-          className="min-w-[7rem] flex-1 bg-transparent text-lg font-bold text-text-primary outline-none disabled:cursor-default"
-          aria-label={t(lang, "cloudDocumentName")}
-        />
-        {/* View switching and pane controls live on the header row; icons only,
-            so the toolbar stays one line next to the document name. */}
+    <div ref={editorContainerRef} className="workspace-editor-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Controls only. The document name moved to the card's 36px strip, so
+          this row is the same single toolbar the local note editor uses: view
+          switching and pane toggles on the left, document state on the right.
+          Nothing here is a header any more, which is why it no longer paints a
+          bottom border - the strip above owns the one hairline. */}
+      <div className="relative z-20 flex flex-wrap items-center gap-1 px-5 pb-1 pt-3">
         <MarkdownViewSwitch value={viewMode} onChange={setViewMode} labels={viewLabels} iconSize={14} />
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={showHighlights}
-            aria-label={highlightsToggleLabel}
-            title={highlightsToggleLabel}
-            onClick={() => setShowHighlights(!showHighlights)}
-            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors ${
-              showHighlights
-                ? "bg-accent/10 text-accent hover:bg-accent/15"
-                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-            }`}
-          >
-            <Highlighter size={14} />
-          </button>
-          <button
-            type="button"
-            aria-pressed={scrollSyncEnabled}
-            onClick={toggleScrollSync}
-            title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-            aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors ${
-              scrollSyncEnabled
-                ? "bg-accent/10 text-accent hover:bg-accent/15"
-                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-            }`}
-          >
-            {scrollSyncEnabled ? <Link2 size={14} /> : <Unlink2 size={14} />}
-          </button>
-        </div>
-        <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border/70" />
-        <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-text-muted">
+        <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" />
+        <button
+          type="button"
+          role="switch"
+          aria-checked={showHighlights}
+          aria-label={highlightsToggleLabel}
+          title={highlightsToggleLabel}
+          onClick={() => setShowHighlights(!showHighlights)}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+            showHighlights
+              ? "bg-accent/10 text-accent hover:bg-accent/15"
+              : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          }`}
+        >
+          <Highlighter size={15} />
+        </button>
+        <button
+          type="button"
+          aria-pressed={scrollSyncEnabled}
+          onClick={toggleScrollSync}
+          title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
+          aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+            scrollSyncEnabled
+              ? "bg-accent/10 text-accent hover:bg-accent/15"
+              : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          }`}
+        >
+          {scrollSyncEnabled ? <Link2 size={15} /> : <Unlink2 size={15} />}
+        </button>
+        <div className="flex-1" />
+        <div className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
+
           {canEdit ? (
             <WorkspaceDropdown
               value={document.accessLevel}

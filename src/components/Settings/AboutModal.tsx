@@ -103,7 +103,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* Dialog */}
-      <div className="relative bg-bg-secondary border border-border rounded-xl shadow-2xl w-[360px] p-6 animate-in">
+      <div className="isolate surface-glass surface-glass--editor relative bg-bg-secondary border border-border rounded-xl shadow-2xl w-[360px] p-6 animate-in">
         {/* Close button */}
         <button
           className="absolute top-3 right-3 p-1 rounded-md hover:bg-bg-hover transition-colors text-text-muted"
@@ -237,7 +237,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-5">
           <div className="absolute inset-0 bg-black/45" onClick={() => setSponsorOpen(false)} />
 
-          <div className="relative w-[min(92vw,760px)] max-h-[88vh] overflow-auto rounded-xl border border-border bg-bg-secondary p-5 shadow-2xl animate-in">
+          <div className="isolate surface-glass surface-glass--editor relative w-[min(92vw,760px)] max-h-[88vh] overflow-auto rounded-xl border border-border bg-bg-secondary p-5 shadow-2xl animate-in">
             <button
               className="absolute top-3 right-3 p-1 rounded-md hover:bg-bg-hover transition-colors text-text-muted"
               onClick={() => setSponsorOpen(false)}

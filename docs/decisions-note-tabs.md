@@ -40,7 +40,7 @@
 | 活动标签 | `bg-bg-primary` + `shadow-sm` + `ring-1 ring-border/70`，顶部居中 24px 圆角 accent 短线，图标转 accent 色 |
 | 非活动标签 | `text-text-muted`，hover 时背景 `bg-bg-hover`、文字提级、浮现 `shadow-sm` 与 `ring-border/50`、整体上移 1px、图标不透明度 0.6 → 1 |
 | 过渡 | `transition-[background-color,color,box-shadow,transform] 150ms ease-out` |
-| 拖拽态 | `scale-[0.98]` + `opacity-40`，表示被拿起 |
+| 拖拽态 | `scale(1.02)` + `z-index 20` + `0 6px 16px` 投影 + `cursor-grabbing`，表示被拿起 |
 | 关闭按钮 | 5×5 圆角方块，hover 底色 `bg-bg-active`；未脏时仅活动标签常显、非活动标签 hover 才浮现 |
 
 不用整行渐变或彩色底：标签条横跨整个内容区，大面积着色会与四套主题（dark/blue/yellow/green）撞色；用「背景层差 + 细描边 + 阴影」三件套可以在所有主题下都成立。
@@ -61,7 +61,7 @@
 
 新增文件：
 - `src/stores/tabStore.ts`：`tabs: { id, preview }[]`、`dirtyIds: string[]`、`hydrated`，以及 open / pin / close / closeOthers / closeToRight / closeAll / move / markDirty / pruneMissing / restoreTabs。
-- `src/components/Layout/NoteTabBar.tsx`：标签条、右键菜单、HTML5 拖拽调序、脏点/叉的二态关闭按钮。
+- `src/components/Layout/NoteTabBar.tsx`：标签条、右键菜单、指针拖拽调序、脏点/叉的二态关闭按钮。
 
 改动文件：
 
@@ -139,6 +139,26 @@ const isDirty = activeNoteId ? dirtyIds.includes(activeNoteId) : false;
 **理由**：`activeNoteId` 无法表达「内容是否已经就位」，而空白缓冲区既可能是「用户清空了笔记」（应保存），也可能是「新笔记还没读回来」（绝不可保存）。用显式标记区分这两种情况，比按脏标记或按内容长度推断更可靠。
 
 **放弃**：在快捷键层加时间节流。它只是把窗口缩小，没有消除竞态，同一个 bug 仍可通过快速点两次关闭按钮触发。
+
+## 拖拽调序改成实时换位（2026-10-23 追加，用户要求「标签像流动的水」）
+
+**问题**：旧实现是「松手才重排」——被拖标签留在原位、只叠一个 `translateX`，其余标签在拖动期间不动。于是「第一格被挖空」是必然结果，要等到松开才回填。
+
+**结论**：拖动过程中就实时换位（live reorder）。指针每越过邻格中线，两侧立刻在**渲染顺序**上互换，邻居用弹簧滑进空出的槽位；被拖标签的槽位始终贴着指针。松手只是「落定」，不是「开始变化」。
+
+| 项 | 结论 | 理由 |
+| --- | --- | --- |
+| 顺序来源 | 拖动期用 `dragOrder` 本地覆盖，store 只在松手时写 | 中途 `Esc` 只要丢掉覆盖就复原，不需要撤销栈 |
+| 落位判定 | 被拖标签左边缘对「槽位行模型」取整，而不是读实时 rect | 邻居正在弹簧中途，实时 rect 会抖，索引会来回翻；同 flex 基/同上下限保证槽距恒定 |
+| 行模型 | 拖动开始时采样一次 `slotLeft` / `pitch` / `scrollLeft`，滚动位移按差值折算 | 一次采样 + 一次减法，避免每帧 `getBoundingClientRect` 全量测量 |
+| 指针监听 | `window` 级 `pointermove/up/cancel`，不依赖指针捕获 | 实时换位会移动被拖节点的 DOM 位置，Chromium 因此触发 `lostpointercapture`：绑定在标签上的拖动会在换位瞬间失联 |
+| 视觉钳制 | 被拖标签的左边缘钳在第一格与最后一格之间 | 指针移出标签条时标签不会甩到容器外、把自己那格空出来 |
+| 插入指示线 | 删除 | 被拖标签本身就占着落位槽，指示线是重复信息，且会与滑动动画打架 |
+| 动画 | 邻居 `spring(380, 36, 0.9)`；落定 `spring(420, 34, 0.8)`；拖动期间禁用 transform 的 CSS 过渡 | 150ms 的 CSS 过渡会把每一帧弹簧抹平；动画期间由 JS 独占 transform，结束后交还给 CSS |
+| 松手位置 | 在标签条垂直范围外松开（如下方编辑器区）= 回弹取消 | 用户明确选择；避免误拖到编辑器时静默改顺序 |
+| 点击抑制 | 松手后 350ms 内吞掉一次 click | 没有指针捕获后，click 会落在松手处的标签上，而不是起点标签 |
+
+**验证**（Chromium + CDP 真实指针事件，`preview-tabs` 离屏页）：拖动中顺序即时改变、邻居带非零 transform；停稳后各槽间隙恒为 4px；越界拖拽钳到首/末格；横向溢出时自动滚动后仍能落到末位；`Esc` 与拖出条带松手都能还原原顺序且不留 transform。
 
 ## 待定 / 后续可选
 

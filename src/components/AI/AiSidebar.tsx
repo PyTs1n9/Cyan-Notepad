@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, type RefObject } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Brain,
@@ -22,12 +22,17 @@ import {
   LOCAL_MODEL_ID,
   useAiStore,
   type AiChatMessage,
+  type AiTurnPhase,
   type NoteWriteMode,
 } from "@/stores/aiStore";
 import { useAuthStore } from "@/stores/authStore";
 import { t } from "@/utils/i18n";
 import { listChatProviders } from "@/utils/ai/chat";
 import { aiErrorText } from "@/utils/ai/errorText";
+import { computeLineDiff, type DiffLine } from "@/utils/ai/diff";
+import type { AiNoteEdit } from "@/utils/ai/noteWrite";
+import { loadNoteContent, loadNoteSnapshot } from "@/utils/storage";
+import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { useStreamScroll } from "@/hooks/useStreamScroll";
 import { renderMarkdown } from "@/utils/markdown";
 import UserAvatar from "@/components/UserAvatar";
@@ -45,7 +50,32 @@ interface AiSidebarProps {
  */
 const STREAM_RENDER_DEBOUNCE_MS = 160;
 
-const AssistantBubble: React.FC<{ content: string; streaming?: boolean }> = ({
+/**
+ * Stage label shown while the answer text is still empty. One placeholder for
+ * every stage made "检索中" and "联网中" look identical, which left the user
+ * unable to tell a slow local index from a hanging network call.
+ */
+const PHASE_LABEL_KEY: Record<
+  AiTurnPhase,
+  "aiThinking" | "aiPhaseRetrieving" | "aiPhaseSearching" | "aiPhaseWriting"
+> = {
+  retrieving: "aiPhaseRetrieving",
+  searching: "aiPhaseSearching",
+  thinking: "aiThinking",
+  writing: "aiPhaseWriting",
+};
+
+/** Compact source label: site name when present, host otherwise. */
+function sourceLabel(source: { url: string; siteName?: string }): string {
+  if (source.siteName) return source.siteName;
+  try {
+    return new URL(source.url).hostname.replace(/^www\./, "");
+  } catch {
+    return source.url;
+  }
+}
+
+const AssistantBubbleImpl: React.FC<{ content: string; streaming?: boolean }> = ({
   content,
   streaming,
 }) => {
@@ -102,11 +132,17 @@ const AssistantBubble: React.FC<{ content: string; streaming?: boolean }> = ({
 };
 
 /**
+ * Memoized: while a turn streams, only the growing message gets a new object,
+ * so every finished bubble keeps its already-rendered HTML and is skipped.
+ */
+const AssistantBubble = React.memo(AssistantBubbleImpl);
+
+/**
  * Thinking-model reasoning stream. Opens while the model is still thinking
  * (no answer text yet) so the wait is visible, then folds away once the answer
  * starts; the user can toggle it either way.
  */
-const ReasoningBlock: React.FC<{ reasoning: string; active: boolean }> = ({
+const ReasoningBlockImpl: React.FC<{ reasoning: string; active: boolean }> = ({
   reasoning,
   active,
 }) => {
@@ -151,6 +187,8 @@ const ReasoningBlock: React.FC<{ reasoning: string; active: boolean }> = ({
     </div>
   );
 };
+
+const ReasoningBlock = React.memo(ReasoningBlockImpl);
 
 /** Assistant avatar tile, shared by the header, bubbles and the empty state. */
 const AssistantAvatar: React.FC<{ size?: number }> = ({ size = 26 }) => (
@@ -278,7 +316,9 @@ const NoteWritePermission: React.FC<NoteWritePermissionProps> = ({
 /** Hover toolbar under a finished assistant bubble: timestamp + copy / regenerate / delete. */
 const MessageActions: React.FC<{ message: AiChatMessage }> = ({ message }) => {
   const lang = useSettingsStore((s) => s.lang);
-  const { regenerate, deleteMessage, sending } = useAiStore();
+  const regenerate = useAiStore((s) => s.regenerate);
+  const deleteMessage = useAiStore((s) => s.deleteMessage);
+  const sending = useAiStore((s) => s.sending);
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -335,6 +375,364 @@ const MessageActions: React.FC<{ message: AiChatMessage }> = ({ message }) => {
 };
 
 /**
+ * One message row (question or answer).
+ *
+ * Memoized on `message`: `aiStore` replaces only the message that changed, so
+ * during a stream every other row keeps its object identity and re-rendering a
+ * 20-turn history on every token collapses to re-rendering one row.
+ */
+const MessageRowImpl: React.FC<{
+  message: AiChatMessage;
+  lang: "zh" | "en";
+  userDisplayName: string;
+  userAvatarUrl: string | null;
+}> = ({ message, lang, userDisplayName, userAvatarUrl }) => {
+  const reduceMotion = useReducedMotion();
+  const deleteMessage = useAiStore((s) => s.deleteMessage);
+  const undoMessageEdits = useAiStore((s) => s.undoMessageEdits);
+  /** Which edit's diff panel is open (index into `message.edits`). */
+  const [openDiffIndex, setOpenDiffIndex] = useState<number | null>(null);
+  const enter = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.18, ease: "easeOut" as const };
+
+  if (message.role === "user") {
+    return (
+      <motion.div
+        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+        transition={enter}
+        className="group flex items-start justify-end gap-2"
+      >
+        <div className="flex max-w-[85%] flex-col items-end">
+          <div className="whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent-light px-3.5 py-2.5 text-sm leading-relaxed text-text-primary shadow-sm">
+            {message.content}
+          </div>
+          <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            <span className="select-none text-[10px] tabular-nums text-text-muted/70">
+              {formatTime(message.createdAt, lang)}
+            </span>
+            <button
+              type="button"
+              onClick={() => deleteMessage(message.id)}
+              title={t(lang, "aiDeleteMessage")}
+              aria-label={t(lang, "aiDeleteMessage")}
+              className={`${actionButtonClass} hover:text-danger`}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+        <UserAvatar
+          name={userDisplayName}
+          avatarUrl={userAvatarUrl}
+          className="h-[26px] w-[26px] bg-accent-light text-[11px] font-semibold text-accent ring-1 ring-accent/20"
+        />
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+      animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+      transition={enter}
+      className="group flex items-start gap-2"
+    >
+      <AssistantAvatar />
+      <div className="flex min-w-0 max-w-[85%] flex-col">
+        {message.reasoning ? (
+          <ReasoningBlock
+            reasoning={message.reasoning}
+            active={Boolean(message.streaming && !message.content)}
+          />
+        ) : null}
+        {message.content ? (
+          <AssistantBubble content={message.content} streaming={message.streaming} />
+        ) : message.streaming ? (
+          message.reasoning ? null : (
+            <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-muted shadow-sm">
+              <span className="ai-typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              {t(lang, PHASE_LABEL_KEY[message.phase ?? "thinking"])}
+            </div>
+          )
+        ) : message.hits.length === 0 ? (
+          <div className="rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-muted shadow-sm">
+            {t(lang, "aiNoResult")}
+          </div>
+        ) : null}
+        {message.errorCode && (
+          <div className="mt-1 text-xs text-danger">
+            {aiErrorText(message.errorCode, lang)}
+          </div>
+        )}
+        {message.searchError && !message.streaming && (
+          <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+            {t(lang, "aiSearchFailed")}
+          </div>
+        )}
+        {message.truncated && !message.streaming && (
+          <div className="mt-1 text-[11px] leading-relaxed text-amber-500">
+            {t(lang, "aiTruncated")}
+          </div>
+        )}
+        {message.sources && message.sources.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <span className="text-[10px] text-text-muted/80">{t(lang, "aiSources")}</span>
+            {message.sources.map((source) => (
+              <button
+                key={source.url}
+                type="button"
+                onClick={() => void openInDefaultBrowser(source.url)}
+                title={source.title}
+                className="max-w-[150px] cursor-pointer truncate rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:border-accent/40 hover:text-accent"
+              >
+                {sourceLabel(source)}
+              </button>
+            ))}
+          </div>
+        )}
+        {message.edits && message.edits.length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+              {message.edits.map((edit, index) => (
+                <button
+                  key={`${edit.noteId}-${index}`}
+                  type="button"
+                  onClick={() => setOpenDiffIndex(openDiffIndex === index ? null : index)}
+                  title={t(lang, "aiViewDiff")}
+                  className={`flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                    edit.undone
+                      ? "border-border/60 text-text-muted"
+                      : "border-amber-500/30 bg-amber-500/10 text-amber-500 hover:border-amber-500/60"
+                  }`}
+                >
+                  <Pencil size={10} />
+                  {edit.undone
+                    ? t(lang, "aiEditUndone")
+                    : `${t(lang, "aiEditApplied")}${
+                        lang === "zh"
+                          ? `《${edit.noteTitle}》`
+                          : ` "${edit.noteTitle}"`
+                      }`}
+                </button>
+              ))}
+              {!message.streaming && message.edits.some((edit) => !edit.undone) && (
+                <button
+                  type="button"
+                  onClick={() => void undoMessageEdits(message.id)}
+                  title={t(lang, "aiUndoEdit")}
+                  className="flex cursor-pointer items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:border-accent/40 hover:text-text-primary"
+                >
+                  <Undo2 size={10} />
+                  {t(lang, "aiUndoEdit")}
+                </button>
+              )}
+            </div>
+            {openDiffIndex !== null && message.edits[openDiffIndex] && (
+              <NoteEditDiff edit={message.edits[openDiffIndex]} lang={lang} />
+            )}
+          </div>
+        )}
+        {!message.streaming && (message.content || message.errorCode) && (
+          <div className="mt-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            <MessageActions message={message} />
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+const MessageRow = React.memo(MessageRowImpl);
+
+/**
+ * The transcript, isolated behind its own `messages` selector.
+ *
+ * The sidebar shell (header, history popover, input capsule) does not subscribe
+ * to `messages`, so a streaming token re-renders this subtree only — not the
+ * whole panel, which is what the old single `useAiStore()` call did.
+ */
+const MessageList: React.FC<{
+  contentRef: RefObject<HTMLDivElement | null>;
+  lang: "zh" | "en";
+  userDisplayName: string;
+  userAvatarUrl: string | null;
+}> = ({ contentRef, lang, userDisplayName, userAvatarUrl }) => {
+  const messages = useAiStore((s) => s.messages);
+
+  return (
+    <div ref={contentRef} className="space-y-4">
+      <AnimatePresence initial={false}>
+        {messages.map((message) => (
+          <MessageRow
+            key={message.id}
+            message={message}
+            lang={lang}
+            userDisplayName={userDisplayName}
+            userAvatarUrl={userAvatarUrl}
+          />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+/**
+ * Line-diff preview for one note edit the assistant made.
+ *
+ * The pre-edit body is not carried in memory: it lives in the snapshot file
+ * written at edit time, so the panel loads it on demand. `computeLineDiff` is
+ * O(n·m), hence the line cap — a 5,000-line note would otherwise freeze the
+ * panel for a second to show a diff nobody reads.
+ */
+const DIFF_LINE_LIMIT = 400;
+
+const NoteEditDiff: React.FC<{ edit: AiNoteEdit; lang: "zh" | "en" }> = ({ edit, lang }) => {
+  const [lines, setLines] = useState<DiffLine[] | null>(null);
+  const [tooLong, setTooLong] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [before, after] = await Promise.all([
+        loadNoteSnapshot(edit.snapshotPath),
+        loadNoteContent(edit.noteId),
+      ]);
+      if (cancelled) return;
+      if (!before) {
+        setUnavailable(true);
+        return;
+      }
+      const beforeLines = before.content.split(/\r?\n/);
+      const afterLines = (after ?? "").split(/\r?\n/);
+      setTooLong(
+        beforeLines.length > DIFF_LINE_LIMIT || afterLines.length > DIFF_LINE_LIMIT,
+      );
+      setLines(
+        computeLineDiff(
+          beforeLines.slice(0, DIFF_LINE_LIMIT).join("\n"),
+          afterLines.slice(0, DIFF_LINE_LIMIT).join("\n"),
+        ),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [edit.snapshotPath, edit.noteId]);
+
+  if (unavailable) {
+    return (
+      <p className="mt-1 rounded-lg border border-border/60 px-2 py-1.5 text-[10px] text-text-muted">
+        {t(lang, "aiDiffUnavailable")}
+      </p>
+    );
+  }
+  if (!lines) {
+    return <p className="mt-1 px-1 text-[10px] text-text-muted">…</p>;
+  }
+  return (
+    <div className="mt-1 max-h-64 overflow-auto rounded-lg border border-border/60 bg-bg-primary/60">
+      {tooLong && (
+        <p className="border-b border-border/60 px-2 py-1 text-[10px] text-text-muted">
+          {t(lang, "aiDiffTooLong")}
+        </p>
+      )}
+      <div className="px-2 py-1 font-mono text-[10px] leading-relaxed">
+        {lines.map((line, index) => (
+          <div
+            key={`${index}-${line.type}`}
+            className={
+              line.type === "add"
+                ? "whitespace-pre-wrap bg-green-500/10 text-green-600"
+                : line.type === "del"
+                  ? "whitespace-pre-wrap bg-danger/10 text-danger"
+                  : "whitespace-pre-wrap text-text-muted"
+            }
+          >
+            {line.type === "add" ? "+ " : line.type === "del" ? "- " : "  "}
+            {line.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Short-lived undo affordance for note writes.
+ *
+ * The assistant always applies edits immediately (a confirm on every tool call
+ * would break the agent loop), so the safety net is a visible 5-second undo
+ * right above the input, not a modal the user learns to dismiss blindly.
+ */
+const UNDO_BAR_MS = 5_000;
+
+const EditUndoBar: React.FC = () => {
+  const lang = useSettingsStore((s) => s.lang);
+  const lastMessage = useAiStore((s) => s.messages[s.messages.length - 1]);
+  const undoMessageEdits = useAiStore((s) => s.undoMessageEdits);
+  const [visible, setVisible] = useState(false);
+
+  const pendingEdits =
+    lastMessage?.role === "assistant" && !lastMessage.streaming
+      ? (lastMessage.edits ?? []).filter((edit) => !edit.undone)
+      : [];
+  const key = `${lastMessage?.id ?? ""}:${pendingEdits.length}`;
+
+  useEffect(() => {
+    if (pendingEdits.length === 0) {
+      setVisible(false);
+      return;
+    }
+    setVisible(true);
+    const timer = setTimeout(() => setVisible(false), UNDO_BAR_MS);
+    return () => clearTimeout(timer);
+    // `key` covers both a new message and an edit being undone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (!visible || !lastMessage || pendingEdits.length === 0) return null;
+
+  const titles = pendingEdits.map((edit) => edit.noteTitle).join("、");
+  return (
+    <div className="mx-3 mb-1 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-600">
+      <Pencil size={11} className="flex-shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
+        {t(lang, "aiEditApplied")}
+        {lang === "zh" ? `《${titles}》` : ` "${titles}"`}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          void undoMessageEdits(lastMessage.id);
+          setVisible(false);
+        }}
+        className="flex flex-shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors hover:bg-amber-500/20"
+      >
+        <Undo2 size={10} />
+        {t(lang, "aiUndoEdit")}
+      </button>
+      <button
+        type="button"
+        onClick={() => setVisible(false)}
+        aria-label={t(lang, "aiCancel")}
+        className="flex-shrink-0 cursor-pointer text-amber-600/70 transition-colors hover:text-amber-600"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+};
+
+/**
  * Prompt-suggestion pool for the empty state. Three are shown at a time;
  * "换一批" resamples without overlapping the current trio so the button
  * always surfaces fresh questions.
@@ -370,30 +768,34 @@ function sampleExampleIndices(poolSize: number, count: number, exclude: readonly
 
 const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   const lang = useSettingsStore((s) => s.lang);
+  // Subscribed field by field. A whole-store `useAiStore()` call re-rendered
+  // this panel — header, history popover and input capsule included — on every
+  // streamed token, because `messages` is a new array per delta.
+  const sending = useAiStore((s) => s.sending);
+  const hasKey = useAiStore((s) => s.hasKey);
+  const polish = useAiStore((s) => s.polish);
+  const chatModel = useAiStore((s) => s.chatModel);
+  const noteWriteMode = useAiStore((s) => s.noteWriteMode);
+  const conversations = useAiStore((s) => s.conversations);
+  const activeConversationId = useAiStore((s) => s.activeConversationId);
+  // Only the emptiness of the transcript is needed here — the rows themselves
+  // live in `MessageList`, which owns the `messages` subscription.
+  const hasMessages = useAiStore((s) => s.messages.length > 0);
+  // Actions never change identity, so they are read once rather than subscribed.
   const {
-    messages,
-    sending,
-    hasKey,
-    polish,
-    chatModel,
     setChatModel,
-    noteWriteMode,
     setNoteWriteMode,
-    undoMessageEdits,
     hydrate,
     sendMessage,
     stopGenerating,
     clearChat,
-    deleteMessage,
-    conversations,
-    activeConversationId,
     newConversation,
     switchConversation,
     renameConversation,
     deleteConversation,
     cancelPolish,
     setSidebarOpen,
-  } = useAiStore();
+  } = useAiStore.getState();
   const authUser = useAuthStore((s) => s.user);
   const reduceMotion = useReducedMotion();
   const [draft, setDraft] = useState("");
@@ -472,7 +874,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   return (
     <aside
       style={{ width: "var(--ai-sidebar-width)" }}
-      className="flex h-full flex-shrink-0 flex-col border-l border-border bg-bg-sidebar"
+      className="flex h-full flex-shrink-0 flex-col"
     >
       {/* Header: assistant identity + status, session controls, clear (with confirm), close */}
       {/* h-9 matches the note tab bar height so this border lands on the same
@@ -529,7 +931,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
             onClick={() => setConfirmingClear((value) => !value)}
             title={t(lang, "aiClearChat")}
             aria-label={t(lang, "aiClearChat")}
-            disabled={messages.length === 0}
+            disabled={!hasMessages}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-text-muted transition-all hover:bg-bg-hover hover:text-text-primary active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 size={15} />
@@ -704,7 +1106,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
         <>
           {/* Messages */}
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-            {messages.length === 0 ? (
+            {!hasMessages ? (
               <motion.div
                 initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
                 animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
@@ -747,136 +1149,17 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                 </div>
               </motion.div>
             ) : (
-              <div ref={messagesRef} className="space-y-4">
-                <AnimatePresence initial={false}>
-                  {messages.map((message) =>
-                    message.role === "user" ? (
-                      <motion.div
-                        key={message.id}
-                        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-                        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-                        transition={enter}
-                        className="group flex items-start justify-end gap-2"
-                      >
-                        <div className="flex max-w-[85%] flex-col items-end">
-                          <div className="whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent-light px-3.5 py-2.5 text-sm leading-relaxed text-text-primary shadow-sm">
-                            {message.content}
-                          </div>
-                          <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                            <span className="select-none text-[10px] tabular-nums text-text-muted/70">
-                              {formatTime(message.createdAt, lang)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => deleteMessage(message.id)}
-                              title={t(lang, "aiDeleteMessage")}
-                              aria-label={t(lang, "aiDeleteMessage")}
-                              className={`${actionButtonClass} hover:text-danger`}
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </div>
-                        <UserAvatar
-                          name={userDisplayName}
-                          avatarUrl={userAvatarUrl}
-                          className="h-[26px] w-[26px] bg-accent-light text-[11px] font-semibold text-accent ring-1 ring-accent/20"
-                        />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key={message.id}
-                        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-                        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-                        transition={enter}
-                        className="group flex items-start gap-2"
-                      >
-                        <AssistantAvatar />
-                        <div className="flex min-w-0 max-w-[85%] flex-col">
-                          {message.reasoning ? (
-                            <ReasoningBlock
-                              reasoning={message.reasoning}
-                              active={Boolean(message.streaming && !message.content)}
-                            />
-                          ) : null}
-                          {message.content ? (
-                            <AssistantBubble content={message.content} streaming={message.streaming} />
-                          ) : message.streaming ? (
-                            message.reasoning ? null : (
-                              <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-muted shadow-sm">
-                                <span className="ai-typing-dots" aria-hidden="true">
-                                  <span />
-                                  <span />
-                                  <span />
-                                </span>
-                                {t(lang, "aiThinking")}
-                              </div>
-                            )
-                          ) : message.hits.length === 0 ? (
-                            <div className="rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-muted shadow-sm">
-                              {t(lang, "aiNoResult")}
-                            </div>
-                          ) : null}
-                          {message.errorCode && (
-                            <div className="mt-1 text-xs text-danger">
-                              {aiErrorText(message.errorCode, lang)}
-                            </div>
-                          )}
-                          {message.searchError && !message.streaming && (
-                            <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
-                              {t(lang, "aiSearchFailed")}
-                            </div>
-                          )}
-                          {message.edits && message.edits.length > 0 && (
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              {message.edits.map((edit, index) => (
-                                <span
-                                  key={`${edit.noteId}-${index}`}
-                                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-                                    edit.undone
-                                      ? "border-border/60 text-text-muted"
-                                      : "border-amber-500/30 bg-amber-500/10 text-amber-500"
-                                  }`}
-                                >
-                                  <Pencil size={10} />
-                                  {edit.undone
-                                    ? t(lang, "aiEditUndone")
-                                    : `${t(lang, "aiEditApplied")}${
-                                        lang === "zh"
-                                          ? `《${edit.noteTitle}》`
-                                          : ` "${edit.noteTitle}"`
-                                      }`}
-                                </span>
-                              ))}
-                              {!message.streaming &&
-                                message.edits.some((edit) => !edit.undone) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => void undoMessageEdits(message.id)}
-                                    title={t(lang, "aiUndoEdit")}
-                                    className="flex cursor-pointer items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:border-accent/40 hover:text-text-primary"
-                                  >
-                                    <Undo2 size={10} />
-                                    {t(lang, "aiUndoEdit")}
-                                  </button>
-                                )}
-                            </div>
-                          )}
-                          {!message.streaming && (message.content || message.errorCode) && (
-                            <div className="mt-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                              <MessageActions message={message} />
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    ),
-                  )}
-                </AnimatePresence>
-              </div>
+              <MessageList
+                contentRef={messagesRef}
+                lang={lang}
+                userDisplayName={userDisplayName}
+                userAvatarUrl={userAvatarUrl}
+              />
             )}
           </div>
+
+          {/* Undo affordance for note writes made by the last turn. */}
+          <EditUndoBar />
 
           {/* Input: one capsule containing the auto-growing textarea with the
               send/stop button embedded at the bottom-right. */}

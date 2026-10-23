@@ -70,6 +70,9 @@
   --color-bg-primary: #f0f4f8;
   --color-bg-secondary: #e2e8f0;
   --color-bg-sidebar: #dbe4ef;
+  /* The gutter the floating cards sit in. One step away from the panel colors
+     so a translucent panel still reads as lifted off the shell. */
+  --color-bg-shell: #c3cfdd;
   --color-bg-hover: #cbd5e1;
   --color-bg-active: #b0c4de;
   --color-text-primary: #1e293b;
@@ -89,6 +92,7 @@
   --color-bg-primary: #1a1b1e;
   --color-bg-secondary: #25262b;
   --color-bg-sidebar: #1e1f23;
+  --color-bg-shell: #0b0c0e;
   --color-bg-hover: #2c2e33;
   --color-bg-active: #373a40;
   --color-text-primary: #e9ecef;
@@ -108,6 +112,7 @@
   --color-bg-primary: #f0f4f8;
   --color-bg-secondary: #e2e8f0;
   --color-bg-sidebar: #dbe4ef;
+  --color-bg-shell: #c3cfdd;
   --color-bg-hover: #cbd5e1;
   --color-bg-active: #b0c4de;
   --color-text-primary: #1e293b;
@@ -127,6 +132,7 @@
   --color-bg-primary: #faf6ec;
   --color-bg-secondary: #f2ecdc;
   --color-bg-sidebar: #ebe5d2;
+  --color-bg-shell: #ddd2b8;
   --color-bg-hover: #e3dcc8;
   --color-bg-active: #dbd4bc;
   --color-text-primary: #4a4030;
@@ -146,6 +152,7 @@
   --color-bg-primary: #f4faf6;
   --color-bg-secondary: #e8f2ec;
   --color-bg-sidebar: #deeadf;
+  --color-bg-shell: #c9ddcb;
   --color-bg-hover: #d2e2d4;
   --color-bg-active: #c6dac8;
   --color-text-primary: #2a4a38;
@@ -158,6 +165,148 @@
   --color-danger: #d88a8a;
   --color-success: #6aba6a;
   --color-warning: #caba6a;
+}
+
+/* ------------------------------------------------------------------ */
+/* Workspace shell — floating cards over a gutter                      */
+/* Every geometry value is also written inline by App.tsx; these are the */
+/* no-JS fallbacks and must use the same breakpoint as shellLayout.ts.   */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --shell-pad: 10px;
+  --shell-gutter: 10px;
+  --box-radius: 10px;
+
+  /* Unitless on purpose: only calc(var(--x) * 1px) / * 1% add units, and a
+     stored "12px" would make the calc() invalid and silently drop the rule. */
+  --glass-blur: 12;
+  --glass-saturate: 120;
+  --glass-tint-side: 80;
+  --glass-tint-editor: 92;
+  --glass-tint-light: 60;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --shell-pad: 6px;
+    --shell-gutter: 6px;
+  }
+}
+
+/* One stacking context for the whole shell: it lets every panel's blurred
+   underlay sit above the wallpaper while the panel boxes themselves stay
+   ordinary positioned elements. */
+.app-root {
+  isolation: isolate;
+}
+
+/*
+ * Frosted surface. The tint and the backdrop blur live on a ::before layer
+ * rather than on the element itself: `backdrop-filter` on an element makes it a
+ * containing block for every `position: fixed` descendant, and this app renders
+ * its context menus, popovers and confirm dialogs as fixed elements inside the
+ * panels. The card itself stays a plain `position: relative` box, so those
+ * overlays keep anchoring to the viewport.
+ *
+ * The `z-index: -1` layer needs a stacking context to sit above the wallpaper
+ * instead of behind it; `.app-root` provides that one context. Putting
+ * `isolation` on each card instead would scope their overlays' z-index and let
+ * the neighbouring card paint over an open context menu.
+ */
+.surface-glass {
+  --glass-panel: var(--color-bg-sidebar);
+  --glass-tint-here: var(--glass-tint-side);
+  position: relative;
+  background-color: transparent;
+}
+
+.surface-glass::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+  pointer-events: none;
+  background-color: color-mix(in srgb, var(--glass-panel) calc(var(--glass-tint-here) * 1%), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
+}
+
+/* Editor card: nearly opaque so long-form text keeps its contrast. */
+.surface-glass--editor {
+  --glass-panel: var(--color-bg-primary);
+  --glass-tint-here: var(--glass-tint-editor);
+}
+
+/* Title bar: lighter, with half the blur of a panel. */
+.surface-glass--light {
+  --glass-panel: var(--color-bg-shell);
+  --glass-tint-here: var(--glass-tint-light);
+}
+
+.surface-glass--light::before {
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6px)) saturate(calc(var(--glass-saturate) * 1%));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6px)) saturate(calc(var(--glass-saturate) * 1%));
+}
+
+/* Glass switched off: the cards stay, only the translucency goes. */
+.app-root[data-glass="off"] .surface-glass::before {
+  background-color: var(--glass-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Dragging a sash rebuilds the blur layer on every frame; degrade it instead.
+   The `sidebar-resizing` class already exists in App.tsx. */
+.app-root[data-glass="on"].sidebar-resizing .surface-glass::before {
+  backdrop-filter: blur(4px) saturate(100%);
+  -webkit-backdrop-filter: blur(4px) saturate(100%);
+}
+
+.app-root.sidebar-resizing .shell-box {
+  box-shadow: none;
+}
+
+.shell-box {
+  border-radius: var(--box-radius);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 18%, transparent);
+  overflow: hidden;
+}
+
+/* A dark shadow is invisible on a dark gutter: lift the edge instead. */
+.theme-dark .shell-box {
+  border-color: color-mix(in srgb, var(--color-border) 92%, transparent);
+}
+
+/* The tab strip sits inside the editor card, so it only tints — a nested
+   backdrop-filter cannot sample the wallpaper and would burn a full-size
+   compositing buffer for nothing. */
+.note-tab-bar {
+  background-color: color-mix(in srgb, var(--color-bg-primary) 72%, transparent);
+}
+
+/* A shell strip is its own query container: the optional groups inside it must
+   drop out when the *card* narrows, which a viewport media query cannot see
+   (the explorer beside it is resizable). */
+.shell-strip {
+  container-type: inline-size;
+  container-name: shell-strip;
+}
+
+@container shell-strip (max-width: 620px) {
+  .shell-strip__optional {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .surface-glass::before {
+    background-color: var(--glass-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 @layer base {
@@ -212,16 +361,24 @@
   width: 0;
 }
 
-.app-has-custom-background .workspace-surface {
-  background-color: transparent;
+/* While a tab is being dragged the strip re-orders live and every other tab is
+   driven by a FLIP spring. The 150ms CSS transform transition on the same
+   elements would smooth each spring frame into mush, and the hover lift would
+   pull tabs out of the row the pointer is sweeping across. */
+.note-tab-strip.is-dragging [data-note-tab] {
+  transition-property: background-color, color, box-shadow;
 }
 
+.note-tab-strip.is-dragging [data-note-tab]:hover {
+  transform: none;
+}
+
+/* The workspace view paints nothing of its own any more: its content sits
+   straight on the editor card, so only the canvas still needs a wall behind
+   it. `.app-work-area-overlay` survives for `CanvasView`'s overlay wrapper and
+   goes away with the canvas card rework. */
 .app-has-custom-background .app-work-area-overlay {
   background-color: color-mix(in srgb, var(--color-bg-primary) 65%, transparent);
-}
-
-.app-has-custom-background .workspace-editor-surface {
-  background-color: transparent;
 }
 
 .app-has-custom-background .canvas-surface {
@@ -614,7 +771,6 @@ body.sticky-body {
   transform: scale(0.985);
 }
 
-.todo-create-trigger,
 .flat-create-trigger {
   position: relative;
   isolation: isolate;
@@ -622,7 +778,6 @@ body.sticky-body {
   background: color-mix(in srgb, var(--color-bg-primary) 58%, transparent);
 }
 
-.todo-create-trigger::after,
 .flat-create-trigger::after {
   content: "";
   position: absolute;
@@ -888,6 +1043,34 @@ body.sticky-body {
 .markdown-preview ul,
 .markdown-preview ol {
   padding-left: 1.5em;
+}
+
+/* Markdown tables. `display: block` turns the table into its own scroll
+   container, so a wide table scrolls sideways instead of stretching the pane.
+   Colors come from theme variables only, so every preset stays readable. */
+.markdown-preview table {
+  display: block;
+  max-width: 100%;
+  margin: 0.7em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+  line-height: 1.6;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.markdown-preview th {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .markdown-code-block {

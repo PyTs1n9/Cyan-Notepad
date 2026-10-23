@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import TurndownService from "turndown";
+import { gfm } from "turndown-plugin-gfm";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useNoteStore } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
@@ -15,7 +16,7 @@ import { useAiStore } from "@/stores/aiStore";
 import { NOTE_EXTERNAL_SAVE_EVENT } from "@/utils/ai/noteWrite";
 import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
-import { Save, Pin, Sparkles, Undo2, Redo2, Link2, Unlink2 } from "lucide-react";
+import { Save, Pin, Sparkles, Undo2, Redo2, Link2, Unlink2, Table } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
@@ -41,6 +42,10 @@ const turndownService = new TurndownService({
   bulletListMarker: "-",
   hr: "---",
 });
+// GFM plugin: turns pasted <table> markup back into a Markdown table instead
+// of flattening it to plain lines. It only filters table/strikethrough/
+// task-list nodes, so the two rules below keep their behaviour.
+turndownService.use(gfm);
 // contentEditable creates a <div> for a normal Enter press. Turndown treats
 // block elements as paragraphs by default, which turns one Enter into two
 // Markdown newlines. Keep normal div lines single-spaced while preserving an
@@ -70,6 +75,14 @@ function htmlToMarkdown(html: string): string {
 }
 
 const DERIVED_TITLE_MAX_LENGTH = 40;
+
+/**
+ * Empty 3x3 GFM table inserted by the toolbar button / `Mod-Alt-t`. Two spaces
+ * between pipes keep every cell valid when the user types into it.
+ */
+const TABLE_MARKDOWN = "| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n";
+/** Offset of the first header cell's text, so the caret lands inside it. */
+const TABLE_FIRST_CELL_OFFSET = 2;
 
 /**
  * The note page no longer has a title field. A note keeps whatever title it was
@@ -417,6 +430,24 @@ const NoteEditor: React.FC = () => {
     if (view) codeMirrorRedo(view);
   }, []);
 
+  // Shared by the toolbar button and Mod-Alt-t, so both paths insert exactly
+  // the same skeleton at the caret and leave the caret in the first header cell.
+  const handleInsertTable = useCallback(() => {
+    const view = codeMirrorViewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    const doc = view.state.doc.toString();
+    // A table has to start on its own line, otherwise the paragraph above
+    // swallows it and nothing renders as a table.
+    const prefix = from > 0 && doc[from - 1] !== "\n" ? "\n" : "";
+    view.dispatch({
+      changes: { from, to, insert: `${prefix}${TABLE_MARKDOWN}` },
+      selection: { anchor: from + prefix.length + TABLE_FIRST_CELL_OFFSET },
+      scrollIntoView: true,
+    });
+    view.focus();
+  }, []);
+
   const handleHistoryChange = useCallback((undoAvailable: boolean, redoAvailable: boolean) => {
     setCanUndo(undoAvailable);
     setCanRedo(redoAvailable);
@@ -540,7 +571,7 @@ const NoteEditor: React.FC = () => {
     <div ref={editorContainerRef} className="note-editor-surface flex min-h-0 min-w-0 h-full flex-1 flex-col overflow-hidden">
       {/* Single-row toolbar: view switch, history, then right-aligned actions.
           Every action is icon-only with a tooltip so the row stays compact. */}
-      <div className="note-editor-toolbar flex items-center gap-1 px-4 pt-3 pb-1">
+      <div className="note-editor-toolbar flex items-center gap-1 px-5 pt-3 pb-1">
         <MarkdownViewSwitch
           value={markdownViewMode}
           onChange={setMarkdownViewMode}
@@ -568,6 +599,16 @@ const NoteEditor: React.FC = () => {
             hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
         >
           <Redo2 size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={handleInsertTable}
+          title={t(lang, "insertTable")}
+          aria-label={t(lang, "insertTable")}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
+            hover:bg-bg-hover hover:text-text-primary"
+        >
+          <Table size={15} />
         </button>
         <div className="flex-1" />
         <button
@@ -632,7 +673,9 @@ const NoteEditor: React.FC = () => {
         </button>
       </div>
 
-      <div className="app-work-area-overlay relative mx-4 mb-3 mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-bg-primary/65">
+      {/* The shell already frames the editor, so the text surface is flush with
+          the card: no second border, radius or tinted panel inside it. */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Editor Content */}
         <div className="flex min-h-0 flex-1 overflow-hidden" style={{ fontSize: editorFontSize }}>
           <div
@@ -653,6 +696,7 @@ const NoteEditor: React.FC = () => {
                 onScroll={handleCodeMirrorScroll}
                 onViewChange={handleCodeMirrorViewChange}
                 fontSize={editorFontSize}
+                onInsertTable={handleInsertTable}
               />
           </div>
           {showMarkdownPreview && (
@@ -692,7 +736,7 @@ const NoteEditor: React.FC = () => {
 
         {/* Meta strip pinned to the bottom-right corner: updated time, save
             state and word count stay reachable without a dedicated header row. */}
-        <div className="pointer-events-none absolute bottom-1.5 right-2.5 z-10 flex items-center gap-1.5 rounded-full bg-bg-primary/85 px-2 py-1 text-[11px] leading-none text-text-muted shadow-sm backdrop-blur-sm">
+        <div className="pointer-events-none absolute bottom-1.5 right-2.5 z-10 flex items-center gap-1.5 rounded-full bg-bg-primary/85 px-2 py-1 text-[11px] leading-none text-text-muted shadow-sm">
           <span className="tabular-nums">
             {t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
           </span>
@@ -708,7 +752,7 @@ const NoteEditor: React.FC = () => {
             {activeNote.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent backdrop-blur-sm"
+                className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent"
               >
                 #{tag}
               </span>

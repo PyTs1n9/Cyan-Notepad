@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, Circle, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, ChevronDown, Pin, PinOff, ListChecks, ListPlus } from "lucide-react";
+import { AlignLeft, Trash2, Circle, Check, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, Pin, PinOff, ListPlus } from "lucide-react";
 import { useTodoStore } from "@/stores/todoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
+import { subscribeTodoIntent, type TodoIntent } from "@/utils/todoIntent";
+import TodoStrip from "@/components/Todo/TodoStrip";
+import TodoDescriptionCard from "@/components/Todo/TodoDescriptionCard";
 import type { Todo } from "@/types";
 
 type Priority = "low" | "medium" | "high";
@@ -90,9 +93,8 @@ const getYearRange = (date: Date) => {
 };
 
 const TodoView: React.FC = () => {
-  const { todos, lists, activeListId, filter, priorityFilter, addTodo, addSubtask, toggleExpanded, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
+  const { todos, activeListId, filter, priorityFilter, addSubtask, toggleExpanded, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
   const lang = useSettingsStore((s) => s.lang);
-  const activeList = lists.find((list) => list.id === activeListId);
   const listTodos = todos.filter((todo) => todo.listId === activeListId);
   const topLevelTodos = listTodos.filter((todo) => !todo.parentId);
   const subtasksByParent = new Map<string, Todo[]>();
@@ -102,14 +104,13 @@ const TodoView: React.FC = () => {
     if (siblings) siblings.push(todo);
     else subtasksByParent.set(todo.parentId, [todo]);
   });
-  const [newTitle, setNewTitle] = useState("");
-  const [newPriority, setNewPriority] = useState<Priority>("low");
-  const newTodoInputRef = useRef<HTMLInputElement>(null);
-  const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false);
-  const priorityDropdownRef = useRef<HTMLDivElement>(null);
-  const [priorityFilterDropdownOpen, setPriorityFilterDropdownOpen] = useState(false);
-  const priorityFilterDropdownRef = useRef<HTMLDivElement>(null);
   const [deleteConfirmTodo, setDeleteConfirmTodo] = useState<Todo | null>(null);
+  /** Task whose description is open in the editor; one at a time. */
+  const [descriptionEditorId, setDescriptionEditorId] = useState<string | null>(null);
+  /** Requests raised in the sidebar; consumed below, never handled on arrival. */
+  const [todoIntent, setTodoIntent] = useState<TodoIntent | null>(null);
+
+  useEffect(() => subscribeTodoIntent(setTodoIntent), []);
 
   // 内联编辑标题状态
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,10 +137,6 @@ const TodoView: React.FC = () => {
   useEffect(() => {
     const handlePortalAction = (event: Event) => {
       const action = (event as CustomEvent<PortalAction>).detail;
-      if (action === "new-todo") {
-        newTodoInputRef.current?.focus();
-        return;
-      }
       if (action === "filter-todos-all") {
         setFilter("all");
         setPriorityFilter("all");
@@ -288,52 +285,12 @@ const TodoView: React.FC = () => {
   }, [editingId]);
 
   useEffect(() => {
-    setNewTitle("");
     setEditingId(null);
     setEditingTitle("");
     setOpenCalendarTodoId(null);
     setDeleteConfirmTodo(null);
+    setDescriptionEditorId(null);
   }, [activeListId]);
-
-  useEffect(() => {
-    if (!priorityDropdownOpen) return;
-
-    const closeDropdown = (event: MouseEvent) => {
-      if (priorityDropdownRef.current?.contains(event.target as Node)) return;
-      setPriorityDropdownOpen(false);
-    };
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPriorityDropdownOpen(false);
-    };
-
-    document.addEventListener("mousedown", closeDropdown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeDropdown);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [priorityDropdownOpen]);
-
-  useEffect(() => {
-    if (!priorityFilterDropdownOpen) return;
-
-    const closeDropdown = (event: MouseEvent) => {
-      if (priorityFilterDropdownRef.current?.contains(event.target as Node)) return;
-      setPriorityFilterDropdownOpen(false);
-    };
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPriorityFilterDropdownOpen(false);
-    };
-
-    document.addEventListener("mousedown", closeDropdown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeDropdown);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [priorityFilterDropdownOpen]);
 
   useEffect(() => {
     if (!openCalendarTodoId) return;
@@ -437,6 +394,26 @@ const TodoView: React.FC = () => {
     setEditingTitle("");
   };
 
+  // Runs in the same commit as the list switch the sidebar triggered, and after
+  // the reset effect above — handling it on arrival would be undone by that reset.
+  useEffect(() => {
+    if (!todoIntent) return;
+    setTodoIntent(null);
+    const target = todos.find((todo) => todo.id === todoIntent.todoId);
+    if (!target) return;
+    if (todoIntent.kind === "edit-description") {
+      setDescriptionEditorId(target.id);
+    } else if (todoIntent.kind === "add-subtask") {
+      handleAddSubtask(target.id);
+    } else if (!target.pinned) {
+      // 置顶任务在 store 里拒绝删除，这里直接跳过，避免弹出点了也没用的确认框
+      setDeleteConfirmTodo(target);
+    }
+    // `todos` is read from the render that produced the intent; re-running on
+    // every todo change would only re-enter the guard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todoIntent]);
+
   // 点击优先级标签直接循环切换：低→中→高→低
   const cyclePriority = (id: string, current: Priority) => {
     updateTodo(id, { priority: priorityCycle[current] });
@@ -481,181 +458,18 @@ const TodoView: React.FC = () => {
     return true;
   });
 
-  const handleAdd = () => {
-    if (!newTitle.trim()) return;
-    addTodo(newTitle.trim(), newPriority);
-    setNewTitle("");
-    setNewPriority("low");
-  };
-
-  const completedCount = topLevelTodos.filter((t) => t.completed).length;
-  const completionRate = topLevelTodos.length === 0 ? 0 : Math.round((completedCount / topLevelTodos.length) * 100);
   const todayInputValue = getTodayInputValue();
-  const priorityOptions: { value: Priority; label: string }[] = [
-    { value: "low", label: t(lang, "lowPriority") },
-    { value: "medium", label: t(lang, "mediumPriority") },
-    { value: "high", label: t(lang, "highPriority") },
-  ];
-  const selectedPriorityLabel = priorityOptions.find((option) => option.value === newPriority)?.label;
-  const priorityFilterOptions: { value: typeof priorityFilter; label: string }[] = [
-    { value: "all", label: t(lang, "filterAll") },
-    { value: "low", label: t(lang, "low") },
-    { value: "medium", label: t(lang, "medium") },
-    { value: "high", label: t(lang, "high") },
-  ];
-  const selectedPriorityFilterLabel = priorityFilterOptions.find((option) => option.value === priorityFilter)?.label;
 
   return (
-    <div className="todo-surface flex-1 flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 pb-4 pt-4">
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-accent/20 bg-accent-light text-accent">
-          <ListChecks size={21} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold text-text-primary">{activeList?.name ?? t(lang, "todoTitle")}</h1>
-          <p className="mt-1 text-sm text-text-muted">
-            {tWithParams(lang, "totalStats", { total: topLevelTodos.length, done: completedCount })}
-          </p>
-        </div>
-        <div className="w-32 flex-shrink-0 rounded-xl border border-border bg-bg-primary/70 px-3 py-2 shadow-sm backdrop-blur-md">
-          <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-text-muted">
-            <span>{completedCount}/{topLevelTodos.length}</span>
-            <span className="text-accent">{completionRate}%</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-bg-secondary">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
-              style={{ width: `${completionRate}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Add Todo */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-bg-primary/75 p-2 focus-within:border-accent/45">
-          <span className="ml-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
-            <Plus size={16} strokeWidth={2.4} />
-          </span>
-          <input
-            ref={newTodoInputRef}
-            type="text"
-            value={newTitle}
-            disabled={!activeListId}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder={t(lang, "addTaskPlaceholder")}
-            className="h-10 min-w-0 flex-1 rounded-lg bg-transparent px-2 text-sm text-text-primary
-              placeholder:text-text-muted focus:outline-none"
-          />
-          <div className="relative flex-shrink-0" ref={priorityDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setPriorityDropdownOpen((open) => !open)}
-              className="h-10 min-w-[112px] rounded-lg border border-border bg-bg-secondary/70 px-3 text-sm
-                text-text-secondary cursor-pointer hover:border-accent/30 hover:bg-bg-hover
-                focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 flex items-center justify-between gap-2"
-            >
-              <span className="truncate">{selectedPriorityLabel}</span>
-              <ChevronDown
-                size={14}
-                className={`flex-shrink-0 text-text-muted transition-transform ${priorityDropdownOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {priorityDropdownOpen && (
-              <div className="todo-popover absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-border
-                bg-bg-primary shadow-lg">
-                {priorityOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      setNewPriority(option.value);
-                      setPriorityDropdownOpen(false);
-                    }}
-                    className={`w-full px-3 py-2 text-left text-sm transition-colors cursor-pointer
-                      ${newPriority === option.value
-                        ? "bg-accent-light text-accent"
-                        : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={handleAdd}
-            disabled={!newTitle.trim() || !activeListId}
-            className="flex h-10 items-center gap-1.5 rounded-lg bg-accent px-4 text-sm font-medium text-white
-              hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Plus size={14} />
-            <span>{t(lang, "add")}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 px-4 pb-3">
-        <div className="flex items-center gap-1 rounded-full border border-border bg-bg-secondary/70 p-1">
-          {(["all", "active", "completed"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-full px-3 py-1 text-xs cursor-pointer
-                ${filter === f ? "bg-accent text-white" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-            >
-              {f === "all" ? t(lang, "filterAll") : f === "active" ? t(lang, "filterActive") : t(lang, "filterCompleted")}
-            </button>
-          ))}
-        </div>
-        {/* Priority Filter Dropdown */}
-        <div className="relative ml-auto flex-shrink-0" ref={priorityFilterDropdownRef}>
-          <button
-            type="button"
-            onClick={() => setPriorityFilterDropdownOpen((open) => !open)}
-            className="min-w-[86px] rounded-full border border-border bg-bg-primary px-3 py-1 text-xs
-              text-text-secondary transition-colors cursor-pointer hover:bg-bg-secondary
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent flex items-center justify-between gap-1.5"
-          >
-            <span className="truncate">{selectedPriorityFilterLabel}</span>
-            <ChevronDown
-              size={12}
-              className={`flex-shrink-0 text-text-muted transition-transform ${priorityFilterDropdownOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-
-          {priorityFilterDropdownOpen && (
-            <div className="todo-popover absolute right-0 top-full z-20 mt-1 min-w-full overflow-hidden rounded-xl border border-border
-              bg-bg-primary shadow-lg">
-              {priorityFilterOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setPriorityFilter(option.value);
-                    setPriorityFilterDropdownOpen(false);
-                  }}
-                  className={`w-full whitespace-nowrap px-3 py-2 text-left text-xs transition-colors cursor-pointer
-                    ${priorityFilter === option.value
-                      ? "bg-accent-light text-accent"
-                      : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+    <div className="todo-surface flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <TodoStrip />
 
       {/* Todo List */}
-      <div className="app-work-area-overlay mx-4 mb-3 flex-1 min-h-0 overflow-hidden rounded-2xl border border-border bg-bg-primary/65">
-        <div className="h-full overflow-y-auto px-4 py-4">
-        <div className="space-y-1" ref={listRef}>
+      {/* Flush with the shell card — the rows carry their own chips, so a second
+          frame here only added a border inside a border. */}
+      <div className="relative flex-1 min-h-0 overflow-hidden">
+        <div className="h-full overflow-y-auto px-2 pb-3 pt-1.5">
+        <div className="space-y-0.5" ref={listRef}>
           {filteredTodos.map((todo, index) => {
             const isDragging = dragIndex === index;
             const isDragOver = dragOverIndex === index && dragIndex !== index;
@@ -669,8 +483,8 @@ const TodoView: React.FC = () => {
             <div key={todo.id} className="todo-task-group">
             <div
               data-todo-row-id={todo.id}
-              className={`todo-task-row group relative flex items-center gap-3 rounded-xl border px-4 py-3
-                ${todo.completed ? "border-transparent bg-bg-secondary/75 opacity-65" : "border-transparent bg-bg-primary/75 hover:border-border hover:bg-bg-primary"}
+              className={`todo-task-row group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5
+                ${todo.completed ? "opacity-60" : "hover:bg-bg-hover"}
                 ${isDragging ? "opacity-30" : ""}
                 ${isDragOver ? "bg-accent-light/35" : ""}`}
             >
@@ -753,6 +567,19 @@ const TodoView: React.FC = () => {
                   {doneSubtasks}/{subtasks.length}
                 </span>
               )}
+
+              <button
+                type="button"
+                onClick={() => setDescriptionEditorId(todo.id)}
+                className={`h-6 w-6 rounded-full flex items-center justify-center transition-all cursor-pointer
+                  ${Boolean(todo.description?.trim())
+                    ? "text-accent hover:bg-accent-light"
+                    : "text-text-muted opacity-0 group-hover:opacity-100 hover:bg-bg-hover hover:text-accent"}`}
+                title={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
+                aria-label={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
+              >
+                <AlignLeft size={12} />
+              </button>
 
               <button
                 type="button"
@@ -985,26 +812,48 @@ const TodoView: React.FC = () => {
               </button>
             </div>
 
+            {/* The body of the task, indented to the title column (px-2.5 10 +
+                grip 14 + gap 10 + slot 16 + gap 10 + toggle 28 + gap 10 = 98) so
+                it reads as this task's own text, not as a sibling row. */}
+            <div className="ml-[98px] mr-2 pb-0.5">
+              <TodoDescriptionCard
+                description={todo.description}
+                completed={todo.completed}
+                editing={descriptionEditorId === todo.id}
+                onEditingChange={(next) => setDescriptionEditorId(next ? todo.id : null)}
+                onSave={(value) => updateTodo(todo.id, { description: value || undefined })}
+              />
+            </div>
+
             {isExpanded && (
-              <div className="todo-subtask-list ml-[84px] mt-1 mb-1 space-y-0.5 border-l border-border/60 pl-3">
+              // The guide line sits at the parent circle's centre (px-2.5 + grip 14
+              // + gap 10 + expand slot 16 + gap 10 + half of the 28px toggle = 74),
+              // so the branch visually hangs off the box it belongs to.
+              <div className="todo-subtask-list ml-[74px] mt-0.5 mb-1 space-y-0.5 border-l border-border/60 pl-3">
                 {subtasks.map((subtask) => (
                   <div
                     key={subtask.id}
                     data-subtask-row-id={subtask.id}
-                    className="group/sub flex items-center gap-2 rounded-lg py-1.5 pr-2 transition-colors hover:bg-bg-hover/60"
+                    className="group/sub flex items-center gap-2 rounded-lg py-1 pr-2 transition-colors hover:bg-bg-hover/60"
                   >
+                    {/* Subtasks are a different rank of the same thing: the round
+                        toggle belongs to the parent item, a square one to a child. */}
                     <button
                       type="button"
                       onClick={() => toggleTodo(subtask.id)}
-                      className={`flex h-6 w-6 flex-shrink-0 cursor-pointer items-center justify-center rounded-full
-                        hover:bg-accent-light ${subtask.completed ? "todo-check-done" : ""}`}
+                      className={`flex h-5 w-5 flex-shrink-0 cursor-pointer items-center justify-center rounded
+                        transition-colors hover:bg-accent-light ${subtask.completed ? "todo-check-done" : ""}`}
                       aria-label={t(lang, "subtask")}
                     >
-                      {subtask.completed ? (
-                        <CheckCircle2 size={16} className="text-success" />
-                      ) : (
-                        <Circle size={16} className="text-text-muted transition-colors hover:text-accent" />
-                      )}
+                      <span
+                        className={`flex h-3 w-3 items-center justify-center rounded-[3px] border transition-colors ${
+                          subtask.completed
+                            ? "border-success bg-success text-white"
+                            : "border-text-muted/70 bg-transparent"
+                        }`}
+                      >
+                        {subtask.completed && <Check size={9} strokeWidth={3.5} />}
+                      </span>
                     </button>
 
                     {editingId === subtask.id ? (

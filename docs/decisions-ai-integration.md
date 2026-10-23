@@ -187,3 +187,16 @@
 1. GUI 手测：真实侧栏里连问两次、追问、以及对同一知识点的不同问法。
 2. 同档句子的重合阈值（当前 `keepsGoing` 取 2）是用 12 个示例问题的先验值，语料扩充后需复测；有 `scripts/smoke-manual-bm25.mts` 的语料一变就该重跑。
 3. 遗留：`hits` 会随对话持久化，新增的 `lineBreaks` 字段会让旧会话在读取时缺失（组装层容错为纯标点切分，质量略降但不报错）。
+
+## 第五轮：联网搜索改用 DeepSeek 官方搜索（2026-10-23）
+
+结论：删除 `search/bocha.ts`，新增 `search/deepseek.ts`（`POST https://api.deepseek.com/v1/tools/search`），注册表只留 `deepseek`，`DEFAULT_SEARCH_PROVIDER_ID = "deepseek"`。搜索不再有独立 Key：`aiStore` 删掉 `searchApiKey` / `hasSearchKey` / `saveSearchKey` / `clearSearchKey` / `verifySearchKey` 与 `ai/search-credentials.bin` 的读写（`storage.ts` 同步移除三个 cipher 函数），`sendMessage` 直接把已校验的聊天 key 传给搜索适配器，并把问题原文作为 `ori_question` 一起发。
+
+理由：
+
+1. **Bug 根因是「注册表只有一家 + 测试请求硬编码」**：`verifySearchKey` 永远打 `api.bochaai.com`，填 DeepSeek key 必然 401，于是「测试连接」对搜索永远失败。既然 DeepSeek 官方已提供搜索端点且与聊天同一把 key，独立 Key 只剩成本没有收益。
+2. **少一个凭据就少一类失败态**：`search-credentials.bin` 只增不减的旧 blob 不再读取，老用户启动不会因为解不开它而报错（读取路径整段删除，不是 try/catch 兜住）。
+3. **`ori_question` 让引擎拿到原始问法**：query 可能被改写或截断到 128 字符，`ori_question` 保留原句，排序质量更好。
+4. **失败降级保持不变**：搜索抛错仍只置 `searchError` 提示，不阻塞回答、不改变 `sending`。
+
+验证：`npm run build` 通过；`scripts/smoke-manual-bm25.mts` 21/21（手册/FAQ 的联网搜索条目已改为「复用同一把 DeepSeek Key」，Q20 仍独占其问法）。真实 key 的联网问答与来源标注待 GUI 手测。

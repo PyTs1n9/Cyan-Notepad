@@ -34,7 +34,7 @@ import {
   consumeDirtyNoteIds,
   isKnowledgeDirty,
 } from "./knowledgeDirty";
-import { fuseHits, isVectorReady } from "./vectorIndex";
+import { fuseHits, isVectorReady, scheduleChunkWarmup } from "./vectorIndex";
 
 /** Chunks are kept short so a top-1 hit reads as one digestible answer block. */
 const CHUNK_CHAR_LIMIT = 370;
@@ -211,6 +211,9 @@ async function buildIndex(): Promise<ManualIndex> {
   const next = createManualIndex(corpus);
   index = next;
   builtAt = Date.now();
+  // Embed the new chunks in idle time: the first question after any edit would
+  // otherwise pay for the whole corpus inside its own turn.
+  scheduleChunkWarmup(next.chunks);
   return next;
 }
 

@@ -50,6 +50,12 @@ export interface ChatRequest {
   tools?: ChatTool[];
   /** Called once per turn with the tool calls the model requested. */
   onToolCalls?: (calls: ChatToolCall[]) => void;
+  /**
+   * Called once when the backend reports why the turn ended. `"length"` means
+   * the answer was cut off by `maxTokens` (reasoning tokens count too), which
+   * the UI must surface instead of presenting a truncated answer as complete.
+   */
+  onFinish?: (reason: string) => void;
 }
 
 export interface ChatProvider {

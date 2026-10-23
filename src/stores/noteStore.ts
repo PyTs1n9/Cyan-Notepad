@@ -74,6 +74,8 @@ interface NoteState {
   updateCategory: (id: string, name: string) => void;
   toggleCategoryPinned: (id: string) => void;
   moveCategory: (id: string, parentId: string | null) => void;
+  /** Places `id` next to `targetId` inside the target's own parent folder. */
+  moveCategoryBeside: (id: string, targetId: string, position: DropPosition) => void;
   deleteCategory: (id: string) => void;
   reorderCategories: (fromIndex: number, toIndex: number, position?: DropPosition) => void;
   reorderNotes: (fromId: string, toId: string, position?: DropPosition) => void;
@@ -244,6 +246,48 @@ export const useNoteStore = create<NoteState>((set, get) => ({
             ? { ...category, parentId: target, order: nextOrder }
             : category,
         ),
+      };
+    }),
+
+  moveCategoryBeside: (id, targetId, position) =>
+    set((state) => {
+      const target = state.categories.find((category) => category.id === targetId);
+      const moved = state.categories.find((category) => category.id === id);
+      if (!target || !moved || target.id === id) return state;
+
+      // Same cycle guard as moveCategory: a folder may never land inside its
+      // own subtree, which the sibling insert would otherwise allow.
+      const descendantIds = new Set<string>();
+      const collectDescendants = (parent: string) => {
+        for (const category of state.categories) {
+          if ((category.parentId ?? null) === parent && !descendantIds.has(category.id)) {
+            descendantIds.add(category.id);
+            collectDescendants(category.id);
+          }
+        }
+      };
+      collectDescendants(id);
+      if (descendantIds.has(target.id)) return state;
+
+      const parentId = target.parentId ?? null;
+      const siblings = state.categories
+        .filter((category) => category.id !== id && (category.parentId ?? null) === parentId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      const targetIndex = siblings.findIndex((category) => category.id === targetId);
+      if (targetIndex < 0) return state;
+
+      // Re-derive the order of this sibling set only: a global reindex would
+      // renumber folders on other levels.
+      siblings.splice(targetIndex + (position === "after" ? 1 : 0), 0, moved);
+      const orderById = new Map(siblings.map((category, index) => [category.id, index]));
+
+      return {
+        categories: state.categories.map((category) => {
+          const order = orderById.get(category.id);
+          if (typeof order !== "number") return category;
+          return category.id === id ? { ...category, parentId, order } : { ...category, order };
+        }),
       };
     }),
 

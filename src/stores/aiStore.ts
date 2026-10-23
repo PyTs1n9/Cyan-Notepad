@@ -1,15 +1,13 @@
 import { create } from "zustand";
 import {
   deleteAiCredentialCipher,
-  deleteSearchCredentialCipher,
   loadAiCredentialCipher,
   loadAiPreferences,
-  loadSearchCredentialCipher,
   saveAiCredentialCipher,
   saveAiPreferences,
-  saveSearchCredentialCipher,
   loadAiConversations,
-  saveAiConversations,
+  deleteAiConversation,
+  saveAiConversation,
   type StoredAiChatMessage,
   type StoredAiPreferences,
 } from "@/utils/storage";
@@ -46,6 +44,23 @@ export const LOCAL_MODEL_ID = "local";
 const DEFAULT_POLISH_MODEL_ID = "deepseek";
 /** Deadline for the one-shot key checks in 设置 → AI 设置. */
 const KEY_TEST_TIMEOUT_MS = 15_000;
+/**
+ * Output budget per turn. 2048 was routinely eaten by reasoning tokens on
+ * thinking models, truncating the visible answer without any signal; 4096
+ * leaves room for thinking plus a full reply. Truncation is still possible and
+ * is now reported (`truncated`), never silent.
+ */
+const MAX_ANSWER_TOKENS = 4_096;
+
+/** Coarse stage of a turn, shown while the answer text is still empty. */
+export type AiTurnPhase = "retrieving" | "searching" | "thinking" | "writing";
+
+/** One web result the answer was built from; rendered as a clickable source. */
+export interface AiMessageSource {
+  title: string;
+  url: string;
+  siteName?: string;
+}
 
 export interface AiChatMessage {
   id: string;
@@ -66,6 +81,12 @@ export interface AiChatMessage {
   searchError?: boolean;
   /** Note writes this turn performed (full-permission mode); undo targets. */
   edits?: AiNoteEdit[];
+  /** Web results the turn was answered from (empty when search was off/failed). */
+  sources?: AiMessageSource[];
+  /** The turn hit `max_tokens`: the answer shown is cut off. */
+  truncated?: boolean;
+  /** Current stage of a streaming turn; cleared once text starts arriving. */
+  phase?: AiTurnPhase;
   /** Creation time (ms since epoch), shown on hover in the sidebar. */
   createdAt: number;
 }
@@ -123,9 +144,6 @@ interface AiState {
   chatModel: string;
   /** Selected 润色 model: a generative `ChatProvider` id. */
   polishModel: string;
-  /** Search-provider key (博查), in-memory plaintext only. */
-  searchApiKey: string | null;
-  hasSearchKey: boolean;
   /** Whether DeepSeek-mode turns run a real-time web search. */
   searchEnabled: boolean;
   /** Saved conversations (snapshot copies; the live view is `messages`). */
@@ -139,9 +157,6 @@ interface AiState {
   saveKey: (plain: string) => Promise<boolean>;
   clearKey: () => Promise<void>;
   verifyKey: (plain?: string) => Promise<boolean>;
-  saveSearchKey: (plain: string) => Promise<boolean>;
-  clearSearchKey: () => Promise<void>;
-  verifySearchKey: (plain?: string) => Promise<boolean>;
   setSearchEnabled: (enabled: boolean) => void;
   setNoteWriteMode: (mode: NoteWriteMode) => void;
   /** Roll back the note writes recorded on an assistant message (reverse order). */
@@ -203,8 +218,8 @@ function normalizeNoteWriteMode(value: unknown): NoteWriteMode {
 
 /**
  * 联网搜索 follows the recorded decision (docs/decisions-ai-integration.md #3:
- * 默认开启、可关闭), so an absent preference means enabled. It still only runs
- * when a search key exists.
+ * 默认开启、可关闭), so an absent preference means enabled. It reuses the chat
+ * key, so a configured chat key is all it needs.
  */
 function normalizeSearchEnabled(value: unknown): boolean {
   return value === undefined || value === null ? true : Boolean(value);
@@ -226,6 +241,17 @@ function normalizePolishModel(value: unknown): string {
  */
 function composeLocalAnswer(hits: ManualHit[], question: string): string {
   return composeLocalAnswerFromHit(hits, question);
+}
+
+/** Retarget a streaming turn's stage label (retrieval → search → thinking → write). */
+function setPhase(
+  set: StoreSet,
+  assistantId: string,
+  phase: AiTurnPhase | undefined,
+): void {
+  set((state) => ({
+    messages: state.messages.map((m) => (m.id === assistantId ? { ...m, phase } : m)),
+  }));
 }
 
 /**
@@ -298,36 +324,33 @@ function conversationTitleFrom(text: string): string {
 }
 
 /**
- * Upsert the active conversation from the live `messages` and persist the
- * whole list. Streaming flags are stripped so a restored session never
- * renders a stale "streaming" bubble.
+ * Upsert the active conversation from the live `messages` and persist it.
+ * Streaming flags are stripped so a restored session never renders a stale
+ * "streaming" bubble. Only this conversation's shard is written — the history
+ * list is not rewritten on every turn.
  */
 function syncConversations(set: StoreSet, get: StoreGet): void {
   const { conversations, activeConversationId, messages } = get();
   if (!activeConversationId) return;
   const snapshot = messages.map(
-    (m) => ({ ...m, streaming: false }) as unknown as StoredAiChatMessage,
+    (m) => ({ ...m, streaming: false, phase: undefined }) as unknown as StoredAiChatMessage,
   );
   const now = Date.now();
-  const existing = conversations.some((c) => c.id === activeConversationId);
+  const existing = conversations.find((c) => c.id === activeConversationId);
+  const active: AiConversation = existing
+    ? { ...existing, messages: snapshot, updatedAt: now }
+    : {
+        id: activeConversationId,
+        title: "",
+        createdAt: now,
+        updatedAt: now,
+        messages: snapshot,
+      };
   const next = existing
-    ? conversations.map((c) =>
-        c.id === activeConversationId
-          ? { ...c, messages: snapshot, updatedAt: now }
-          : c,
-      )
-    : [
-        ...conversations,
-        {
-          id: activeConversationId,
-          title: "",
-          createdAt: now,
-          updatedAt: now,
-          messages: snapshot,
-        },
-      ];
+    ? conversations.map((c) => (c.id === activeConversationId ? active : c))
+    : [...conversations, active];
   set({ conversations: next });
-  void saveAiConversations(next);
+  void saveAiConversation(active);
 }
 
 /** Persist-or-drop the current conversation when leaving it. */
@@ -341,7 +364,7 @@ function stashActiveConversation(set: StoreSet, get: StoreGet): void {
   // Empty chat: dropped, never listed.
   const next = get().conversations.filter((c) => c.id !== activeConversationId);
   set({ conversations: next });
-  void saveAiConversations(next);
+  void deleteAiConversation(activeConversationId);
 }
 
 type StoreSet = (
@@ -409,7 +432,7 @@ async function runGeneration(
       set((state) => ({
         sending: false,
         messages: state.messages.map((m) =>
-          m.id === assistantId ? { ...m, streaming: false } : m,
+          m.id === assistantId ? { ...m, streaming: false, phase: undefined } : m,
         ),
       }));
       syncConversations(set, get);
@@ -440,13 +463,17 @@ async function runGeneration(
   // blocked host is visible instead of silently answering without sources.
   let webResults: WebSearchResult[] = [];
   let searchFailed = false;
-  const { searchEnabled, searchApiKey } = get();
+  const { searchEnabled } = get();
   const searchProvider = getSearchProvider(DEFAULT_SEARCH_PROVIDER_ID);
-  if (searchEnabled && searchApiKey && searchProvider) {
+  // The search adapter shares the already-validated chat key: 联网搜索 adds no
+  // second credential, so its failure modes are the same as the chat call.
+  if (searchEnabled && searchProvider) {
+    setPhase(set, assistantId, "searching");
     try {
       webResults = await searchProvider.search({
-        apiKey: searchApiKey,
+        apiKey,
         query: question,
+        oriQuestion: question,
         count: 5,
         signal: controller.signal,
       });
@@ -464,7 +491,7 @@ async function runGeneration(
       set((state) => ({
         sending: false,
         messages: state.messages.map((m) =>
-          m.id === assistantId ? { ...m, streaming: false } : m,
+          m.id === assistantId ? { ...m, streaming: false, phase: undefined } : m,
         ),
       }));
       return;
@@ -517,19 +544,23 @@ async function runGeneration(
   const turnMessages: ChatMessage[] = [system, ...history, user];
   const tools = writeMode ? NOTE_WRITE_TOOLS : undefined;
   const edits: AiNoteEdit[] = [];
+  let truncated = false;
 
   try {
     for (let round = 0; ; round++) {
       let turnCalls: ChatToolCall[] = [];
+      setPhase(set, assistantId, "thinking");
       const turnText = await provider.stream({
         apiKey,
         messages: turnMessages,
         // The model streams reasoning before content; a tight cap lets thinking
-        // eat the budget and leaves the answer empty. 2048 covers thinking plus
-        // a full answer with room to spare.
-        maxTokens: 2048,
+        // eat the budget and leaves the answer empty.
+        maxTokens: MAX_ANSWER_TOKENS,
         signal: controller.signal,
         tools,
+        onFinish: (reason) => {
+          if (reason === "length") truncated = true;
+        },
         onToolCalls: (calls) => {
           turnCalls = calls;
         },
@@ -550,6 +581,7 @@ async function runGeneration(
       });
       if (!turnCalls.length || !tools || round >= MAX_TOOL_ROUNDS) break;
       turnMessages.push({ role: "assistant", content: turnText, toolCalls: turnCalls });
+      setPhase(set, assistantId, "writing");
       for (const call of turnCalls) {
         if (controller.signal.aborted) break;
         const result = await executeNoteTool(call);
@@ -562,13 +594,26 @@ async function runGeneration(
       }
       if (controller.signal.aborted) break;
     }
+    const sources: AiMessageSource[] | undefined = webResults.length
+      ? webResults
+          .filter((result) => /^https?:\/\//i.test(result.url))
+          .slice(0, 4)
+          .map((result) => ({
+            title: result.title || result.url,
+            url: result.url,
+            ...(result.siteName ? { siteName: result.siteName } : {}),
+          }))
+      : undefined;
     set((state) => ({
       messages: state.messages.map((m) =>
         m.id === assistantId
           ? {
               ...m,
               streaming: false,
+              phase: undefined,
               edits: edits.length ? edits : undefined,
+              sources,
+              truncated: truncated || undefined,
               searchError: searchFailed || undefined,
             }
           : m,
@@ -584,6 +629,7 @@ async function runGeneration(
           ? {
               ...m,
               streaming: false,
+              phase: undefined,
               errorCode: aiError.code,
               searchError: searchFailed || undefined,
             }
@@ -613,8 +659,6 @@ export const useAiStore = create<AiState>((set, get) => ({
   polishApplied: false,
   chatModel: LOCAL_MODEL_ID,
   polishModel: DEFAULT_POLISH_MODEL_ID,
-  searchApiKey: null,
-  hasSearchKey: false,
   searchEnabled: true,
   noteWriteMode: "readonly",
   conversations: [],
@@ -626,9 +670,8 @@ export const useAiStore = create<AiState>((set, get) => ({
     // Start loading the embedding model in the background so the first
     // question already benefits from the semantic channel (progressive).
     warmUpVectorIndex();
-    const [cipher, searchCipher, prefs, savedConversations] = await Promise.all([
+    const [cipher, prefs, savedConversations] = await Promise.all([
       loadAiCredentialCipher(),
-      loadSearchCredentialCipher(),
       loadAiPreferences(),
       loadAiConversations(),
     ]);
@@ -654,21 +697,10 @@ export const useAiStore = create<AiState>((set, get) => ({
       conversations: savedConversations,
       ...restoredConv,
     };
-    let searchApiKey: string | null = null;
-    if (searchCipher) {
-      try {
-        searchApiKey = await decryptSecret(searchCipher);
-      } catch {
-        // Same DPAPI caveat as the chat key: unreadable blob is dropped.
-        searchApiKey = null;
-      }
-    }
     if (!cipher) {
       set({
         apiKey: null,
         hasKey: false,
-        searchApiKey,
-        hasSearchKey: Boolean(searchApiKey),
         loaded: true,
         status: "idle",
         ...restored,
@@ -680,8 +712,6 @@ export const useAiStore = create<AiState>((set, get) => ({
       set({
         apiKey: plain,
         hasKey: true,
-        searchApiKey,
-        hasSearchKey: Boolean(searchApiKey),
         loaded: true,
         status: "idle",
         ...restored,
@@ -693,8 +723,6 @@ export const useAiStore = create<AiState>((set, get) => ({
       set({
         apiKey: null,
         hasKey: false,
-        searchApiKey,
-        hasSearchKey: Boolean(searchApiKey),
         loaded: true,
         status: "idle",
         lastErrorCode: aiError.code,
@@ -753,9 +781,15 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
     set({ status: "testing" });
     try {
-      // The stored key belongs to the chat provider family; validate against
-      // the default preset. A per-provider key map is a future concern.
-      const provider = getChatProvider(DEFAULT_POLISH_MODEL_ID);
+      // Validate against the provider the picker actually points at. A hardcoded
+      // preset reported 401 for every other vendor's key, which made the
+      // extension slot in decisions #11 unusable; 小青 is local, so fall back to
+      // the polish model's provider in that case.
+      const selected = get().chatModel;
+      const provider =
+        (selected === LOCAL_MODEL_ID ? undefined : getChatProvider(selected)) ??
+        getChatProvider(get().polishModel) ??
+        getChatProvider(DEFAULT_POLISH_MODEL_ID);
       if (!provider) throw new AiError("bad-response", "no chat provider registered");
       await withTimeout((signal) => provider.testKey(key, signal), KEY_TEST_TIMEOUT_MS);
       set({ status: "idle", lastErrorCode: null, lastErrorDetail: null });
@@ -828,68 +862,6 @@ export const useAiStore = create<AiState>((set, get) => ({
     syncConversations(set, get);
   },
 
-  saveSearchKey: async (plain) => {
-    const trimmed = plain.trim();
-    if (!trimmed) {
-      set({ lastErrorCode: "missing-key", lastErrorDetail: null });
-      return false;
-    }
-    set({ status: "saving" });
-    try {
-      const cipher = await encryptSecret(trimmed);
-      await saveSearchCredentialCipher(cipher);
-      set({
-        searchApiKey: trimmed,
-        hasSearchKey: true,
-        status: "idle",
-        lastErrorCode: null,
-        lastErrorDetail: null,
-      });
-      return true;
-    } catch (error) {
-      const aiError = toAiError(error);
-      set({
-        status: "idle",
-        lastErrorCode: aiError.code,
-        lastErrorDetail: aiError.detail ?? null,
-      });
-      return false;
-    }
-  },
-
-  clearSearchKey: async () => {
-    await deleteSearchCredentialCipher();
-    set({
-      searchApiKey: null,
-      hasSearchKey: false,
-      lastErrorCode: null,
-      lastErrorDetail: null,
-    });
-  },
-
-  verifySearchKey: async (plain) => {
-    const key = plain?.trim() || get().searchApiKey;
-    const provider = getSearchProvider(DEFAULT_SEARCH_PROVIDER_ID);
-    if (!key || !provider) {
-      set({ lastErrorCode: "missing-key", lastErrorDetail: null });
-      return false;
-    }
-    set({ status: "testing" });
-    try {
-      await withTimeout((signal) => provider.testKey(key, signal), KEY_TEST_TIMEOUT_MS);
-      set({ status: "idle", lastErrorCode: null, lastErrorDetail: null });
-      return true;
-    } catch (error) {
-      const aiError = toAiError(error);
-      set({
-        status: "idle",
-        lastErrorCode: aiError.code,
-        lastErrorDetail: aiError.detail ?? null,
-      });
-      return false;
-    }
-  },
-
   sendMessage: async (text) => {
     const trimmed = text.trim();
     // The re-entry guard has to flip before the first await: retrieval takes a
@@ -908,7 +880,15 @@ export const useAiStore = create<AiState>((set, get) => ({
       messages: [
         ...state.messages,
         { id: newId(), role: "user", content: trimmed, hits: [], createdAt: now },
-        { id: assistantId, role: "assistant", content: "", hits: [], streaming: true, createdAt: now },
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          hits: [],
+          streaming: true,
+          phase: "retrieving" as AiTurnPhase,
+          createdAt: now,
+        },
       ],
       sending: true,
       activeConversationId: conversationId,
@@ -946,7 +926,7 @@ export const useAiStore = create<AiState>((set, get) => ({
       set((state) => ({
         sending: false,
         messages: state.messages.map((m) =>
-          m.id === assistantId ? { ...m, streaming: false } : m,
+          m.id === assistantId ? { ...m, streaming: false, phase: undefined } : m,
         ),
       }));
       syncConversations(set, get);
@@ -986,6 +966,7 @@ export const useAiStore = create<AiState>((set, get) => ({
         content: "",
         hits: [],
         streaming: true,
+        phase: "retrieving",
         createdAt: Date.now(),
       });
       return { messages: next, sending: true };
@@ -1005,7 +986,7 @@ export const useAiStore = create<AiState>((set, get) => ({
       set((state) => ({
         sending: false,
         messages: state.messages.map((m) =>
-          m.id === newAssistantId ? { ...m, streaming: false } : m,
+          m.id === newAssistantId ? { ...m, streaming: false, phase: undefined } : m,
         ),
       }));
       syncConversations(set, get);
@@ -1060,7 +1041,7 @@ export const useAiStore = create<AiState>((set, get) => ({
         ? state.conversations.filter((c) => c.id !== activeConversationId)
         : state.conversations,
     }));
-    void saveAiConversations(get().conversations);
+    if (activeConversationId) void deleteAiConversation(activeConversationId);
   },
 
   newConversation: () => {
@@ -1090,13 +1071,13 @@ export const useAiStore = create<AiState>((set, get) => ({
       c.id === id ? { ...c, title: trimmed } : c,
     );
     set({ conversations: next });
-    void saveAiConversations(next);
+    const renamed = next.find((c) => c.id === id);
+    if (renamed) void saveAiConversation(renamed);
   },
 
   deleteConversation: (id) => {
-    const next = get().conversations.filter((c) => c.id !== id);
-    set({ conversations: next });
-    void saveAiConversations(next);
+    set({ conversations: get().conversations.filter((c) => c.id !== id) });
+    void deleteAiConversation(id);
     if (get().activeConversationId === id) {
       set({ activeConversationId: null, messages: [] });
     }

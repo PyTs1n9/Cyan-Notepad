@@ -37,6 +37,30 @@ export function normalizeStickyOpacity(value: unknown): number {
   return Math.min(MAX_STICKY_OPACITY, Math.max(MIN_STICKY_OPACITY, Math.round(value)));
 }
 
+// Frosted-glass (backdrop-blur) tuning for the panel shell. Two profiles are
+// kept separately: the base profile applies whenever glass is enabled, while the
+// background profile overrides it only while a custom background image is set
+// (a busier backdrop needs more blur and a lower tint to stay readable).
+export const DEFAULT_GLASS_ENABLED = true;
+export const DEFAULT_GLASS_BLUR = 12;
+export const DEFAULT_GLASS_TINT = 80;
+export const DEFAULT_GLASS_SATURATE = 120;
+export const DEFAULT_GLASS_BLUR_BG = 20;
+export const DEFAULT_GLASS_TINT_BG = 72;
+export const DEFAULT_GLASS_SATURATE_BG = 140;
+
+export const MIN_GLASS_BLUR = 0;
+export const MAX_GLASS_BLUR = 40;
+export const MIN_GLASS_TINT = 0;
+export const MAX_GLASS_TINT = 100;
+export const MIN_GLASS_SATURATE = 0;
+export const MAX_GLASS_SATURATE = 200;
+
+function normalizeGlassNumber(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
 export interface CustomColors {
   bgPrimary: string;
   bgSecondary: string;
@@ -101,6 +125,13 @@ interface SettingsState {
   updateReminderDisabledForVersion: string | null;
   sidebarCategoryRatio: number | null;
   expandedFolderIds: string[] | null;
+  glassEnabled: boolean;
+  glassBlur: number;
+  glassTint: number;
+  glassSaturate: number;
+  glassBlurBg: number;
+  glassTintBg: number;
+  glassSaturateBg: number;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
@@ -117,6 +148,13 @@ interface SettingsState {
   setUpdateReminderDisabledForVersion: (version: string | null) => void;
   setSidebarCategoryRatio: (ratio: number | null) => void;
   setExpandedFolderIds: (ids: string[] | null) => void;
+  setGlassEnabled: (enabled: boolean) => void;
+  setGlassBlur: (blur: number) => void;
+  setGlassTint: (tint: number) => void;
+  setGlassSaturate: (saturate: number) => void;
+  setGlassBlurBg: (blur: number) => void;
+  setGlassTintBg: (tint: number) => void;
+  setGlassSaturateBg: (saturate: number) => void;
   loadSettings: (settings: {
     theme?: ThemeType;
     lang?: LangType;
@@ -132,6 +170,13 @@ interface SettingsState {
     updateReminderDisabledForVersion?: string | null;
     sidebarCategoryRatio?: number | null;
     expandedFolderIds?: string[] | null;
+    glassEnabled?: boolean;
+    glassBlur?: number;
+    glassTint?: number;
+    glassSaturate?: number;
+    glassBlurBg?: number;
+    glassTintBg?: number;
+    glassSaturateBg?: number;
   }) => void;
 }
 
@@ -150,6 +195,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateReminderDisabledForVersion: null,
   sidebarCategoryRatio: null,
   expandedFolderIds: null,
+  glassEnabled: DEFAULT_GLASS_ENABLED,
+  glassBlur: DEFAULT_GLASS_BLUR,
+  glassTint: DEFAULT_GLASS_TINT,
+  glassSaturate: DEFAULT_GLASS_SATURATE,
+  glassBlurBg: DEFAULT_GLASS_BLUR_BG,
+  glassTintBg: DEFAULT_GLASS_TINT_BG,
+  glassSaturateBg: DEFAULT_GLASS_SATURATE_BG,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -201,6 +253,26 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setExpandedFolderIds: (ids) => set({ expandedFolderIds: normalizeExpandedFolderIds(ids) }),
 
+  setGlassEnabled: (glassEnabled) => set({ glassEnabled }),
+
+  setGlassBlur: (glassBlur) =>
+    set({ glassBlur: normalizeGlassNumber(glassBlur, MIN_GLASS_BLUR, MAX_GLASS_BLUR, DEFAULT_GLASS_BLUR) }),
+
+  setGlassTint: (glassTint) =>
+    set({ glassTint: normalizeGlassNumber(glassTint, MIN_GLASS_TINT, MAX_GLASS_TINT, DEFAULT_GLASS_TINT) }),
+
+  setGlassSaturate: (glassSaturate) =>
+    set({ glassSaturate: normalizeGlassNumber(glassSaturate, MIN_GLASS_SATURATE, MAX_GLASS_SATURATE, DEFAULT_GLASS_SATURATE) }),
+
+  setGlassBlurBg: (glassBlurBg) =>
+    set({ glassBlurBg: normalizeGlassNumber(glassBlurBg, MIN_GLASS_BLUR, MAX_GLASS_BLUR, DEFAULT_GLASS_BLUR_BG) }),
+
+  setGlassTintBg: (glassTintBg) =>
+    set({ glassTintBg: normalizeGlassNumber(glassTintBg, MIN_GLASS_TINT, MAX_GLASS_TINT, DEFAULT_GLASS_TINT_BG) }),
+
+  setGlassSaturateBg: (glassSaturateBg) =>
+    set({ glassSaturateBg: normalizeGlassNumber(glassSaturateBg, MIN_GLASS_SATURATE, MAX_GLASS_SATURATE, DEFAULT_GLASS_SATURATE_BG) }),
+
   loadSettings: (settings) =>
     set({
       theme: settings.theme || "blue",
@@ -219,5 +291,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         : null,
       sidebarCategoryRatio: normalizeSidebarCategoryRatio(settings.sidebarCategoryRatio),
       expandedFolderIds: normalizeExpandedFolderIds(settings.expandedFolderIds),
+      glassEnabled: settings.glassEnabled !== false,
+      glassBlur: normalizeGlassNumber(settings.glassBlur, MIN_GLASS_BLUR, MAX_GLASS_BLUR, DEFAULT_GLASS_BLUR),
+      glassTint: normalizeGlassNumber(settings.glassTint, MIN_GLASS_TINT, MAX_GLASS_TINT, DEFAULT_GLASS_TINT),
+      glassSaturate: normalizeGlassNumber(settings.glassSaturate, MIN_GLASS_SATURATE, MAX_GLASS_SATURATE, DEFAULT_GLASS_SATURATE),
+      glassBlurBg: normalizeGlassNumber(settings.glassBlurBg, MIN_GLASS_BLUR, MAX_GLASS_BLUR, DEFAULT_GLASS_BLUR_BG),
+      glassTintBg: normalizeGlassNumber(settings.glassTintBg, MIN_GLASS_TINT, MAX_GLASS_TINT, DEFAULT_GLASS_TINT_BG),
+      glassSaturateBg: normalizeGlassNumber(settings.glassSaturateBg, MIN_GLASS_SATURATE, MAX_GLASS_SATURATE, DEFAULT_GLASS_SATURATE_BG),
     }),
 }));

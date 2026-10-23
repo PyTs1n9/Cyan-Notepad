@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
-import { EditorView, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
+import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { basicSetup } from "codemirror";
@@ -17,6 +17,8 @@ interface MarkdownSourceEditorProps {
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
   onScroll: (view: EditorView) => void;
   onViewChange: (view: EditorView | null) => void;
+  /** Mod-Alt-t handler; the note editor owns what gets inserted. */
+  onInsertTable?: () => void;
   fontSize: number;
 }
 
@@ -69,12 +71,17 @@ export default function MarkdownSourceEditor({
   onHistoryChange,
   onScroll,
   onViewChange,
+  onInsertTable,
   fontSize,
 }: MarkdownSourceEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const latestValueRef = useRef(value);
   const latestFontSizeRef = useRef(fontSize);
+  // The editor is created once; route the shortcut through a ref so a new
+  // callback identity never tears the whole CodeMirror instance down.
+  const insertTableRef = useRef(onInsertTable);
+  insertTableRef.current = onInsertTable;
   const fontSizeCompartment = useMemo(() => new Compartment(), []);
   latestValueRef.current = value;
   latestFontSizeRef.current = fontSize;
@@ -93,6 +100,16 @@ export default function MarkdownSourceEditor({
         fontSizeCompartment.of(codeMirrorFontSizeTheme(latestFontSizeRef.current)),
         EditorView.lineWrapping,
         literalTabIndentation,
+        keymap.of([
+          {
+            key: "Mod-Alt-t",
+            run: () => {
+              if (!insertTableRef.current) return false;
+              insertTableRef.current();
+              return true;
+            },
+          },
+        ]),
         EditorView.contentAttributes.of({ spellcheck: "false" }),
         codeMirrorPlaceholder(placeholder),
         EditorView.updateListener.of((update) => {

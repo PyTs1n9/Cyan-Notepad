@@ -36,7 +36,13 @@ import type {
 } from "@/stores/settingsStore";
 import {
   DEFAULT_SHORTCUTS,
+  MAX_GLASS_BLUR,
+  MAX_GLASS_SATURATE,
+  MAX_GLASS_TINT,
   MAX_STICKY_OPACITY,
+  MIN_GLASS_BLUR,
+  MIN_GLASS_SATURATE,
+  MIN_GLASS_TINT,
   MIN_STICKY_OPACITY,
   THEME_COLORS,
   TRASH_RETENTION_DISABLED,
@@ -80,6 +86,39 @@ function getUploadImageExtension(file: File): string | null {
   return extension && ["jpg", "jpeg", "png", "webp"].includes(extension) ? extension : null;
 }
 
+interface GlassSliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  unit: "px" | "%";
+  disabled: boolean;
+  onChange: (value: number) => void;
+}
+
+/** Labelled range row for the frosted-glass tuning knobs. */
+const GlassSlider: React.FC<GlassSliderProps> = ({ label, value, min, max, unit, disabled, onChange }) => (
+  <label className={`block min-w-0 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
+    <span className="mb-1 flex items-center justify-between gap-2">
+      <span className="truncate text-xs text-text-secondary">{label}</span>
+      <span className="flex-shrink-0 text-xs font-medium tabular-nums text-accent">
+        {value}{unit}
+      </span>
+    </span>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={1}
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(Number(event.target.value))}
+      aria-label={label}
+      className="block h-2 w-full cursor-pointer accent-accent disabled:cursor-not-allowed"
+    />
+  </label>
+);
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth }) => {
   const {
     theme,
@@ -91,6 +130,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     autoSaveInterval,
     stickyOpacity,
     trashRetentionDays,
+    glassEnabled,
+    glassBlur,
+    glassTint,
+    glassSaturate,
+    glassBlurBg,
+    glassTintBg,
+    glassSaturateBg,
     setTheme,
     setLang,
     setCustomColors,
@@ -102,6 +148,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     setAutoSaveInterval,
     setStickyOpacity,
     setTrashRetentionDays,
+    setGlassEnabled,
+    setGlassBlur,
+    setGlassTint,
+    setGlassSaturate,
+    setGlassBlurBg,
+    setGlassTintBg,
+    setGlassSaturateBg,
   } = useSettingsStore();
   const { user, loading: authLoading, error: authError, signOut, updateProfile, updatePassword, clearError } = useAuthStore();
   const activeAvatarCache = typeof user?.user_metadata?.avatar_cache === "string"
@@ -577,7 +630,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        className="relative flex h-[min(680px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
+        className="isolate surface-glass surface-glass--editor relative flex h-[min(680px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
       >
         <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-5">
           <h1 id="settings-title" className="text-base font-semibold text-text-primary">
@@ -1062,6 +1115,105 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                         </div>
                       </div>
                     )}
+                  </section>
+
+                  <section className="rounded-xl border border-border bg-bg-secondary/35 p-4">
+                    <div className="mb-4 flex items-start gap-2">
+                      <SlidersHorizontal size={16} className="mt-0.5 flex-shrink-0 text-accent" />
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-medium text-text-primary">{t(lang, "glassGroup")}</h3>
+                        <p className="mt-1 text-xs leading-relaxed text-text-muted">{t(lang, "glassGroupHint")}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-primary px-3 py-2.5">
+                      <span className="truncate text-xs font-medium text-text-primary">
+                        {t(lang, "glassEnable")}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={glassEnabled}
+                        aria-label={t(lang, "glassEnable")}
+                        onClick={() => setGlassEnabled(!glassEnabled)}
+                        className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors cursor-pointer ${
+                          glassEnabled ? "bg-accent" : "bg-bg-active"
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-[left] duration-150 ${
+                            glassEnabled ? "left-[1.125rem]" : "left-0.5"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className={`mt-4 space-y-3 transition-opacity ${glassEnabled ? "" : "opacity-50"}`}>
+                      <p className="text-xs font-semibold text-text-secondary">{t(lang, "glassBaseGroup")}</p>
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <GlassSlider
+                          label={t(lang, "glassBlur")}
+                          value={glassBlur}
+                          min={MIN_GLASS_BLUR}
+                          max={MAX_GLASS_BLUR}
+                          unit="px"
+                          disabled={!glassEnabled}
+                          onChange={setGlassBlur}
+                        />
+                        <GlassSlider
+                          label={t(lang, "glassTint")}
+                          value={glassTint}
+                          min={MIN_GLASS_TINT}
+                          max={MAX_GLASS_TINT}
+                          unit="%"
+                          disabled={!glassEnabled}
+                          onChange={setGlassTint}
+                        />
+                        <GlassSlider
+                          label={t(lang, "glassSaturate")}
+                          value={glassSaturate}
+                          min={MIN_GLASS_SATURATE}
+                          max={MAX_GLASS_SATURATE}
+                          unit="%"
+                          disabled={!glassEnabled}
+                          onChange={setGlassSaturate}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={`mt-4 space-y-3 border-t border-border pt-4 transition-opacity ${glassEnabled ? "" : "opacity-50"}`}>
+                      <p className="text-xs font-semibold text-text-secondary">{t(lang, "glassBgGroup")}</p>
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <GlassSlider
+                          label={t(lang, "glassBlur")}
+                          value={glassBlurBg}
+                          min={MIN_GLASS_BLUR}
+                          max={MAX_GLASS_BLUR}
+                          unit="px"
+                          disabled={!glassEnabled}
+                          onChange={setGlassBlurBg}
+                        />
+                        <GlassSlider
+                          label={t(lang, "glassTint")}
+                          value={glassTintBg}
+                          min={MIN_GLASS_TINT}
+                          max={MAX_GLASS_TINT}
+                          unit="%"
+                          disabled={!glassEnabled}
+                          onChange={setGlassTintBg}
+                        />
+                        <GlassSlider
+                          label={t(lang, "glassSaturate")}
+                          value={glassSaturateBg}
+                          min={MIN_GLASS_SATURATE}
+                          max={MAX_GLASS_SATURATE}
+                          unit="%"
+                          disabled={!glassEnabled}
+                          onChange={setGlassSaturateBg}
+                        />
+                      </div>
+                    </div>
                   </section>
                 </div>
               )}

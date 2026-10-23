@@ -61,6 +61,9 @@ function handleMessage(event: MessageEvent): void {
     | { type: "error"; id?: number; message: string };
   if (data.type === "ready") {
     ready = true;
+    // The model just finished loading. If a corpus was queued while we were
+    // waiting, start its warmup now instead of on the next user question.
+    if (warmupChunks) scheduleChunkWarmup(warmupChunks);
     return;
   }
   if (data.type === "vectors") {
@@ -111,6 +114,84 @@ function ensureWorker(): Worker | null {
 /** Kick model loading early (e.g. when the assistant sidebar opens). */
 export function warmUpVectorIndex(): void {
   ensureWorker();
+}
+
+/**
+ * Pre-embed the current chunk set while the app is idle.
+ *
+ * Without this the *first* question after a corpus change pays for every
+ * missing chunk vector inside the turn (batches of 32, 10s each) — measured as
+ * the largest single cause of cold-start latency. Warming moves that work into
+ * idle time, so the question only ever embeds itself.
+ */
+let warmupChunks: ManualChunk[] | null = null;
+let warmupScheduled = false;
+let warming = false;
+
+const WARMUP_IDLE_TIMEOUT_MS = 3_000;
+const WARMUP_FALLBACK_DELAY_MS = 600;
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+};
+
+function scheduleIdle(run: () => void): void {
+  const scope = window as IdleWindow;
+  if (typeof scope.requestIdleCallback === "function") {
+    scope.requestIdleCallback(run, { timeout: WARMUP_IDLE_TIMEOUT_MS });
+    return;
+  }
+  window.setTimeout(run, WARMUP_FALLBACK_DELAY_MS);
+}
+
+export function scheduleChunkWarmup(chunks: ManualChunk[]): void {
+  if (failed) return;
+  warmupChunks = chunks;
+  ensureWorker();
+  if (!ready || warmupScheduled || warming) return;
+  warmupScheduled = true;
+  scheduleIdle(() => {
+    warmupScheduled = false;
+    void runChunkWarmup();
+  });
+}
+
+async function runChunkWarmup(): Promise<void> {
+  if (warming || failed || !ready) return;
+  const chunks = warmupChunks;
+  if (!chunks?.length) return;
+  warming = true;
+  try {
+    for (let start = 0; start < chunks.length; start += CHUNK_BATCH) {
+      const batch = chunks
+        .slice(start, start + CHUNK_BATCH)
+        .filter((chunk) => !chunkVectorKeys.has(chunkKey(chunk)));
+      if (batch.length === 0) continue;
+      // A real query is in flight: it embeds what it needs, and running a
+      // second batch now would only compete with it for the worker.
+      if (pending.size > 0) return;
+      let vectors: number[][];
+      try {
+        vectors = await embed(
+          batch.map((chunk) => chunk.text),
+          false,
+          CHUNK_BATCH_TIMEOUT_MS,
+        );
+      } catch (error) {
+        console.warn("ai: chunk warmup stopped", error);
+        return;
+      }
+      batch.forEach((chunk, i) => {
+        const key = chunkKey(chunk);
+        if (!chunkVectorKeys.has(key) && vectors[i]) {
+          chunkVectorKeys.add(key);
+          chunkVectors.push({ key, vector: vectors[i] });
+        }
+      });
+    }
+  } finally {
+    warming = false;
+  }
 }
 
 export function isVectorReady(): boolean {

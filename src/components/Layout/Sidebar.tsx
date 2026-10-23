@@ -7,7 +7,7 @@ import {
   Trash2,
 } from "lucide-react";
 import NoteTree from "@/components/Layout/NoteTree";
-import { useNoteStore } from "@/stores/noteStore";
+import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { TRASH_RETENTION_FOREVER, useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import { deleteNoteToTrash } from "@/utils/noteDeletion";
@@ -46,6 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     addCategory,
     deleteCategory,
   } = useNoteStore();
+  const activeCategoryId = useNoteStore((s) => s.activeCategoryId);
   const lang = useSettingsStore((s) => s.lang);
   const trashRetentionDays = useSettingsStore((s) => s.trashRetentionDays);
   const trashEnabled = trashRetentionDays !== 0;
@@ -78,6 +79,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     onViewChange("note");
   };
 
+  // The header button nests into the selected folder. The uncategorized bucket
+  // is a virtual folder, so it can never act as a parent.
+  const newFolderParentId =
+    activeCategoryId === UNCATEGORIZED_CATEGORY_ID ? null : activeCategoryId ?? null;
+
   const handleDeleteCategory = (category: NoteCategory) => {
     if (confirm(`${t(lang, "confirmDeleteCategory")}${category.name}"?`)) {
       deleteCategory(category.id);
@@ -98,9 +104,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="app-interactive-surface w-full h-full bg-bg-sidebar flex flex-col">
+    <aside className="app-interactive-surface w-full h-full flex flex-col">
       {!collapsed && (
-        <div className="flex h-9 shrink-0 items-center justify-between gap-2 px-3">
+        // h-9 matches the note tab bar and the AI sidebar header, so this
+        // border lands on the same line across all three cards.
+        <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
           <h2 className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
             {t(lang, "explorer")}
           </h2>
@@ -117,7 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <Plus size={14} />
             </button>
             <button
-              onClick={() => handleCreateCategory(null)}
+              onClick={() => handleCreateCategory(newFolderParentId)}
               className="flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
               title={t(lang, "newCategory")}
               aria-label={t(lang, "newCategory")}
@@ -150,7 +158,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <Plus size={16} />
           </button>
           <button
-            onClick={() => handleCreateCategory(null)}
+            onClick={() => handleCreateCategory(newFolderParentId)}
             className={`${actionBase} ${actionSecondary} ${actionCollapsed} mt-2`}
             title={t(lang, "newCategory")}
           >

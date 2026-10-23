@@ -6,6 +6,7 @@ const CUSTOM_PROPS = [
   "--color-bg-primary",
   "--color-bg-secondary",
   "--color-bg-sidebar",
+  "--color-bg-shell",
   "--color-text-primary",
   "--color-text-secondary",
   "--color-text-muted",
@@ -18,6 +19,19 @@ const CUSTOM_PROPS = [
   "--color-danger",
 ] as const;
 
+/** Rough relative brightness of a #rrggbb color; enough to split light/dark. */
+function luma(hex: string): number {
+  const value = hex.trim().replace("#", "");
+  const full = value.length === 3
+    ? value.split("").map((char) => char + char).join("")
+    : value;
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = Number.parseInt(full.slice(offset, offset + 2), 16);
+    return Number.isFinite(channel) ? channel : 0;
+  });
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
 export function applyTheme(theme: ThemeType, customColors: CustomColors | null): void {
   const root = document.documentElement;
 
@@ -26,6 +40,13 @@ export function applyTheme(theme: ThemeType, customColors: CustomColors | null):
 
   if (theme === "custom" && customColors) {
     root.classList.add("theme-custom");
+    // The gutter has to stay one step away from the panel colors, otherwise the
+    // translucent cards stop reading as lifted off the shell.
+    const gutterDarken = luma(customColors.bgPrimary) > 0.5 ? 16 : 22;
+    root.style.setProperty(
+      "--color-bg-shell",
+      `color-mix(in srgb, ${customColors.bgPrimary} ${100 - gutterDarken}%, #000)`,
+    );
     root.style.setProperty("--color-bg-primary", customColors.bgPrimary);
     root.style.setProperty("--color-bg-secondary", customColors.bgSecondary);
     root.style.setProperty("--color-bg-sidebar", customColors.bgSidebar);

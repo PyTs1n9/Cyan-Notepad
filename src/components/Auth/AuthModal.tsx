@@ -160,7 +160,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 px-4">
       <section
-        className="w-full max-w-[390px] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
+        className="isolate surface-glass surface-glass--editor w-full max-w-[390px] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-title"

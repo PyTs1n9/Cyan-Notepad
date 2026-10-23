@@ -10,6 +10,12 @@ import {
   resolveRightSidebarWidth,
   resolveSidebarWidth,
 } from "@/components/Layout/sidebarLayout";
+import {
+  ACTIVITY_BAR_WIDTH,
+  getShellMetrics,
+  leftSidebarOffset,
+  rightSidebarLimit,
+} from "@/components/Layout/shellLayout";
 import TitleBar from "@/components/Layout/TitleBar";
 import NoteTabBar from "@/components/Layout/NoteTabBar";
 import TodoView from "@/components/Todo/TodoView";
@@ -71,10 +77,11 @@ import type { Todo, Note, ViewType } from "@/types";
 import TurndownService from "turndown";
 
 const COLLAPSED_WIDTH = 0;
-const ACTIVITY_BAR_WIDTH = 48;
 const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
+const loadWorkspaceSidebar = () => import("@/components/Workspace/WorkspaceSidebar");
 const WorkspaceView = lazy(loadWorkspaceView);
-type ResizableSidebar = "notebook" | "workspace" | "ai";
+const WorkspaceSidebar = lazy(loadWorkspaceSidebar);
+type ResizableSidebar = "notebook" | "ai";
 const handledPasswordRecoveryUrls = new Set<string>();
 
 function escapeHtml(text: string): string {
@@ -167,8 +174,6 @@ export default function App() {
   const [initialized, setInitialized] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [workspaceSidebarWidth, setWorkspaceSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
-  const [workspaceSidebarCollapsed, setWorkspaceSidebarCollapsed] = useState(false);
   const [aiSidebarWidth, setAiSidebarWidth] = useState(AI_SIDEBAR_WIDTH);
   // Mirrors resizingSidebar as state so the resize handle stays mounted while a
   // drag crosses the collapse threshold (see SIDEBAR_COLLAPSE_THRESHOLD).
@@ -178,6 +183,11 @@ export default function App() {
   // transition has finished so ordinary dragging stays instant.
   const [collapseAnimating, setCollapseAnimating] = useState(false);
   const [customBackgroundUrl, setCustomBackgroundUrl] = useState<string | null>(null);
+  // Shell margin and gutter flip at a single breakpoint; keeping them in state
+  // lets the inline CSS variables follow the window without a CSS-only path.
+  const [shell, setShell] = useState(() => getShellMetrics(
+    typeof document === "undefined" ? 1200 : document.documentElement.clientWidth,
+  ));
   const appRootRef = useRef<HTMLDivElement>(null);
   const resizingSidebar = useRef<ResizableSidebar | null>(null);
   const collapseAnimTimer = useRef<number | null>(null);
@@ -217,10 +227,18 @@ export default function App() {
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
   const expandedFolderIds = useSettingsStore((s) => s.expandedFolderIds);
+  const glassEnabled = useSettingsStore((s) => s.glassEnabled);
+  const glassBlur = useSettingsStore((s) => s.glassBlur);
+  const glassTint = useSettingsStore((s) => s.glassTint);
+  const glassSaturate = useSettingsStore((s) => s.glassSaturate);
+  const glassBlurBg = useSettingsStore((s) => s.glassBlurBg);
+  const glassTintBg = useSettingsStore((s) => s.glassTintBg);
+  const glassSaturateBg = useSettingsStore((s) => s.glassSaturateBg);
   const setUpdateReminderDisabledForVersion = useSettingsStore((s) => s.setUpdateReminderDisabledForVersion);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
   const initializeAuth = useAuthStore((s) => s.initialize);
   const autoLoginLoading = useAuthStore((s) => s.autoLoginLoading);
+  const authUser = useAuthStore((s) => s.user);
   const handlePasswordRecoveryUrl = useAuthStore((s) => s.handlePasswordRecoveryUrl);
 
   useEffect(() => {
@@ -268,6 +286,7 @@ export default function App() {
   // collaborative editor is loaded separately only when a document is opened.
   useEffect(() => {
     void loadWorkspaceView();
+    void loadWorkspaceSidebar();
   }, []);
 
   // Load data on mount
@@ -315,6 +334,13 @@ export default function App() {
           updateReminderDisabledForVersion?: string | null;
           sidebarCategoryRatio?: number | null;
           expandedFolderIds?: string[] | null;
+          glassEnabled?: boolean;
+          glassBlur?: number;
+          glassTint?: number;
+          glassSaturate?: number;
+          glassBlurBg?: number;
+          glassTintBg?: number;
+          glassSaturateBg?: number;
         });
 
         // Drop recycle-bin entries that outlived the configured retention window.
@@ -410,6 +436,26 @@ export default function App() {
     applyTheme(theme, customColors);
   }, [theme, customColors]);
 
+  // Track the shell breakpoint. One frame per resize burst is enough: the only
+  // outputs are the margin, the gutter and the variables derived from them.
+  useEffect(() => {
+    let frame: number | null = null;
+    const syncShell = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        const next = getShellMetrics(document.documentElement.clientWidth);
+        setShell((prev) => (prev.pad === next.pad && prev.gutter === next.gutter ? prev : next));
+      });
+    };
+    syncShell();
+    window.addEventListener("resize", syncShell);
+    return () => {
+      window.removeEventListener("resize", syncShell);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, []);
+
   useEffect(() => {
     if (!initialized) return;
     void getCurrentWindow().setAlwaysOnTop(alwaysOnTop).catch((error) => {
@@ -454,6 +500,13 @@ export default function App() {
         updateReminderDisabledForVersion,
         sidebarCategoryRatio,
         expandedFolderIds,
+        glassEnabled,
+        glassBlur,
+        glassTint,
+        glassSaturate,
+        glassBlurBg,
+        glassTintBg,
+        glassSaturateBg,
       });
     }
   }, [
@@ -471,6 +524,13 @@ export default function App() {
     updateReminderDisabledForVersion,
     sidebarCategoryRatio,
     expandedFolderIds,
+    glassEnabled,
+    glassBlur,
+    glassTint,
+    glassSaturate,
+    glassBlurBg,
+    glassTintBg,
+    glassSaturateBg,
     initialized,
   ]);
 
@@ -579,7 +639,6 @@ export default function App() {
   useEffect(() => {
     if (!initialized) return;
     setSidebarWidth((currentWidth) => Math.max(currentWidth, SIDEBAR_MIN_WIDTH));
-    setWorkspaceSidebarWidth((currentWidth) => Math.max(currentWidth, SIDEBAR_MIN_WIDTH));
   }, [lang, initialized]);
 
   // Sidebar resize drag
@@ -588,9 +647,7 @@ export default function App() {
   const latestSidebarCollapsed = useRef(false);
 
   const setSidebarCollapsedState = useCallback((sidebar: ResizableSidebar, collapsed: boolean) => {
-    if (sidebar === "workspace") {
-      setWorkspaceSidebarCollapsed(collapsed);
-    } else if (sidebar === "ai") {
+    if (sidebar === "ai") {
       // The AI store tracks the panel as open, so collapse maps to closed.
       useAiStore.getState().setSidebarOpen(!collapsed);
     } else {
@@ -618,10 +675,7 @@ export default function App() {
   const handleSidebarPointerDown = useCallback((sidebar: ResizableSidebar) => {
     resizingSidebar.current = sidebar;
     setResizingSidebarState(sidebar);
-    if (sidebar === "workspace") {
-      latestSidebarCollapsed.current = workspaceSidebarCollapsed;
-      latestSidebarWidth.current = workspaceSidebarWidth;
-    } else if (sidebar === "ai") {
+    if (sidebar === "ai") {
       latestSidebarCollapsed.current = !aiSidebarOpen;
       latestSidebarWidth.current = aiSidebarWidth;
     } else {
@@ -631,15 +685,11 @@ export default function App() {
     appRootRef.current?.classList.add("sidebar-resizing");
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
-  }, [aiSidebarOpen, aiSidebarWidth, sidebarCollapsed, sidebarWidth, workspaceSidebarCollapsed, workspaceSidebarWidth]);
+  }, [aiSidebarOpen, aiSidebarWidth, sidebarCollapsed, sidebarWidth]);
 
   useEffect(() => {
     const sidebarProperty = (sidebar: ResizableSidebar) =>
-      sidebar === "workspace"
-        ? "--workspace-sidebar-width"
-        : sidebar === "ai"
-          ? "--ai-sidebar-width"
-          : "--notebook-sidebar-width";
+      sidebar === "ai" ? "--ai-sidebar-width" : "--left-sidebar-width";
 
     const applyWidth = () => {
       rafId.current = null;
@@ -668,12 +718,14 @@ export default function App() {
     const handlePointerMove = (event: PointerEvent) => {
       const sidebar = resizingSidebar.current;
       if (!sidebar) return;
-      // The AI handle measures its width from the right edge of the window;
-      // the left handles measure from the right edge of the activity bar.
+      // Sashes measure from different anchors: the AI one from the window's
+      // right edge, the left ones from the sidebar's own start (which now sits
+      // one shell margin — and half a gutter — away from the activity bar).
       const viewportWidth = document.documentElement.clientWidth;
+      const metrics = getShellMetrics(viewportWidth);
       const collapsing = sidebar === "ai"
-        ? isBelowRightSidebarCollapseThreshold(event.clientX, viewportWidth)
-        : isBelowSidebarCollapseThreshold(event.clientX, ACTIVITY_BAR_WIDTH);
+        ? isBelowRightSidebarCollapseThreshold(event.clientX, viewportWidth - metrics.pad)
+        : isBelowSidebarCollapseThreshold(event.clientX, metrics.pad + ACTIVITY_BAR_WIDTH);
       if (collapsing) {
         // Collapse as soon as the drag crosses the threshold. The stored width is
         // left untouched so expanding returns to the last usable width.
@@ -681,8 +733,8 @@ export default function App() {
         return;
       }
       latestSidebarWidth.current = sidebar === "ai"
-        ? resolveRightSidebarWidth(event.clientX, viewportWidth)
-        : resolveSidebarWidth(event.clientX, ACTIVITY_BAR_WIDTH);
+        ? resolveRightSidebarWidth(event.clientX, rightSidebarLimit(viewportWidth, metrics))
+        : resolveSidebarWidth(event.clientX, leftSidebarOffset(metrics));
       if (latestSidebarCollapsed.current) syncCollapsed(sidebar, false);
       if (rafId.current === null) {
         rafId.current = requestAnimationFrame(applyWidth);
@@ -697,15 +749,16 @@ export default function App() {
         rafId.current = null;
       }
       const viewportWidth = document.documentElement.clientWidth;
+      const metrics = getShellMetrics(viewportWidth);
       const collapsed = pointerX === undefined
         ? latestSidebarCollapsed.current
         : sidebar === "ai"
-          ? isBelowRightSidebarCollapseThreshold(pointerX, viewportWidth)
-          : isBelowSidebarCollapseThreshold(pointerX, ACTIVITY_BAR_WIDTH);
+          ? isBelowRightSidebarCollapseThreshold(pointerX, viewportWidth - metrics.pad)
+          : isBelowSidebarCollapseThreshold(pointerX, metrics.pad + ACTIVITY_BAR_WIDTH);
       if (pointerX !== undefined && !collapsed) {
         latestSidebarWidth.current = sidebar === "ai"
-          ? resolveRightSidebarWidth(pointerX, viewportWidth)
-          : resolveSidebarWidth(pointerX, ACTIVITY_BAR_WIDTH);
+          ? resolveRightSidebarWidth(pointerX, rightSidebarLimit(viewportWidth, metrics))
+          : resolveSidebarWidth(pointerX, leftSidebarOffset(metrics));
       }
       const width = latestSidebarWidth.current;
       appRootRef.current?.style.setProperty(sidebarProperty(sidebar), `${width}px`);
@@ -717,9 +770,7 @@ export default function App() {
       // A collapsed release must not lower the stored width, otherwise expanding
       // would snap back to the minimum instead of the width the user had chosen.
       if (!collapsed) {
-        if (sidebar === "workspace") {
-          setWorkspaceSidebarWidth(width);
-        } else if (sidebar === "ai") {
+        if (sidebar === "ai") {
           setAiSidebarWidth(width);
         } else {
           setSidebarWidth(width);
@@ -889,16 +940,14 @@ export default function App() {
     }
   }, [activeNoteId, lang, notes]);
 
-  const activeSidebarCollapsed = currentView === "workspace"
-    ? workspaceSidebarCollapsed
-    : sidebarCollapsed;
-
+  // One left column for every view: the same width and the same collapsed flag
+  // follow you from notes to todos to the workspace. Only the canvas has no
+  // explorer, and a signed-out workspace keeps the rail alone because there is
+  // nothing to list.
+  const leftSidebarListVisible = currentView !== "canvas"
+    && (currentView !== "workspace" || Boolean(authUser));
   const toggleActiveSidebar = () => {
-    if (currentView === "workspace") {
-      setWorkspaceSidebarCollapsed((collapsed) => !collapsed);
-      return;
-    }
-    setSidebarCollapsed((collapsed) => !collapsed);
+    setSidebarCollapsed(!sidebarCollapsed);
   };
 
   const handleUpdateNow = useCallback(async () => {
@@ -916,12 +965,25 @@ export default function App() {
     setAvailableUpdate(null);
   }, [setUpdateReminderDisabledForVersion]);
 
+  // Only the values currently in force are written, so the stylesheet never has
+  // to branch on "is there a wallpaper?" — that keeps every glass rule at one
+  // specificity level.
+  const hasBackground = Boolean(customBackgroundUrl);
   const appStyle = {
-    "--notebook-sidebar-width": `${sidebarWidth}px`,
-    "--workspace-sidebar-width": `${workspaceSidebarWidth}px`,
+    "--left-sidebar-width": `${sidebarWidth}px`,
     "--ai-sidebar-width": `${aiSidebarWidth}px`,
+    "--glass-blur": String(hasBackground ? glassBlurBg : glassBlur),
+    "--glass-saturate": String(hasBackground ? glassSaturateBg : glassSaturate),
+    "--glass-tint-side": String(hasBackground ? glassTintBg : glassTint),
+    // The editor keeps a floor so long-form text never loses contrast against a
+    // busy wallpaper.
+    "--glass-tint-editor": String(hasBackground ? Math.max(glassTintBg, 88) : Math.max(glassTint, 92)),
+    "--glass-tint-light": "60",
+    "--shell-pad": `${shell.pad}px`,
+    "--shell-gutter": `${shell.gutter}px`,
+    backgroundColor: "var(--color-bg-shell)",
     ...(customBackgroundUrl ? {
-      backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 34%, transparent), color-mix(in srgb, var(--color-bg-primary) 34%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
+      backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 15%, transparent), color-mix(in srgb, var(--color-bg-primary) 15%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
       backgroundPosition: "center",
       backgroundRepeat: "no-repeat",
       backgroundSize: "cover",
@@ -931,8 +993,9 @@ export default function App() {
   return (
     <div
       ref={appRootRef}
-      className={`flex flex-col h-screen w-screen overflow-hidden bg-bg-primary ${customBackgroundUrl ? "app-has-custom-background" : ""}`}
+      className={`app-root flex flex-col h-screen w-screen overflow-hidden ${customBackgroundUrl ? "app-has-custom-background" : ""}`}
       style={appStyle}
+      data-glass={glassEnabled ? "on" : "off"}
     >
       {/* Custom Title Bar */}
       <TitleBar
@@ -946,54 +1009,80 @@ export default function App() {
         onOpenAbout={() => setAboutOpen(true)}
       />
 
-      {/* Main Content */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <ActivityBar
-          currentView={currentView}
-          onViewChange={setCurrentView}
-          onOpenSettings={() => setSettingsOpen(true)}
-          collapsed={activeSidebarCollapsed}
-          onToggleCollapse={toggleActiveSidebar}
-        />
-        {currentView !== "workspace" && currentView !== "canvas" && (
-          <>
-            <div
-              style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : "var(--notebook-sidebar-width)" }}
-              className={`sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out${collapseAnimating ? " sidebar-collapse-anim" : ""}`}
-            >
-              {currentView === "todo" ? (
-                <TodoSidebar  />
-              ) : (
-                <Sidebar
-                  currentView={currentView}
-                  onViewChange={setCurrentView}
-                  onNewNote={handleNewNote}
-                  collapsed={sidebarCollapsed}
-                  onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  onOpenSettings={() => setSettingsOpen(true)}
-                />
-              )}
-            </div>
-            {/* Resize Handle. Kept mounted while dragging so the collapse that
-                happens mid-drag does not remove the element holding the pointer. */}
-            {(!sidebarCollapsed || resizingSidebarState === "notebook") && (
-              <SidebarResizeHandle onPointerDown={() => handleSidebarPointerDown("notebook")} />
-            )}
-          </>
+      {/* Main Content — three floating cards over the shell gutter. The sashes
+          between them *are* the gutters, so a card that closes takes its own
+          gutter with it. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden px-[var(--shell-pad)] pb-[var(--shell-pad)] pt-[var(--shell-gutter)]">
+        {/* ① Left card: the icon rail, plus the explorer column of whichever
+            view is open. One surface, no divider - the rail is distinguished by
+            hover and selection only. Only the canvas has no explorer yet; the
+            signed-out workspace keeps the rail alone because there is nothing
+            to list. */}
+        <div className="shell-box surface-glass flex h-full flex-shrink-0 overflow-hidden">
+          <ActivityBar
+            currentView={currentView}
+            onViewChange={setCurrentView}
+            onOpenSettings={() => setSettingsOpen(true)}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={toggleActiveSidebar}
+          />
+          {leftSidebarListVisible && (
+            <>
+              {/* Hairline between the rail and the explorer. It is a sibling of
+                  the collapsing column, not a border on it, so it can fade out
+                  as the column closes instead of lingering at the card edge as a
+                  1px stub. */}
+              <span
+                aria-hidden="true"
+                className={`h-full w-px flex-shrink-0 bg-border transition-opacity duration-150 ${
+                  sidebarCollapsed && resizingSidebarState !== "notebook" ? "opacity-0" : "opacity-100"
+                }`}
+              />
+              <div
+                style={{ width: sidebarCollapsed ? COLLAPSED_WIDTH : "var(--left-sidebar-width)" }}
+                className={`sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out${collapseAnimating ? " sidebar-collapse-anim" : ""}`}
+              >
+                {currentView === "todo" ? (
+                  <TodoSidebar  />
+                ) : currentView === "workspace" ? (
+                  <Suspense fallback={null}>
+                    <WorkspaceSidebar />
+                  </Suspense>
+                ) : (
+                  <Sidebar
+                    currentView={currentView}
+                    onViewChange={setCurrentView}
+                    onNewNote={handleNewNote}
+                    collapsed={sidebarCollapsed}
+                    onToggleCollapse={toggleActiveSidebar}
+                    onOpenSettings={() => setSettingsOpen(true)}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ② Left sash / gutter. The sash stays mounted while dragging so the
+            collapse that happens mid-drag does not remove the element holding
+            the pointer. When there is no explorer, or it is collapsed, the gap
+            is kept by a plain spacer: the cards must never touch, whatever
+            their state. */}
+        {leftSidebarListVisible && (!sidebarCollapsed || resizingSidebarState === "notebook") ? (
+          <SidebarResizeHandle variant="gutter" onPointerDown={() => handleSidebarPointerDown("notebook")} />
+        ) : (
+          <div className="w-[var(--shell-gutter)] flex-shrink-0" aria-hidden="true" />
         )}
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+
+        {/* ③ Editor card: all four views live here. Only the note view puts the
+            tab strip on top of it. */}
+        <main className="shell-box surface-glass surface-glass--editor flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {currentView === "todo"
             ? <TodoView />
             : currentView === "workspace"
               ? (
                 <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted"><LoadingText label={t(lang, "authWorking")} /></div>}>
-                  <WorkspaceView
-                    sidebarCollapsed={workspaceSidebarCollapsed}
-                    sidebarResizing={resizingSidebarState === "workspace"}
-                    sidebarCollapseAnimating={collapseAnimating}
-                    onSidebarResizeStart={() => handleSidebarPointerDown("workspace")}
-                    onOpenAuth={() => setAuthOpen(true)}
-                  />
+                  <WorkspaceView onOpenAuth={() => setAuthOpen(true)} />
                 </Suspense>
               )
               : currentView === "canvas"
@@ -1009,23 +1098,27 @@ export default function App() {
                   </>
                 )}
         </main>
-        {/* Resize handle for the AI sidebar, mirroring the notebook handle. Kept
-            mounted while dragging so the collapse that happens mid-drag does not
-            remove the element holding the pointer. */}
+        {/* ④ Right gutter. It exists only while the AI card does, so closing the
+            assistant leaves the editor flush against the right margin. Kept
+            mounted while dragging so the collapse that happens mid-drag does
+            not remove the element holding the pointer. */}
         {(aiSidebarOpen || resizingSidebarState === "ai") && (
-          <SidebarResizeHandle onPointerDown={() => handleSidebarPointerDown("ai")} />
+          <SidebarResizeHandle variant="gutter" onPointerDown={() => handleSidebarPointerDown("ai")} />
         )}
-        {/* AI assistant sidebar. Same collapse shell as the notebook sidebar:
-            the width animates between 0 and the stored width while the panel
-            stays mounted at its natural width and is clipped by the shell, so
-            open/close slides without reflowing the chat. While collapsed the
-            shell is inert so the hidden panel keeps no keyboard focus stops. */}
+        {/* ⑤ AI card. The collapse shell only animates the width and clips; the
+            card styling sits on the inner panel, which keeps its natural width
+            — otherwise the border line would linger at the window edge once the
+            shell reached 0, and the chat would reflow during the slide. While
+            collapsed the shell is inert so the hidden panel keeps no keyboard
+            focus stops. */}
         <div
           inert={aiSidebarOpen ? undefined : true}
           style={{ width: aiSidebarOpen ? "var(--ai-sidebar-width)" : COLLAPSED_WIDTH }}
           className={`sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out${collapseAnimating ? " sidebar-collapse-anim" : ""}`}
         >
-          <AiSidebar onOpenSettings={() => setSettingsOpen(true)} />
+          <div className="shell-box surface-glass h-full w-[var(--ai-sidebar-width)]">
+            <AiSidebar onOpenSettings={() => setSettingsOpen(true)} />
+          </div>
         </div>
       </div>
 

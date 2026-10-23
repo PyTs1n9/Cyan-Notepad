@@ -258,11 +258,14 @@ export default function TitleBar({
 
   return (
     <>
+      {/* The title bar hugs the window edges so the self-drawn window buttons
+          keep their corner hit areas: no shell margin, no rounding, and no
+          `overflow: hidden` either — it would clip the dropdowns below. */}
       <div
-        className="relative flex h-9 flex-shrink-0 items-center bg-bg-secondary text-text-primary select-none transition-colors"
+        className="surface-glass surface-glass--light relative flex h-9 flex-shrink-0 items-center text-text-primary select-none"
         onDoubleClick={handleToggleMaximize}
       >
-        <div className="flex h-full w-12 flex-shrink-0 items-center justify-center bg-bg-sidebar" aria-hidden="true">
+        <div className="flex h-full w-12 flex-shrink-0 items-center justify-center" aria-hidden="true">
           <img src="/default-icon.png" alt="" className="h-6 w-6 rounded-md object-cover" />
         </div>
         {/* Menu Bar */}
@@ -515,7 +518,6 @@ export default function TitleBar({
             <X size={14} strokeWidth={2.5} className="text-text-muted group-hover:text-white transition-colors" />
           </button>
         </div>
-        <div aria-hidden="true" className="pointer-events-none absolute bottom-0 left-12 right-0 z-10 h-px bg-border" />
       </div>
 
       {isCategoryDialogOpen && (

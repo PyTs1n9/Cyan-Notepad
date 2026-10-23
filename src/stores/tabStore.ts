@@ -31,6 +31,8 @@ interface TabState {
   closeOtherTabs: (noteId: string) => void;
   closeTabsToRight: (noteId: string) => void;
   closeAllTabs: () => void;
+  /** Drops `fromId` at `index` measured against the tabs that stay in place. */
+  moveTabToIndex: (fromId: string, index: number) => void;
   moveTab: (fromId: string, toId: string, position?: TabDropPosition) => void;
   markDirty: (noteId: string, dirty: boolean) => void;
   /** Drop tabs (and dirty flags) whose note no longer exists. */
@@ -130,18 +132,24 @@ export const useTabStore = create<TabState>((set, get) => ({
     useNoteStore.getState().setActiveNoteId(null);
   },
 
-  moveTab: (fromId, toId, position = "before") => {
-    if (fromId === toId) return;
+  moveTabToIndex: (fromId, index) => {
     const tabs = [...get().tabs];
     const fromIndex = tabs.findIndex((tab) => tab.id === fromId);
-    const toIndex = tabs.findIndex((tab) => tab.id === toId);
-    if (fromIndex < 0 || toIndex < 0) return;
+    if (fromIndex < 0) return;
 
     const [moved] = tabs.splice(fromIndex, 1);
-    const targetIndex = tabs.findIndex((tab) => tab.id === toId);
-    if (targetIndex < 0) return;
-    tabs.splice(targetIndex + (position === "after" ? 1 : 0), 0, moved);
+    const target = Math.max(0, Math.min(index, tabs.length));
+    if (target === fromIndex) return;
+    tabs.splice(target, 0, moved);
     set({ tabs });
+  },
+
+  moveTab: (fromId, toId, position = "before") => {
+    if (fromId === toId) return;
+    const without = get().tabs.filter((tab) => tab.id !== fromId);
+    const targetIndex = without.findIndex((tab) => tab.id === toId);
+    if (targetIndex < 0) return;
+    get().moveTabToIndex(fromId, targetIndex + (position === "after" ? 1 : 0));
   },
 
   markDirty: (noteId, dirty) => {

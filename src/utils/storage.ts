@@ -44,10 +44,11 @@ const SETTINGS_FILE = "settings.json";
 const UI_STATE_FILE = "ui-state.json";
 const AI_DIR = "ai";
 const AI_CREDENTIALS_FILE = "credentials.bin";
-const AI_SEARCH_CREDENTIALS_FILE = "search-credentials.bin";
 const AI_PREFERENCES_FILE = "preferences.json";
-const AI_CHATS_FILE = "chats.json";
-const DATA_DIR_NAME = "data";
+/** One file per conversation; see `saveAiConversation`. */
+const AI_CHATS_DIR = "chats";
+/** Legacy single-file store; migrated into `chats/` on the first load. */
+const AI_CHATS_FILE = "chats.json";const DATA_DIR_NAME = "data";
 
 let dataDirectoryPromise: Promise<string> | null = null;
 let imageNeedDirectoryPromise: Promise<string> | null = null;
@@ -148,38 +149,6 @@ export async function deleteAiCredentialCipher(): Promise<void> {
 }
 
 /**
- * Search-provider API key (博查 etc.), DPAPI-encrypted hex. A second cipher
- * file next to the chat key so the two BYOK credentials stay independent.
- */
-export async function loadSearchCredentialCipher(): Promise<string | null> {
-  try {
-    const dir = await ensureAiDir();
-    const path = await join(dir, AI_SEARCH_CREDENTIALS_FILE);
-    if (!(await exists(path))) return null;
-    const value = (await readTextFile(path)).trim();
-    return value.length > 0 ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-export async function saveSearchCredentialCipher(cipher: string): Promise<void> {
-  const dir = await ensureAiDir();
-  const path = await join(dir, AI_SEARCH_CREDENTIALS_FILE);
-  await writeTextFile(path, cipher);
-}
-
-export async function deleteSearchCredentialCipher(): Promise<void> {
-  try {
-    const dir = await ensureAiDir();
-    const path = await join(dir, AI_SEARCH_CREDENTIALS_FILE);
-    if (await exists(path)) await remove(path);
-  } catch {
-    // Missing or locked file: treat as already cleared.
-  }
-}
-
-/**
  * AI assistant preferences (model selection etc.), kept beside the AI
  * credentials so the AI module owns its own restore path. Plain JSON —
  * nothing secret lives here.
@@ -218,9 +187,14 @@ export async function saveAiPreferences(prefs: StoredAiPreferences): Promise<voi
 }
 
 /**
- * AI chat conversations, plain JSON beside the other AI state. Each entry
- * carries its full message list so switching sessions restores exactly what
- * was on screen. Nothing secret lives here.
+ * AI chat conversations, one JSON file per conversation under `ai/chats/`.
+ *
+ * The earlier shape kept every conversation in one `chats.json`, so each turn
+ * rewrote the whole history — message bodies and retrieved chunks included.
+ * Sharding makes a turn's write proportional to that one conversation, and a
+ * corrupt file can only cost the session it belongs to.
+ *
+ * `ai/chats.json` (the old single file) is migrated on first load and removed.
  */
 export interface StoredAiChatMessage {
   id: string;
@@ -232,6 +206,10 @@ export interface StoredAiChatMessage {
   errorCode?: string;
   /** Web search failed on this turn; drives a hint under the answer. */
   searchError?: boolean;
+  /** Web results the answer was built from; rendered as source links. */
+  sources?: { title: string; url: string; siteName?: string }[];
+  /** The answer hit `max_tokens` and is cut off. */
+  truncated?: boolean;
   /** Note writes performed in this turn (full-permission mode), for undo. */
   edits?: {
     noteId: string;
@@ -250,31 +228,96 @@ export interface StoredAiConversation {
   messages: StoredAiChatMessage[];
 }
 
+function isStoredConversation(value: unknown): value is StoredAiConversation {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as StoredAiConversation).id === "string" &&
+    Array.isArray((value as StoredAiConversation).messages)
+  );
+}
+
+/** Conversation ids are UUIDs, but a hand-edited index must not escape the dir. */
+function conversationShardName(id: string): string {
+  return `${id.replace(/[^A-Za-z0-9_-]/g, "_")}.json`;
+}
+
+async function readConversationFile(path: string): Promise<StoredAiConversation | null> {
+  try {
+    const parsed = JSON.parse(await readTextFile(path)) as unknown;
+    return isStoredConversation(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureAiChatsDir(): Promise<string> {
+  const dir = await join(await ensureAiDir(), AI_CHATS_DIR);
+  if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+/** Pull every shard, then fold the legacy single file in if it is still there. */
 export async function loadAiConversations(): Promise<StoredAiConversation[]> {
   try {
-    const dir = await ensureAiDir();
-    const path = await join(dir, AI_CHATS_FILE);
-    if (!(await exists(path))) return [];
-    const parsed = JSON.parse(await readTextFile(path)) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is StoredAiConversation =>
-        typeof item === "object" && item !== null &&
-        typeof (item as StoredAiConversation).id === "string" &&
-        Array.isArray((item as StoredAiConversation).messages),
-    );
+    const base = await ensureAiDir();
+    const chatsDir = await ensureAiChatsDir();
+    const byId = new Map<string, StoredAiConversation>();
+
+    for (const entry of await readDir(chatsDir)) {
+      if (!entry.isFile || !entry.name.endsWith(".json")) continue;
+      const conversation = await readConversationFile(await join(chatsDir, entry.name));
+      if (conversation) byId.set(conversation.id, conversation);
+    }
+
+    const legacyPath = await join(base, AI_CHATS_FILE);
+    if (await exists(legacyPath)) {
+      try {
+        const parsed = JSON.parse(await readTextFile(legacyPath)) as unknown;
+        const legacy = Array.isArray(parsed) ? parsed.filter(isStoredConversation) : [];
+        for (const conversation of legacy) {
+          if (byId.has(conversation.id)) continue;
+          byId.set(conversation.id, conversation);
+          await saveAiConversation(conversation);
+        }
+        // Only drop the old file once every entry is verifiably on disk as a
+        // shard — a failed write must not lose history.
+        const sharded = await Promise.all(
+          legacy.map(async (conversation) => {
+            const path = await join(chatsDir, conversationShardName(conversation.id));
+            return exists(path).catch(() => false);
+          }),
+        );
+        if (sharded.every(Boolean)) await remove(legacyPath);
+      } catch (e) {
+        console.error("Failed to migrate AI conversations:", e);
+      }
+    }
+
+    return [...byId.values()];
   } catch {
     return [];
   }
 }
 
-export async function saveAiConversations(conversations: StoredAiConversation[]): Promise<void> {
+/** Write one conversation. Called on every turn — the cost is one session. */
+export async function saveAiConversation(conversation: StoredAiConversation): Promise<void> {
   try {
-    const dir = await ensureAiDir();
-    const path = await join(dir, AI_CHATS_FILE);
-    await writeTextFile(path, JSON.stringify(conversations, null, 2));
+    const chatsDir = await ensureAiChatsDir();
+    const path = await join(chatsDir, conversationShardName(conversation.id));
+    await writeTextFile(path, JSON.stringify(conversation, null, 2));
   } catch (e) {
-    console.error("Failed to save AI conversations:", e);
+    console.error("Failed to save AI conversation:", e);
+  }
+}
+
+export async function deleteAiConversation(id: string): Promise<void> {
+  try {
+    const chatsDir = await ensureAiChatsDir();
+    const path = await join(chatsDir, conversationShardName(id));
+    if (await exists(path)) await remove(path);
+  } catch {
+    // Missing or locked file: treat as already gone.
   }
 }
 

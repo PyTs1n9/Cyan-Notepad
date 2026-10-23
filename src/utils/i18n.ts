@@ -298,7 +298,6 @@ type TranslationKeys = {
   deleteTodo: string;
   confirmDeleteTodoMessage: string;
   todoLists: string;
-  todoListSummary: string;
   newTodoList: string;
   newTodo: string;
   defaultTodoList: string;
@@ -311,6 +310,7 @@ type TranslationKeys = {
   dragTodoList: string;
   todoTitle: string;
   totalStats: string;
+  priorityFilter: string;
   addTaskPlaceholder: string;
   lowPriority: string;
   mediumPriority: string;
@@ -332,8 +332,16 @@ type TranslationKeys = {
   addSubtask: string;
   expandSubtasks: string;
   collapseSubtasks: string;
+  expandList: string;
+  collapseList: string;
+  newTaskInList: string;
   deleteSubtask: string;
   confirmDeleteTodoWithSubtasks: string;
+  todoDescription: string;
+  addTodoDescription: string;
+  editTodoDescription: string;
+  todoDescriptionPlaceholder: string;
+  descriptionSaveHint: string;
   low: string;
   medium: string;
   high: string;
@@ -367,6 +375,14 @@ type TranslationKeys = {
   replaceBackground: string;
   removeBackground: string;
   backgroundUploadFailed: string;
+  glassGroup: string;
+  glassGroupHint: string;
+  glassEnable: string;
+  glassBaseGroup: string;
+  glassBgGroup: string;
+  glassBlur: string;
+  glassTint: string;
+  glassSaturate: string;
   savePreset: string;
   selectPreset: string;
   noPresets: string;
@@ -438,6 +454,7 @@ type TranslationKeys = {
   save: string;
   undo: string;
   redo: string;
+  insertTable: string;
   tools: string;
   portal: string;
   help: string;
@@ -532,6 +549,7 @@ type TranslationKeys = {
   aiKeyCleared: string;
   aiKeyMissing: string;
   aiVerifySuccess: string;
+  aiVerifySuccessSearch: string;
   aiPrivacyNoticeTitle: string;
   aiPrivacyNoticeBody: string;
   aiPrivacyAgree: string;
@@ -551,6 +569,13 @@ type TranslationKeys = {
   aiClearChat: string;
   aiSources: string;
   aiThinking: string;
+  aiPhaseRetrieving: string;
+  aiPhaseSearching: string;
+  aiPhaseWriting: string;
+  aiTruncated: string;
+  aiViewDiff: string;
+  aiDiffTooLong: string;
+  aiDiffUnavailable: string;
   aiReasoning: string;
   aiNoResult: string;
   aiNoKeyHint: string;
@@ -926,7 +951,6 @@ const zh: TranslationKeys = {
   deleteTodo: "删除待办",
   confirmDeleteTodoMessage: '是否删除"{todo}"待办？',
   todoLists: "待办事项",
-  todoListSummary: "共 {lists} 个清单 · {pending} 项待办",
   newTodoList: "新建清单",
   newTodo: "新建待办",
   defaultTodoList: "我的清单",
@@ -939,6 +963,7 @@ const zh: TranslationKeys = {
   dragTodoList: "拖动清单",
   todoTitle: "待办事项",
   totalStats: "共 {total} 项，已完成 {done} 项",
+  priorityFilter: "优先级",
   addTaskPlaceholder: "添加新任务...",
   lowPriority: "低优先级",
   mediumPriority: "中优先级",
@@ -960,8 +985,16 @@ const zh: TranslationKeys = {
   addSubtask: "添加子待办",
   expandSubtasks: "展开子待办",
   collapseSubtasks: "收起子待办",
+  expandList: "展开清单",
+  collapseList: "收起清单",
+  newTaskInList: "在此清单新建任务",
   deleteSubtask: "删除子待办",
   confirmDeleteTodoWithSubtasks: '删除"{todo}"及其 {count} 个子待办？',
+  todoDescription: "待办描述",
+  addTodoDescription: "添加描述",
+  editTodoDescription: "编辑描述",
+  todoDescriptionPlaceholder: "写下细节、链接或验收标准…",
+  descriptionSaveHint: "Ctrl+Enter 保存 · Esc 取消",
   low: "低",
   medium: "中",
   high: "高",
@@ -995,6 +1028,14 @@ const zh: TranslationKeys = {
   replaceBackground: "更换背景",
   removeBackground: "移除背景",
   backgroundUploadFailed: "背景图片上传失败",
+  glassGroup: "毛玻璃",
+  glassGroupHint: "面板半透明与模糊强度，背景图片会透过面板。",
+  glassEnable: "启用毛玻璃",
+  glassBaseGroup: "基础（始终生效）",
+  glassBgGroup: "仅背景图片时",
+  glassBlur: "模糊强度",
+  glassTint: "底色不透明度",
+  glassSaturate: "饱和度",
   savePreset: "保存预设",
   selectPreset: "选择预设",
   noPresets: "暂无保存的预设",
@@ -1066,6 +1107,7 @@ const zh: TranslationKeys = {
   save: "保存",
   undo: "撤销",
   redo: "前进",
+  insertTable: "插入表格（Ctrl+Alt+T）",
   tools: "工具",
   portal: "传送门",
   help: "帮助",
@@ -1160,9 +1202,10 @@ const zh: TranslationKeys = {
   aiKeyCleared: "API Key 已清除",
   aiKeyMissing: "尚未配置 API Key",
   aiVerifySuccess: "连接正常",
+  aiVerifySuccessSearch: "连接正常，联网搜索同样可用",
   aiPrivacyNoticeTitle: "隐私说明",
   aiPrivacyNoticeBody:
-    "使用 AI 功能时，你选中的段落、检索到的笔记片段与提问会发送至 DeepSeek（深度求索）以生成回复；开启联网搜索后，提问还会发送至博查搜索服务。知识库检索在你本机完成。API Key 经系统加密后仅存于本机。",
+    "使用 AI 功能时，你选中的段落、检索到的笔记片段与提问会发送至 DeepSeek（深度求索）以生成回复；开启联网搜索后，提问还会发送至 DeepSeek 搜索服务。知识库检索在你本机完成。API Key 经系统加密后仅存于本机。",
   aiPrivacyAgree: "我知道了",
   aiErrorUnauthorized: "API Key 无效，请检查后重试",
   aiErrorBalance: "账户余额不足",
@@ -1180,15 +1223,22 @@ const zh: TranslationKeys = {
   aiClearChat: "清空对话",
   aiSources: "参考来源",
   aiThinking: "正在思考…",
+  aiPhaseRetrieving: "正在检索本地知识库…",
+  aiPhaseSearching: "正在联网搜索…",
+  aiPhaseWriting: "正在处理笔记…",
+  aiTruncated: "回答达到长度上限，内容可能被截断。",
+  aiViewDiff: "查看改动",
+  aiDiffTooLong: "内容过长，仅显示前 400 行。",
+  aiDiffUnavailable: "原始版本已不可用。",
   aiReasoning: "思考过程",
   aiNoResult: "手册里没有找到相关内容，换个说法试试。",
   aiNoKeyHint: "未配置 API Key，当前由小青离线检索、流式作答。在「设置 → AI 设置」中配置 DeepSeek Key 后可获得生成式完整回答。",
   aiModelLabel: "对话模型",
   aiModelLocal: "小青",
   aiPolishModelLabel: "润色模型",
-  aiSearchTitle: "实时网页搜索（博查）",
+  aiSearchTitle: "实时网页搜索（DeepSeek）",
   aiSearchToggleLabel: "联网搜索",
-  aiSearchToggleHint: "开启后，DeepSeek 模式回答问题时实时搜索网页，并在回答中标注来源。搜索 Key 由你在博查开放平台自行申请，费用自理，仅加密存于本机。",
+  aiSearchToggleHint: "复用同一把 DeepSeek Key，按成功请求次数计费（约 5 元 / 1000 次）。开启后，DeepSeek 模式回答问题时实时搜索网页，并在回答中标注来源。",
   aiAnswerSteps: "操作步骤",
   aiAnswerHowto: "这样做",
   aiAnswerWhere: "在哪找",
@@ -1555,7 +1605,6 @@ const en: TranslationKeys = {
   deleteTodo: "Delete Todo",
   confirmDeleteTodoMessage: 'Delete "{todo}" todo?',
   todoLists: "Task Lists",
-  todoListSummary: "{lists} lists · {pending} pending",
   newTodoList: "New List",
   newTodo: "New Todo",
   defaultTodoList: "My List",
@@ -1568,6 +1617,7 @@ const en: TranslationKeys = {
   dragTodoList: "Drag List",
   todoTitle: "Todo List",
   totalStats: "{total} items, {done} completed",
+  priorityFilter: "Priority",
   addTaskPlaceholder: "Add a new task...",
   lowPriority: "Low Priority",
   mediumPriority: "Medium Priority",
@@ -1589,8 +1639,16 @@ const en: TranslationKeys = {
   addSubtask: "Add subtask",
   expandSubtasks: "Expand subtasks",
   collapseSubtasks: "Collapse subtasks",
+  expandList: "Expand list",
+  collapseList: "Collapse list",
+  newTaskInList: "New task in this list",
   deleteSubtask: "Delete subtask",
   confirmDeleteTodoWithSubtasks: 'Delete "{todo}" and its {count} subtasks?',
+  todoDescription: "Description",
+  addTodoDescription: "Add a description",
+  editTodoDescription: "Edit description",
+  todoDescriptionPlaceholder: "Details, links, or acceptance criteria…",
+  descriptionSaveHint: "Ctrl+Enter to save · Esc to cancel",
   low: "Low",
   medium: "Med",
   high: "High",
@@ -1624,6 +1682,14 @@ const en: TranslationKeys = {
   replaceBackground: "Replace Background",
   removeBackground: "Remove Background",
   backgroundUploadFailed: "Failed to upload background image",
+  glassGroup: "Frosted Glass",
+  glassGroupHint: "Panel translucency and blur. A wallpaper shows through the panels.",
+  glassEnable: "Enable frosted glass",
+  glassBaseGroup: "Base (always)",
+  glassBgGroup: "Only with a wallpaper",
+  glassBlur: "Blur",
+  glassTint: "Tint opacity",
+  glassSaturate: "Saturation",
   savePreset: "Save Preset",
   selectPreset: "Select Preset",
   noPresets: "No saved presets",
@@ -1695,6 +1761,7 @@ const en: TranslationKeys = {
   save: "Save",
   undo: "Undo",
   redo: "Redo",
+  insertTable: "Insert table (Ctrl+Alt+T)",
   tools: "Tools",
   portal: "Portal",
   help: "Help",
@@ -1789,9 +1856,10 @@ const en: TranslationKeys = {
   aiKeyCleared: "API key cleared",
   aiKeyMissing: "No API key configured",
   aiVerifySuccess: "Connection OK",
+  aiVerifySuccessSearch: "Connection OK - web search works with the same key",
   aiPrivacyNoticeTitle: "Privacy notice",
   aiPrivacyNoticeBody:
-    "When you use AI features, the passage you select, retrieved note excerpts and your questions are sent to DeepSeek to generate replies. With web search enabled, your question is also sent to the Bocha search service. Knowledge base search runs locally. Your API keys are encrypted by the system and stored on this machine only.",
+    "When you use AI features, the passage you select, retrieved note excerpts and your questions are sent to DeepSeek to generate replies. With web search enabled, your question is also sent to DeepSeek's search service. Knowledge base search runs locally. Your API key is encrypted by the system and stored on this machine only.",
   aiPrivacyAgree: "Got it",
   aiErrorUnauthorized: "Invalid API key. Check it and try again.",
   aiErrorBalance: "Insufficient account balance",
@@ -1809,15 +1877,22 @@ const en: TranslationKeys = {
   aiClearChat: "Clear chat",
   aiSources: "Sources",
   aiThinking: "Thinking…",
+  aiPhaseRetrieving: "Searching the local knowledge base…",
+  aiPhaseSearching: "Searching the web…",
+  aiPhaseWriting: "Working on the note…",
+  aiTruncated: "The answer hit the length limit and may be cut off.",
+  aiViewDiff: "View changes",
+  aiDiffTooLong: "Content is long — showing the first 400 lines only.",
+  aiDiffUnavailable: "The original version is no longer available.",
   aiReasoning: "Reasoning",
   aiNoResult: "Nothing relevant in the manual. Try rephrasing.",
   aiNoKeyHint: "No API key configured — XiaoQing answers offline with streamed retrieval results. Add your DeepSeek key in Settings → AI Settings for generated answers.",
   aiModelLabel: "Chat model",
   aiModelLocal: "XiaoQing",
   aiPolishModelLabel: "Polish model",
-  aiSearchTitle: "Real-time web search (Bocha)",
+  aiSearchTitle: "Real-time web search (DeepSeek)",
   aiSearchToggleLabel: "Search the web",
-  aiSearchToggleHint: "When enabled, DeepSeek-mode answers run a real-time web search and cite sources inline. Bring your own key from the Bocha open platform; it is stored encrypted on this device only.",
+  aiSearchToggleHint: "Reuses the same DeepSeek key and is billed per successful request (about ¥5 / 1000 requests). When enabled, DeepSeek-mode answers run a real-time web search and cite sources inline.",
   aiAnswerSteps: "Steps",
   aiAnswerHowto: "Do this",
   aiAnswerWhere: "Where to find it",

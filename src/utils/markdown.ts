@@ -98,9 +98,61 @@ function highlightCode(text: string, language: string): string | null {
   }
 }
 
+/**
+ * Only schemes that are inert inside a webview.
+ *
+ * Both note bodies and AI answers reach this renderer, and `marked` copies the
+ * link destination straight into `href`: `[点我](javascript:…)` becomes a real
+ * anchor, and clicking it would run script in the app origin — where the Tauri
+ * IPC bridge is reachable. Raw HTML tags are already escaped below; the URL
+ * scheme was the remaining hole.
+ */
+const LINK_SCHEME_ALLOWLIST = /^(?:https?|mailto|tel)$/i;
+const IMAGE_SCHEME_ALLOWLIST = /^(?:https?|blob|attachment|data)$/i;
+const HAS_SCHEME = /^([a-z][a-z0-9+.-]*):/i;
+
+/** True when the target carries no scheme at all (`#anchor`, `/path`, `x.md`). */
+function isRelativeTarget(value: string): boolean {
+  return !HAS_SCHEME.test(value);
+}
+
+function schemeOf(value: string): string {
+  return HAS_SCHEME.exec(value)?.[1] ?? "";
+}
+
+export function isSafeLinkHref(href: string): boolean {
+  const value = href.trim();
+  if (!value) return false;
+  // `//host` is protocol-relative http(s), not a scheme we must vouch for.
+  if (value.startsWith("//")) return true;
+  if (isRelativeTarget(value)) return true;
+  return LINK_SCHEME_ALLOWLIST.test(schemeOf(value));
+}
+
+export function isSafeImageSrc(src: string): boolean {
+  const value = src.trim();
+  if (!value) return false;
+  if (value.startsWith("//")) return true;
+  if (isRelativeTarget(value)) return true;
+  const scheme = schemeOf(value);
+  if (!IMAGE_SCHEME_ALLOWLIST.test(scheme)) return false;
+  // `data:` is only inert when the payload really is an image.
+  if (/^data$/i.test(scheme) && !/^data:image\//i.test(value)) return false;
+  return true;
+}
+
 // Markdown permits raw HTML, but note previews are inserted as HTML. Keep the
 // existing safe behavior while still allowing Markdown-generated <img> tags.
 markdownRenderer.html = ({ text }: Tokens.HTML): string => escapeHtml(text);
+
+// Delegate to marked's own link renderer (it knows how to render inline
+// tokens), then drop the href when the scheme is not on the allowlist — the
+// link text survives as plain text so nothing silently disappears.
+const defaultLinkRenderer = markdownRenderer.link.bind(markdownRenderer);
+markdownRenderer.link = (token: Tokens.Link): string => {
+  if (isSafeLinkHref(token.href)) return defaultLinkRenderer(token);
+  return markdownRenderer.parser.parseInline(token.tokens);
+};
 markdownRenderer.space = ({ raw }: Tokens.Space): string => {
   const blankLineCount = Math.max(0, (raw.match(/\n/g)?.length ?? 0) - 1);
   if (blankLineCount === 0) return "";
@@ -112,6 +164,7 @@ markdownRenderer.checkbox = ({ checked }: Tokens.Checkbox): string => {
 markdownRenderer.image = ({ href, title, text }: Tokens.Image): string => {
   const marker = /#attachment=([^#]+)$/i.exec(href);
   const src = marker ? href.slice(0, marker.index) : href;
+  if (!isSafeImageSrc(src)) return escapeHtml(text);
   const attributes = [`src="${escapeHtml(src)}"`, `alt="${escapeHtml(text)}"`];
   if (title) attributes.push(`title="${escapeHtml(title)}"`);
   if (marker) {

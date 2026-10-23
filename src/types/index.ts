@@ -11,6 +11,8 @@ export interface Todo {
   pinned?: boolean;
   dueDate?: string;
   category?: string;
+  /** Free-form body shown as a card under the task in the todo view. */
+  description?: string;
   createdAt: string;
   order: number;
 }

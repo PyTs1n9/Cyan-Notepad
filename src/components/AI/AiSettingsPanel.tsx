@@ -49,20 +49,13 @@ const AiSettingsPanel: React.FC = () => {
     saveKey,
     clearKey,
     verifyKey,
-    hasSearchKey,
     searchEnabled,
     setSearchEnabled,
-    saveSearchKey,
-    clearSearchKey,
-    verifySearchKey,
   } = useAiStore();
 
   const [draft, setDraft] = useState("");
   const [reveal, setReveal] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
-  const [searchDraft, setSearchDraft] = useState("");
-  const [searchReveal, setSearchReveal] = useState(false);
-  const [searchFeedback, setSearchFeedback] = useState<Feedback>(null);
 
   useEffect(() => {
     void hydrate();
@@ -98,7 +91,11 @@ const AiSettingsPanel: React.FC = () => {
     }
     const ok = await verifyKey();
     if (ok) {
-      setFeedback({ tone: "ok", text: t(lang, "aiVerifySuccess") });
+      // The same key powers chat and 联网搜索: one test covers both.
+      setFeedback({
+        tone: "ok",
+        text: t(lang, searchEnabled ? "aiVerifySuccessSearch" : "aiVerifySuccess"),
+      });
     } else {
       const code = useAiStore.getState().lastErrorCode;
       setFeedback({ tone: "error", text: errorText(code, lang) });
@@ -110,49 +107,6 @@ const AiSettingsPanel: React.FC = () => {
     setDraft("");
     setReveal(false);
     setFeedback({ tone: "ok", text: t(lang, "aiKeyCleared") });
-  };
-
-  const handleSearchSave = async () => {
-    if (!searchDraft.trim()) return;
-    const ok = await saveSearchKey(searchDraft);
-    if (ok) {
-      setSearchDraft("");
-      setSearchReveal(false);
-      setSearchFeedback({ tone: "ok", text: t(lang, "aiKeySaved") });
-    } else {
-      const code = useAiStore.getState().lastErrorCode;
-      setSearchFeedback({ tone: "error", text: errorText(code, lang) });
-    }
-  };
-
-  const handleSearchVerify = async () => {
-    const candidate = searchDraft.trim();
-    if (candidate) {
-      const saved = await saveSearchKey(candidate);
-      if (!saved) {
-        const code = useAiStore.getState().lastErrorCode;
-        setSearchFeedback({ tone: "error", text: errorText(code, lang) });
-        return;
-      }
-      setSearchDraft("");
-      setSearchReveal(false);
-    }
-    const ok = await verifySearchKey();
-    setSearchFeedback(
-      ok
-        ? { tone: "ok", text: t(lang, "aiVerifySuccess") }
-        : {
-            tone: "error",
-            text: errorText(useAiStore.getState().lastErrorCode, lang),
-          },
-    );
-  };
-
-  const handleSearchClear = async () => {
-    await clearSearchKey();
-    setSearchDraft("");
-    setSearchReveal(false);
-    setSearchFeedback({ tone: "ok", text: t(lang, "aiKeyCleared") });
   };
 
   return (
@@ -255,7 +209,7 @@ const AiSettingsPanel: React.FC = () => {
         </div>
       </section>
 
-      {/* Real-time web search (BYOK, Bocha preset). */}
+      {/* Real-time web search: DeepSeek's own search endpoint, same BYOK key. */}
       <section className="rounded-2xl border border-border/60 bg-bg-secondary/35 p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent ring-1 ring-accent/20">
@@ -268,14 +222,14 @@ const AiSettingsPanel: React.FC = () => {
           </div>
           <span
             className={`ml-auto flex-shrink-0 rounded-full px-2 py-0.5 text-xs ${
-              hasSearchKey ? "bg-accent-light text-accent" : "bg-bg-hover text-text-muted"
+              hasKey ? "bg-accent-light text-accent" : "bg-bg-hover text-text-muted"
             }`}
           >
-            {hasSearchKey ? t(lang, "aiKeySaved") : t(lang, "aiKeyMissing")}
+            {hasKey ? t(lang, "aiKeySaved") : t(lang, "aiKeyMissing")}
           </span>
         </div>
 
-        <label className="mb-3 flex cursor-pointer items-start gap-2.5">
+        <label className="flex cursor-pointer items-start gap-2.5">
           <input
             type="checkbox"
             checked={searchEnabled}
@@ -291,77 +245,6 @@ const AiSettingsPanel: React.FC = () => {
             </span>
           </span>
         </label>
-
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <input
-              type={searchReveal ? "text" : "password"}
-              value={searchDraft}
-              onChange={(event) => {
-                setSearchDraft(event.target.value);
-                setSearchFeedback(null);
-              }}
-              placeholder={
-                hasSearchKey && !searchDraft
-                  ? "••••••••••••••••"
-                  : t(lang, "aiApiKeyPlaceholder")
-              }
-              spellCheck={false}
-              autoComplete="off"
-              className="w-full rounded-xl border border-border bg-bg-primary px-3 py-2 pr-9 text-sm text-text-primary outline-none transition-colors focus:border-accent"
-            />
-            <button
-              type="button"
-              onClick={() => setSearchReveal((value) => !value)}
-              aria-label={searchReveal ? "hide" : "show"}
-              className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-text-muted transition-colors hover:text-text-primary"
-            >
-              {searchReveal ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={handleSearchSave}
-            disabled={!searchDraft.trim() || busy}
-            className="flex-shrink-0 cursor-pointer rounded-xl bg-accent px-3.5 py-2 text-sm font-medium text-bg-primary shadow-sm transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t(lang, "aiSaveKey")}
-          </button>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSearchVerify}
-            disabled={busy || (!searchDraft.trim() && !hasSearchKey)}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-bg-primary px-3 py-1.5 text-xs font-medium text-text-primary transition-all hover:bg-bg-hover active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {status === "testing" ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <Check size={13} />
-            )}
-            {t(lang, "aiVerifyKey")}
-          </button>
-          <button
-            type="button"
-            onClick={handleSearchClear}
-            disabled={!hasSearchKey || busy}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-bg-primary px-3 py-1.5 text-xs font-medium text-text-muted transition-all hover:bg-bg-hover hover:text-text-primary active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Trash2 size={13} />
-            {t(lang, "aiClearKey")}
-          </button>
-          {searchFeedback && (
-            <span
-              className={`text-xs ${
-                searchFeedback.tone === "ok" ? "text-accent" : "text-danger"
-              }`}
-            >
-              {searchFeedback.text}
-            </span>
-          )}
-        </div>
       </section>
 
       <section className="rounded-2xl border border-border/60 bg-bg-secondary/20 p-4 shadow-sm">

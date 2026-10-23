@@ -35,7 +35,10 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   ];
 
   return (
-    <aside className="flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-border bg-bg-sidebar text-text-primary transition-colors">
+    // No divider and no background of its own: the rail and the explorer beside
+    // it are one card, distinguished by hover and selection only. The card's
+    // `overflow: hidden` rounds the corners of the first and last buttons.
+    <aside className="flex h-full w-12 flex-shrink-0 flex-col items-center text-text-primary transition-colors">
       <nav className="flex w-full flex-col items-center gap-1" aria-label="Activity bar">
         {items.map(({ view, label, icon, disabled }) => {
           const active = !disabled && currentView === view;
@@ -50,7 +53,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
               title={label}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              className={`relative flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-default disabled:opacity-60 ${
+              className={`relative flex h-11 w-11 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-default disabled:opacity-60 ${
                 active ? "bg-bg-active text-text-primary" : ""
               }`}
             >
@@ -68,7 +71,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           title={t(lang, "aiAssistant")}
           aria-label={t(lang, "aiAssistant")}
           aria-pressed={aiSidebarOpen}
-          className={`relative flex h-10 w-11 items-center justify-center transition-colors hover:bg-bg-hover hover:text-text-primary ${
+          className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
             aiSidebarOpen ? "bg-bg-active text-accent" : "text-text-muted"
           }`}
         >
@@ -80,7 +83,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           onClick={onToggleCollapse}
           title={collapsed ? t(lang, "expandSidebar") : t(lang, "collapseSidebar")}
           aria-label={collapsed ? t(lang, "expandSidebar") : t(lang, "collapseSidebar")}
-          className="flex h-10 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex h-10 w-11 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           {collapsed ? <PanelLeftOpen size={20} strokeWidth={1.7} /> : <PanelLeftClose size={20} strokeWidth={1.7} />}
         </button>
@@ -89,7 +92,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           onClick={onOpenSettings}
           title={t(lang, "settings")}
           aria-label={t(lang, "settings")}
-          className="flex h-10 w-11 items-center justify-center text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex h-10 w-11 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <Settings size={20} strokeWidth={1.7} />
         </button>
@@ -99,7 +102,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           title={t(lang, alwaysOnTop ? "disableAlwaysOnTop" : "enableAlwaysOnTop")}
           aria-label={t(lang, alwaysOnTop ? "disableAlwaysOnTop" : "enableAlwaysOnTop")}
           aria-pressed={alwaysOnTop}
-          className={`relative flex h-10 w-11 items-center justify-center transition-colors hover:bg-bg-hover hover:text-text-primary ${
+          className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
             alwaysOnTop ? "bg-bg-active text-accent" : "text-text-muted"
           }`}
         >

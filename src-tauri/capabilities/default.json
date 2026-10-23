@@ -70,8 +70,7 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://api.deepseek.com/*" },
-        { "url": "https://api.bochaai.com/*" }
+        { "url": "https://api.deepseek.com/*" }
       ]
     }
   ]

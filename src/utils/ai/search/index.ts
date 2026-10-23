@@ -1,9 +1,9 @@
 /**
  * Search provider registry. Adding a search vendor = one adapter file + one
- * line here. Default preset: 博查 (domestic direct connection, citation
- * fields ready); Tavily is the planned second slot.
+ * line here. Default preset: DeepSeek 官方搜索, which reuses the chat key so
+ * 联网搜索 never asks for a second credential.
  */
-import { bochaSearchProvider } from "./bocha";
+import { deepSeekSearchProvider } from "./deepseek";
 import type { SearchProvider } from "./types";
 
 export type {
@@ -12,7 +12,7 @@ export type {
   WebSearchResult,
 } from "./types";
 
-const providers: SearchProvider[] = [bochaSearchProvider];
+const providers: SearchProvider[] = [deepSeekSearchProvider];
 
 export function listSearchProviders(): SearchProvider[] {
   return providers.slice();
@@ -22,6 +22,6 @@ export function getSearchProvider(id: string): SearchProvider | undefined {
   return providers.find((p) => p.id === id);
 }
 
-export const DEFAULT_SEARCH_PROVIDER_ID = "bocha";
+export const DEFAULT_SEARCH_PROVIDER_ID = "deepseek";
 
-export { bochaSearchProvider };
+export { deepSeekSearchProvider };

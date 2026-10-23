@@ -32,6 +32,8 @@ interface SseDelta {
   content: string | null;
   reasoning: string | null;
   toolCalls: SseToolCallFragment[] | null;
+  /** Present on the final chunk: "stop", "length", "tool_calls"… */
+  finishReason: string | null;
 }
 
 /** A streaming `delta.tool_calls[]` fragment; fields fill in across chunks. */
@@ -94,16 +96,19 @@ function parseSseLine(line: string): SseDelta | null {
           reasoning?: string;
           tool_calls?: SseToolCallFragment[];
         };
+        finish_reason?: string | null;
       }[];
     };
-    const delta = parsed.choices?.[0]?.delta;
-    if (!delta) return null;
+    const choice = parsed.choices?.[0];
+    const delta = choice?.delta;
+    if (!delta && !choice?.finish_reason) return null;
     return {
-      content: delta.content ?? null,
+      content: delta?.content ?? null,
       // DeepSeek uses `reasoning_content`; accept `reasoning` for other
       // OpenAI-compatible backends.
-      reasoning: delta.reasoning_content ?? delta.reasoning ?? null,
-      toolCalls: delta.tool_calls ?? null,
+      reasoning: delta?.reasoning_content ?? delta?.reasoning ?? null,
+      toolCalls: delta?.tool_calls ?? null,
+      finishReason: choice?.finish_reason ?? null,
     };
   } catch {
     return null;
@@ -152,6 +157,7 @@ export function createOpenAiCompatProvider(
       onReasoning,
       tools,
       onToolCalls,
+      onFinish,
     } = request;
     if (!apiKey) throw new AiError("missing-key");
 
@@ -192,9 +198,11 @@ export function createOpenAiCompatProvider(
               function?: { name?: string; arguments?: string };
             }[];
           };
+          finish_reason?: string | null;
         }[];
       };
-      const message = payload.choices?.[0]?.message;
+      const choice = payload.choices?.[0];
+      const message = choice?.message;
       const content = message?.content ?? "";
       const toolCalls: ChatToolCall[] = (message?.tool_calls ?? []).map(
         (call, index) => ({
@@ -206,6 +214,7 @@ export function createOpenAiCompatProvider(
       if (!content && !toolCalls.length) {
         throw new AiError("bad-response", EMPTY_COMPLETION_DETAIL);
       }
+      if (choice?.finish_reason) onFinish?.(choice.finish_reason);
       if (content) onDelta?.(content);
       if (toolCalls.length) onToolCalls?.(toolCalls);
       return content;
@@ -215,9 +224,11 @@ export function createOpenAiCompatProvider(
     const decoder = new TextDecoder();
     let buffer = "";
     let full = "";
+    let finishReason: string | null = null;
     const toolCallAcc = new Map<number, ChatToolCall>();
 
     const consume = (delta: SseDelta) => {
+      if (delta.finishReason) finishReason = delta.finishReason;
       if (delta.reasoning) onReasoning?.(delta.reasoning);
       if (delta.content) {
         full += delta.content;
@@ -253,6 +264,7 @@ export function createOpenAiCompatProvider(
     if (!full && !toolCalls.length) {
       throw new AiError("bad-response", EMPTY_COMPLETION_DETAIL);
     }
+    if (finishReason) onFinish?.(finishReason);
     if (toolCalls.length) onToolCalls?.(toolCalls);
     return full;
   }

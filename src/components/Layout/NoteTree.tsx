@@ -47,6 +47,7 @@ interface NoteTreeProps {
 
 type DropTarget =
   | { kind: "folder"; id: string }
+  | { kind: "folder-insert"; id: string; position: "before" | "after" }
   | { kind: "note"; id: string; position: "before" | "after" };
 
 const folderAssignableId = (folderId: string | null) =>
@@ -76,6 +77,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     togglePinned,
     toggleCategoryPinned,
     moveCategory,
+    moveCategoryBeside,
     deleteCategory,
   } = useNoteStore();
   const expandedIds = useSettingsStore((s) => s.expandedFolderIds);
@@ -93,6 +95,18 @@ const NoteTree: React.FC<NoteTreeProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   // Remembers whether the last row picked was a note; Delete only acts on that.
   const lastSelectionRef = useRef<"note" | "folder" | null>(null);
+  // A drag also emits a click when it ends on the row it started from; that
+  // click must not select (or collapse) the row.
+  const suppressClickRef = useRef(false);
+  // Roving tabindex: exactly one row sits in the tab order, so Tab does not walk
+  // through the entire tree.
+  const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+
+  const rowTabIndex = (kind: "folder" | "note", id: string, index: number) => {
+    const key = `${kind}:${id}`;
+    if (focusedRowKey) return focusedRowKey === key ? 0 : -1;
+    return index === 0 ? 0 : -1;
+  };
 
   const tree = useMemo(
     () =>
@@ -138,9 +152,80 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     [tree, expandedIds, forceExpand],
   );
 
+  /**
+   * Keeps the tree in sync with whatever the editor is showing. Switching to a
+   * tab whose note sits inside a collapsed folder used to leave the row hidden,
+   * so the note looked unselected. Reveal means: open every ancestor folder
+   * (never close anything) and scroll the row into view.
+   */
+  const revealedNoteIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeNoteId || revealedNoteIdRef.current === activeNoteId) return;
+    const noteState = useNoteStore.getState();
+    const note = noteState.notes.find((item) => item.id === activeNoteId);
+    if (!note) return;
+    revealedNoteIdRef.current = activeNoteId;
+
+    // A filter already opens every matching branch, and its visible set is not
+    // governed by expandedFolderIds - expanding there would fight the filter.
+    if (!forceExpand) {
+      const expanded = useSettingsStore.getState().expandedFolderIds;
+      if (expanded !== null) {
+        const byId = new Map(noteState.categories.map((category) => [category.id, category]));
+        // Notes without a live category are rendered under the virtual bucket,
+        // which is a collapsible row like any other.
+        const chain: string[] = [];
+        const seen = new Set<string>();
+        let cursor: string | null =
+          note.categoryId && byId.has(note.categoryId) ? note.categoryId : UNCATEGORIZED_CATEGORY_ID;
+        while (cursor && !seen.has(cursor)) {
+          seen.add(cursor);
+          chain.push(cursor);
+          cursor = cursor === UNCATEGORIZED_CATEGORY_ID
+            ? null
+            : byId.get(cursor)?.parentId ?? null;
+        }
+        const missing = chain.filter((id) => !expanded.includes(id));
+        if (missing.length > 0) {
+          useSettingsStore.getState().setExpandedFolderIds([...expanded, ...missing]);
+        }
+      }
+    }
+
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-tree-note-id="${CSS.escape(activeNoteId)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }, [activeNoteId, forceExpand, categories, notes.length]);
+
   const setDropTargetSafe = (target: DropTarget | null) => {
     dropTargetRef.current = target;
     setDropTarget(target);
+  };
+
+  // Hovering the middle of a folder only opens it after a real pause, so
+  // "drop inside" stays a deliberate gesture instead of a drive-by side effect.
+  const hoverExpandRef = useRef<{ id: string | null; timer: number | null }>({ id: null, timer: null });
+
+  const clearHoverExpand = () => {
+    if (hoverExpandRef.current.timer !== null) window.clearTimeout(hoverExpandRef.current.timer);
+    hoverExpandRef.current = { id: null, timer: null };
+  };
+
+  const scheduleAutoExpand = (target: DropTarget | null) => {
+    const id = target?.kind === "folder" ? target.id : null;
+    if (hoverExpandRef.current.id === id) return;
+    clearHoverExpand();
+    if (!id || id === UNCATEGORIZED_CATEGORY_ID) return;
+    hoverExpandRef.current.id = id;
+    hoverExpandRef.current.timer = window.setTimeout(() => {
+      hoverExpandRef.current = { id, timer: null };
+      const current = useSettingsStore.getState().expandedFolderIds;
+      if (current === null || current.includes(id)) return;
+      useSettingsStore.getState().setExpandedFolderIds([...current, id]);
+    }, 600);
   };
 
   useEffect(() => () => {
@@ -148,6 +233,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     dragCloneRef.current = null;
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
+    clearHoverExpand();
   }, []);
 
   const toggleFolder = (id: string) => {
@@ -164,17 +250,32 @@ const NoteTree: React.FC<NoteTreeProps> = ({
   };
 
   const handleSelectFolder = (row: TreeRow & { kind: "folder" }) => {
-    lastSelectionRef.current = "folder";
-    setActiveCategoryId(row.folder.id);
-    // Selecting a folder never folds it; clicking a collapsed row opens it so a
-    // single click always reveals the folder the user just picked.
-    if (!isExpanded(row.folder.id) && expandedIds !== null) {
-      setExpandedFolderIds([...expandedIds, row.folder.id]);
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
     }
+    lastSelectionRef.current = "folder";
+    const folderId = row.folder.id;
+    const activeId = row.folder.virtual ? UNCATEGORIZED_CATEGORY_ID : folderId;
+    // Clicking the folder that is already selected folds it again, keeping the
+    // selection. A filter forces every branch open, so collapsing there would
+    // desync the state from what the rows show - selection only.
+    if (activeCategoryId === activeId) {
+      if (!forceExpand) toggleFolder(folderId);
+      return;
+    }
+    setActiveCategoryId(folderId);
+    // Picking a new folder always reveals it, so one click never lands on a
+    // row whose contents stay hidden.
+    ensureExpanded(folderId);
   };
 
   // A single click opens a replaceable preview tab; a double click pins it.
   const handleSelectNote = (note: Note) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     lastSelectionRef.current = "note";
     useTabStore.getState().openTab(note.id, { preview: true });
     onOpenNote(note.id);
@@ -210,6 +311,53 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     setExpandedFolderIds([...expandedIds, id]);
   };
 
+  // Tree keyboard model: Enter/Space behave like a click, Left/Right fold and
+  // unfold, Up/Down move focus between visible rows.
+  const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const rowElement = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-tree-row]");
+    if (!rowElement) return;
+    const index = Number(rowElement.dataset.treeRowIndex ?? "-1");
+    const row = Number.isInteger(index) && index >= 0 ? rows[index] : undefined;
+    if (!row) return;
+
+    const focusRow = (nextIndex: number) => {
+      const target = event.currentTarget.querySelectorAll<HTMLElement>("[data-tree-row]")[nextIndex];
+      if (!target) return;
+      target.focus();
+    };
+
+    switch (event.key) {
+      case "Enter":
+      case " ":
+        event.preventDefault();
+        if (row.kind === "folder") handleSelectFolder(row);
+        else handleSelectNote(row.note);
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        focusRow(Math.min(rows.length - 1, index + 1));
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        focusRow(Math.max(0, index - 1));
+        break;
+      case "ArrowRight":
+        if (row.kind === "folder") {
+          event.preventDefault();
+          ensureExpanded(row.folder.id);
+        }
+        break;
+      case "ArrowLeft":
+        if (row.kind === "folder" && isExpanded(row.folder.id)) {
+          event.preventDefault();
+          toggleFolder(row.folder.id);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
   // A folder created from the header / context menu arrives with an empty name;
   // open its inline rename so the user can type it straight away.
   useEffect(() => {
@@ -219,6 +367,12 @@ const NoteTree: React.FC<NoteTreeProps> = ({
       if (category.parentId) ensureExpanded(category.parentId);
       setEditingFolderId(category.id);
       setEditingName(category.name);
+      // A deep folder created from the header can land outside the viewport.
+      requestAnimationFrame(() => {
+        document
+          .querySelector(`[data-tree-folder-id="${category.id}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      });
     }
     onAutoRenameHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -379,11 +533,24 @@ const NoteTree: React.FC<NoteTreeProps> = ({
   const getNoteTitle = (note: Note) => note.title.trim() || t(lang, "untitled");
 
   /** Resolves the folder row / note row currently under the pointer. */
-  const findDropTarget = (clientX: number, clientY: number): DropTarget | null => {
+  const findDropTarget = (
+    clientX: number,
+    clientY: number,
+    mode: "folder" | "note",
+  ): DropTarget | null => {
     const element = document.elementFromPoint(clientX, clientY);
     const folderEl = element?.closest<HTMLElement>("[data-tree-folder-id]");
-    if (folderEl?.dataset.treeFolderId) {
-      return { kind: "folder", id: folderEl.dataset.treeFolderId };
+    const folderId = folderEl?.dataset.treeFolderId;
+    if (folderEl && folderId) {
+      // Only a dragged folder can land between siblings: a note has no position
+      // relative to folders, so it always just moves into the target folder.
+      if (mode === "note") return { kind: "folder", id: folderId };
+      const rect = folderEl.getBoundingClientRect();
+      const ratio = (clientY - rect.top) / Math.max(1, rect.height);
+      // Top and bottom quarters insert as a sibling; the middle nests.
+      if (ratio < 0.25) return { kind: "folder-insert", id: folderId, position: "before" };
+      if (ratio > 0.75) return { kind: "folder-insert", id: folderId, position: "after" };
+      return { kind: "folder", id: folderId };
     }
     const noteEl = element?.closest<HTMLElement>("[data-tree-note-id]");
     const noteId = noteEl?.dataset.treeNoteId;
@@ -400,49 +567,69 @@ const NoteTree: React.FC<NoteTreeProps> = ({
 
   const beginDrag = (event: React.MouseEvent, rowElement: HTMLElement | null) => {
     if (!rowElement || event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
 
     const startRect = rowElement.getBoundingClientRect();
     const offsetY = event.clientY - startRect.top;
-    const clone = rowElement.cloneNode(true) as HTMLElement;
-    clone.style.position = "fixed";
-    clone.style.left = `${startRect.left}px`;
-    clone.style.top = `${startRect.top}px`;
-    clone.style.width = `${startRect.width}px`;
-    clone.style.zIndex = "9999";
-    clone.style.pointerEvents = "none";
-    clone.style.opacity = "0.85";
-    clone.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
-    clone.style.borderRadius = "8px";
-    document.body.appendChild(clone);
-    dragCloneRef.current = clone;
-
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
-
-    let moved = false;
     const startX = event.clientX;
     const startY = event.clientY;
+    const mode: "folder" | "note" = rowElement.dataset.treeNoteId ? "note" : "folder";
+    let clone: HTMLElement | null = null;
+    let moved = false;
+
+    // Text selection is only suppressed once a drag really starts, so a plain
+    // click inside an inline rename input keeps working normally.
+    const blockSelection = (nativeEvent: Event) => nativeEvent.preventDefault();
+
+    const startGhost = () => {
+      clone = rowElement.cloneNode(true) as HTMLElement;
+      clone.removeAttribute("data-tree-row");
+      clone.removeAttribute("data-tree-folder-id");
+      clone.removeAttribute("data-tree-note-id");
+      clone.style.position = "fixed";
+      clone.style.left = `${startRect.left}px`;
+      clone.style.top = `${startRect.top}px`;
+      clone.style.width = `${startRect.width}px`;
+      clone.style.zIndex = "9999";
+      clone.style.pointerEvents = "none";
+      clone.style.opacity = "0.85";
+      clone.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
+      document.body.appendChild(clone);
+      dragCloneRef.current = clone;
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "grabbing";
+      document.addEventListener("selectstart", blockSelection);
+    };
 
     const onMove = (moveEvent: MouseEvent) => {
-      clone.style.top = `${moveEvent.clientY - offsetY}px`;
-      if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) {
+      if (!moved) {
+        if (
+          Math.abs(moveEvent.clientX - startX) <= 3
+          && Math.abs(moveEvent.clientY - startY) <= 3
+        ) {
+          return;
+        }
         moved = true;
+        suppressClickRef.current = true;
+        startGhost();
       }
-      setDropTargetSafe(findDropTarget(moveEvent.clientX, moveEvent.clientY));
+      if (clone) clone.style.top = `${moveEvent.clientY - offsetY}px`;
+      const target = findDropTarget(moveEvent.clientX, moveEvent.clientY, mode);
+      setDropTargetSafe(target);
+      scheduleAutoExpand(target);
     };
 
     const onUp = (upEvent: MouseEvent) => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("selectstart", blockSelection);
+      clearHoverExpand();
       dragCloneRef.current?.remove();
       dragCloneRef.current = null;
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
-      const target = moved ? findDropTarget(upEvent.clientX, upEvent.clientY) : null;
-      setDropTargetSafe(null);
       if (!moved) return;
+      const target = findDropTarget(upEvent.clientX, upEvent.clientY, mode);
+      setDropTargetSafe(null);
       if (target) {
         resolveDrop(rowElement, target);
         return;
@@ -485,12 +672,23 @@ const NoteTree: React.FC<NoteTreeProps> = ({
       return;
     }
 
-    if (folderId && target.kind === "folder") {
-      // Dropping a folder onto another folder nests it; dropping onto the
-      // uncategorized bucket lifts it back to the root.
-      const nextParent = target.id === UNCATEGORIZED_CATEGORY_ID ? null : target.id;
-      moveCategory(folderId, nextParent);
-      if (nextParent) ensureExpanded(nextParent);
+    if (folderId) {
+      if (target.kind === "folder") {
+        // Dropping a folder onto another folder nests it; dropping onto the
+        // uncategorized bucket lifts it back to the root.
+        const nextParent = target.id === UNCATEGORIZED_CATEGORY_ID ? null : target.id;
+        moveCategory(folderId, nextParent);
+        if (nextParent) ensureExpanded(nextParent);
+        return;
+      }
+      if (target.kind === "folder-insert" && target.id !== folderId) {
+        // Beside the virtual bucket means "root level", not "child of nothing".
+        if (target.id === UNCATEGORIZED_CATEGORY_ID) {
+          moveCategory(folderId, null);
+          return;
+        }
+        moveCategoryBeside(folderId, target.id, target.position);
+      }
     }
   };
 
@@ -506,10 +704,14 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     }
   };
 
-  const renderFolderRow = (row: TreeRow & { kind: "folder" }) => {
+  const renderFolderRow = (row: TreeRow & { kind: "folder" }, index: number) => {
     const { folder, depth, noteCount, folderCount, expanded } = row;
     const isActive = activeCategoryId === (folder.virtual ? UNCATEGORIZED_CATEGORY_ID : folder.id);
     const isDropInside = dropTarget?.kind === "folder" && dropTarget.id === folder.id;
+    const isDropBefore = dropTarget?.kind === "folder-insert"
+      && dropTarget.id === folder.id && dropTarget.position === "before";
+    const isDropAfter = dropTarget?.kind === "folder-insert"
+      && dropTarget.id === folder.id && dropTarget.position === "after";
     const category = folder.virtual
       ? null
       : categories.find((item) => item.id === folder.id) ?? null;
@@ -521,73 +723,70 @@ const NoteTree: React.FC<NoteTreeProps> = ({
         key={`folder:${folder.id}`}
         data-tree-row
         data-tree-folder-id={folder.id}
+        data-tree-row-index={index}
+        role="treeitem"
+        aria-expanded={expanded}
+        aria-selected={isActive}
+        tabIndex={rowTabIndex("folder", folder.id, index)}
+        onClick={() => handleSelectFolder(row)}
+        onMouseDown={category ? (event) => beginDrag(event, event.currentTarget) : undefined}
         onContextMenu={(event) => openContextMenu(event, row)}
-        className={`group relative mb-0.5 rounded-lg ${isDropInside ? "drag-target-inside" : ""}`}
+        onFocus={() => setFocusedRowKey(`folder:${folder.id}`)}
+        title={folder.name || t(lang, "unnamedFolder")}
+        className={`group relative mb-0.5 rounded-lg pr-2 text-xs transition-colors cursor-pointer
+          ${isActive
+            ? "flat-active-row text-text-primary"
+            : `text-text-secondary ${insideActive ? "tree-subtree-tint" : "hover:bg-bg-hover"}`}
+          ${isDropInside ? "drag-target-inside" : ""}`}
       >
+        {isDropBefore && <span aria-hidden="true" className="drag-insertion-line drag-insertion-line--before" />}
+        {isDropAfter && <span aria-hidden="true" className="drag-insertion-line drag-insertion-line--after" />}
         <div
-          className={`flex h-8 w-full items-center gap-1.5 rounded-lg border pr-2 text-xs transition-colors
-            ${isActive
-              ? "flat-active-row border-accent/20 text-text-primary"
-              : `border-transparent text-text-secondary ${insideActive ? "tree-subtree-tint" : "hover:bg-bg-hover"}`}`}
+          className="flex h-8 w-full items-center gap-1.5"
           style={{ paddingLeft: indent + 4 }}
         >
-          <button
-            type="button"
-            onClick={() => toggleFolder(folder.id)}
-            className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-text-muted hover:text-text-primary cursor-pointer"
-            title={t(lang, expanded ? "collapseFolder" : "expandFolder")}
-            aria-label={t(lang, expanded ? "collapseFolder" : "expandFolder")}
-            aria-expanded={expanded}
+          <span
+            aria-hidden="true"
+            className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-text-muted"
           >
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSelectFolder(row)}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left cursor-pointer"
-            title={folder.name || t(lang, "unnamedFolder")}
+            {expanded ? <ChevronDown size={12} strokeWidth={1.8} /> : <ChevronRight size={12} strokeWidth={1.8} />}
+          </span>
+          <span className="flex-shrink-0 text-text-muted">
+            {expanded
+              ? <FolderOpen size={14} strokeWidth={1.8} />
+              : <Folder size={14} strokeWidth={1.8} />}
+          </span>
+          {category && editingFolderId === category.id ? (
+            <input
+              value={editingName}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onChange={(event) => setEditingName(event.target.value)}
+              onBlur={finishRename}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") finishRename();
+                if (event.key === "Escape") {
+                  setEditingFolderId(null);
+                  setEditingName("");
+                }
+              }}
+              autoFocus
+              className="min-w-0 flex-1 rounded border border-border bg-bg-primary px-1 py-0.5 text-xs text-text-primary outline-none"
+            />
+          ) : (
+            <span className={`min-w-0 flex-1 truncate font-medium ${folder.name ? "" : "italic text-text-muted"}`}>
+              {folder.name || t(lang, "unnamedFolder")}
+            </span>
+          )}
+          {folder.pinned && <Pin size={10} className="flex-shrink-0 text-accent" />}
+          <span
+            className={`inline-flex h-[17px] min-w-[17px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none tabular-nums
+              ${isActive
+                ? "bg-accent text-white"
+                : "border border-border/70 bg-bg-primary/70 text-text-muted"}`}
           >
-            <span
-              onMouseDown={category
-                ? (event) => beginDrag(event, event.currentTarget.closest<HTMLElement>("[data-tree-row]"))
-                : undefined}
-              className={`flex-shrink-0 text-text-muted ${category ? "cursor-grab active:cursor-grabbing" : ""}`}
-              title={category ? t(lang, "dragCategory") : undefined}
-            >
-              {expanded ? <FolderOpen size={13} /> : <Folder size={13} />}
-            </span>
-            {category && editingFolderId === category.id ? (
-              <input
-                value={editingName}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) => setEditingName(event.target.value)}
-                onBlur={finishRename}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") finishRename();
-                  if (event.key === "Escape") {
-                    setEditingFolderId(null);
-                    setEditingName("");
-                  }
-                }}
-                autoFocus
-                className="min-w-0 flex-1 rounded border border-border bg-bg-primary px-1 py-0.5 text-xs text-text-primary outline-none"
-              />
-            ) : (
-              <span className={`min-w-0 flex-1 truncate font-medium ${folder.name ? "" : "italic text-text-muted"}`}>
-                {folder.name || t(lang, "unnamedFolder")}
-              </span>
-            )}
-            {folder.pinned && <Pin size={10} className="flex-shrink-0 text-accent" />}
-            <span
-              className={`inline-flex h-[17px] min-w-[17px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none tabular-nums
-                ${isActive
-                  ? "bg-accent text-white"
-                  : "border border-border/70 bg-bg-primary/70 text-text-muted"}
-                ${category ? "group-hover:hidden" : ""}`}
-            >
-              {noteCount}
-            </span>
-          </button>
+            {noteCount}
+          </span>
           {folderCount > 0 && !category && (
             <span className="flex-shrink-0 text-[10px] text-text-muted">{folderCount}</span>
           )}
@@ -596,7 +795,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     );
   };
 
-  const renderNoteRow = (row: TreeRow & { kind: "note" }) => {
+  const renderNoteRow = (row: TreeRow & { kind: "note" }, index: number) => {
     const { note, depth } = row;
     const isActive = activeNoteId === note.id;
     const isDropBefore = dropTarget?.kind === "note" && dropTarget.id === note.id && dropTarget.position === "before";
@@ -609,36 +808,43 @@ const NoteTree: React.FC<NoteTreeProps> = ({
         key={`note:${note.id}`}
         data-tree-row
         data-tree-note-id={note.id}
+        data-tree-row-index={index}
+        role="treeitem"
+        aria-selected={isActive}
+        tabIndex={rowTabIndex("note", note.id, index)}
+        onClick={() => handleSelectNote(note)}
+        onDoubleClick={() => handlePinNote(note)}
+        onMouseDown={note.pinned ? undefined : (event) => beginDrag(event, event.currentTarget)}
         onContextMenu={(event) => openContextMenu(event, row)}
-        className="group relative mb-0.5 rounded-lg"
+        onFocus={() => setFocusedRowKey(`note:${note.id}`)}
+        className={`group relative mb-0.5 rounded-lg pr-2 transition-colors cursor-pointer
+          ${isActive
+            ? "flat-active-row text-text-primary"
+            : `text-text-secondary ${insideActive ? "tree-subtree-tint" : "hover:bg-bg-hover"}`}`}
       >
         {isDropBefore && <span aria-hidden="true" className="drag-insertion-line drag-insertion-line--before" />}
         {isDropAfter && <span aria-hidden="true" className="drag-insertion-line drag-insertion-line--after" />}
         <div
-          className={`flex h-8 w-full items-center gap-1.5 rounded-lg border pr-2 text-sm transition-colors
-            ${isActive
-              ? "flat-active-row border-accent/20 text-text-primary"
-              : `border-transparent text-text-secondary ${insideActive ? "tree-subtree-tint" : "hover:bg-bg-hover"}`}`}
+          className="flex h-8 w-full items-center gap-1.5"
           style={{ paddingLeft: indent + 4 }}
         >
+          {/* Same width as the folder chevron, so file icons line up with the
+              folder icon above them instead of with the disclosure arrow. */}
+          <span aria-hidden="true" className="h-4 w-4 flex-shrink-0" />
           <span
-            onMouseDown={note.pinned
-              ? undefined
-              : (event) => beginDrag(event, event.currentTarget.closest<HTMLElement>("[data-tree-row]"))}
-            className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded
-              ${isActive
-                ? "bg-accent text-white"
-                : note.pinned
-                  ? "bg-accent-light text-accent"
-                  : "text-text-muted"}
-              ${note.pinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"}`}
-            title={note.pinned ? t(lang, "pinNote") : t(lang, "dragNote")}
+            className={`flex flex-shrink-0 items-center justify-center
+              ${isActive ? "text-accent" : "text-text-muted"}`}
           >
-            {note.pinned ? <Pin size={11} /> : <FileText size={11} />}
+            {note.pinned
+              ? <Pin size={13} strokeWidth={1.8} />
+              : <FileText size={13} strokeWidth={1.8} />}
           </span>
           {editingNoteId === note.id ? (
             <input
               value={editingNoteTitle}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
               onChange={(event) => setEditingNoteTitle(event.target.value)}
               onBlur={finishNoteRename}
               onKeyDown={(event) => {
@@ -652,15 +858,12 @@ const NoteTree: React.FC<NoteTreeProps> = ({
               className="min-w-0 flex-1 rounded border border-border bg-bg-primary px-1 py-0.5 text-[13px] text-text-primary outline-none"
             />
           ) : (
-            <button
-              type="button"
-              onClick={() => handleSelectNote(note)}
-              onDoubleClick={() => handlePinNote(note)}
-              className="min-w-0 flex-1 truncate text-left text-[13px] font-medium cursor-pointer"
+            <span
+              className="min-w-0 flex-1 truncate text-left text-[13px] font-medium"
               title={getNoteTitle(note)}
             >
               {getNoteTitle(note)}
-            </button>
+            </span>
           )}
         </div>
       </div>
@@ -671,6 +874,12 @@ const NoteTree: React.FC<NoteTreeProps> = ({
     <>
       <div
         ref={scrollRef}
+        role="tree"
+        aria-label={t(lang, "explorer")}
+        onKeyDown={handleTreeKeyDown}
+        onMouseDownCapture={() => {
+          suppressClickRef.current = false;
+        }}
         className="min-h-0 flex-1 overflow-y-auto px-2 pb-1"
         onContextMenu={(event) => {
           // Right-clicking empty space offers root-level creation.
@@ -678,7 +887,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
           setMenu({ x: event.clientX, y: event.clientY, row: null });
         }}
       >
-        {rows.map((row) => (row.kind === "folder" ? renderFolderRow(row) : renderNoteRow(row)))}
+        {rows.map((row, index) => (row.kind === "folder" ? renderFolderRow(row, index) : renderNoteRow(row, index)))}
         {rows.length === 0 && (
           <p className="px-3 py-4 text-center text-xs text-text-muted">{t(lang, "noNotes")}</p>
         )}
