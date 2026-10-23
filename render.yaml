@@ -9,8 +9,8 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: SUPABASE_URL
-        value: https://skwkzymlhqwgygwwlxoy.supabase.co
+        sync: false
       - key: SUPABASE_ANON_KEY
-        value: sb_publishable_8TIwPzBdrHmYEwhnikfk5g_sVjODHwW
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false

@@ -57,7 +57,15 @@ npm.cmd run tauri dev
 
 ## 4. 部署协作服务
 
-仓库根目录的 `render.yaml` 可创建 Docker Web Service。部署时只需要在托管平台手动填写 `SUPABASE_SERVICE_ROLE_KEY`。部署成功后使用服务的 HTTPS 域名生成 WebSocket 地址，例如：
+仓库根目录的 `render.yaml` 可创建 Docker Web Service。三个环境变量都不写进仓库，部署时需要在托管平台面板手动填写：
+
+```text
+SUPABASE_URL               你的项目地址，形如 https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY          项目的 publishable key
+SUPABASE_SERVICE_ROLE_KEY  仅服务器可见的 Secret key
+```
+
+漏填任意一项，服务会在启动时报错并反复重启；填写完成后用服务的 HTTPS 域名生成 WebSocket 地址，例如：
 
 ```text
 wss://qing-notepad-collab.example.com
