@@ -2,6 +2,10 @@
 
 name: Build and Release
 
+# Actions 运行记录的名称默认取提交信息，这里固定为「Qing Notepad v<版本>」，
+# 与 Release 标题保持一致；手动触发（非 tag）时退化为 dev (<分支>)。
+run-name: Qing Notepad ${{ github.ref_type == 'tag' && github.ref_name || format('dev ({0})', github.ref_name) }}
+
 "on":
   push:
     tags:
