@@ -51,7 +51,8 @@ jobs:
         run: npm run version:set -- "${{ github.ref_name }}"
 
       # 构建、创建 Release、上传产物由 tauri-action 一步完成。
-      # tagName 只在 v* tag 触发时非空：手动触发时为空串，action 仅构建不发布，
+      # 这是每一版固定的发布路径：推送 v* tag → 构建 → 构建成功后直接发布 Release。
+      # tagName 只在 v* tag 触发时非空：workflow_dispatch 时为空串，action 仅构建不发布，
       # 避免创建与分支同名的 tag（refs/tags/main 之类）。
       - name: 构建 Tauri 应用
         uses: tauri-apps/tauri-action@v1
@@ -69,6 +70,7 @@ jobs:
             - QQ 群：902898359
             - 问题反馈 QQ：34339329934
             - 如有严重 bug，将在 v0.7.x 中修复。
+            - 本次更新包含原定 v0.7.0 的全部内容（v0.7.0 构建中断，未能发布）。
 
             ## 本次更新 | ${{ github.ref_name }}
 
