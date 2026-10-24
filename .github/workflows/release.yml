@@ -22,8 +22,6 @@ env:
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
 
     steps:
       - name: 检出代码
@@ -47,80 +45,59 @@ jobs:
         run: npm ci
 
       # The tag is the source of truth for releases. Keep all Tauri/package
-      # manifests aligned before the bundle is built.
+      # manifests aligned before tauri-action reads the bundle version.
       - name: 同步发布版本
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm run version:set -- "${{ github.ref_name }}"
 
+      # 构建、创建 Release、上传产物由 tauri-action 一步完成。
+      # tagName 只在 v* tag 触发时非空：手动触发时为空串，action 仅构建不发布，
+      # 避免创建与分支同名的 tag（refs/tags/main 之类）。
       - name: 构建 Tauri 应用
-        run: npm run tauri build
+        uses: tauri-apps/tauri-action@v1
         env:
+          GITHUB_TOKEN: "${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}"
           VITE_SUPABASE_URL: "https://skwkzymlhqwgygwwlxoy.supabase.co"
           VITE_SUPABASE_ANON_KEY: "sb_publishable_8TIwPzBdrHmYEwhnikfk5g_sVjODHwW"
           VITE_COLLAB_URL: "${{ vars.VITE_COLLAB_URL }}"
+        with:
+          tagName: "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}"
+          releaseName: 'Qing Notepad v__VERSION__'
+          releaseBody: |
+            ## 公告：
 
-      - name: 创建或更新 GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        env:
-          GH_TOKEN: "${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}"
-          RELEASE_TAG: "${{ github.ref_name }}"
-          RELEASE_TITLE: "Qing Notepad ${{ github.ref_name }}"
-        run: |
-          $notes = @"
-          ## 公告：
+            - QQ 群：902898359
+            - 问题反馈 QQ：34339329934
+            - 如有严重 bug，将在 v0.7.x 中修复。
 
-          - QQ 群：902898359
-          - 问题反馈 QQ：34339329934
-          - 如有严重 bug，将在 v0.7.x 中修复。
+            ## 本次更新 | ${{ github.ref_name }}
 
-          ## 本次更新 | $env:RELEASE_TAG
+            ### 新增
 
-          ### 新增
+            - **工作台概览面板**：进入工作台后先看到概览页，集中展示文档与成员概览、最近文档与快捷入口。
+            - **数据目录迁移与存储设置**：设置中新增存储页，可将整个 `data/` 迁移到任意磁盘目录，并在校验成功后更新路径。
+            - **AI 模型管理升级**：支持添加多个 OpenAI 兼容端点、搜索可用模型并选择；端点与密钥仅存本机。
 
-          - **工作台概览面板**：进入工作台后先看到概览页，集中展示文档与成员概览、最近文档与快捷入口。
-          - **数据目录迁移与存储设置**：设置中新增存储页，可将整个 `data/` 迁移到任意磁盘目录，并在校验成功后更新路径。
-          - **AI 模型管理升级**：支持添加多个 OpenAI 兼容端点、搜索可用模型并选择；端点与密钥仅存本机。
+            ### 改进
 
-          ### 改进
+            - 顶栏、视图切换与文档动作重新整理，交互更清晰。
+            - 统一弹窗与悬停浮层样式和交互。
+            - 回答支持流式输出，生成过程可停止；检索采用关键词与语义向量混合排序。
+            - API Key 经 Windows 系统加密后仅存本机，不写入配置文件，也不上传。
 
-          - 顶栏、视图切换与文档动作重新整理，交互更清晰。
-          - 统一弹窗与悬停浮层样式和交互。
-          - 回答支持流式输出，生成过程可停止；检索采用关键词与语义向量混合排序。
-          - API Key 经 Windows 系统加密后仅存本机，不写入配置文件，也不上传。
+            ### 注意
 
-          ### 注意
+            - 检索模型与推理运行时随安装包分发，因此安装包比早期版本更大（本版 NSIS 安装包约 26 MB）。
+            - 云端问答与润色需自备对应厂商 API Key；未配置时仍可使用本地「小青」。
+            - 本地「小青」完全离线，回收站内容不参与检索。
+            - 本次移除了旧版的实时网页搜索能力；云端模型问答仅以本地检索内容为上下文。
 
-          - 检索模型与推理运行时随安装包分发，因此安装包比早期版本更大。
-          - 云端问答与润色需自备对应厂商 API Key；未配置时仍可使用本地「小青」。
-          - 本地「小青」完全离线，回收站内容不参与检索。
-          - 本次移除了旧版的实时网页搜索能力；云端模型问答仅以本地检索内容为上下文。
+            ## 下载 | Download
 
-          ## 下载 | Download
-
-          - `QingNotepad_<version>_x64-setup.exe` - Windows NSIS 安装包。
-          - `QingNotepad.exe` - 自包含可执行文件。
-          "@
-          $notes | Set-Content -LiteralPath release-notes.md -Encoding utf8
-
-          gh api "repos/$env:GITHUB_REPOSITORY" --jq .full_name | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            throw "The release token cannot access repository $env:GITHUB_REPOSITORY. Configure RELEASE_TOKEN with repository contents write access."
-          }
-
-          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:RELEASE_TAG `
-              --repo $env:GITHUB_REPOSITORY `
-              --verify-tag `
-              --title $env:RELEASE_TITLE `
-              --notes-file release-notes.md
-          }
-
-          $assets = Get-ChildItem -LiteralPath "src-tauri/target/release/bundle/nsis" -File |
-            Where-Object { $_.Extension -in @('.exe', '.sig', '.zip') } |
-            Select-Object -ExpandProperty FullName
-          if (-not $assets) {
-            throw "No NSIS bundle artifacts were produced."
-          }
-          gh release upload $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --clobber $assets
+            - `QingNotepad___VERSION___x64-setup.exe` - Windows NSIS 安装包，双击安装。
+          releaseDraft: "false"
+          prerelease: "false"
+          # NSIS 工具链在 CI 上偶发下载失败（v0.7.0 build #34），整体重试 2 次
+          retryAttempts: "2"
+          # 本项目未接入 tauri-plugin-updater，不需要 latest.json
+          uploadUpdaterJson: "false"

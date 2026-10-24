@@ -366,8 +366,11 @@ Rust 侧职责（`src-tauri/src/`）：
 
 - **发布说明即 `releaseBody`** 中维护的 Markdown，会作为 Release 描述附上；版本发布前应同步检查：release body 是否覆盖本次新增/改进/修复/注意，README 的用户功能说明是否与之一致。
 - `releaseName` 用 `Qing Notepad v__VERSION__`，`__VERSION__` 由 action 从 tag 替换。
-- `tauri.conf.json` 的 bundle target 当前为 `nsis`；Release 产物以实际上传资源为准（`QingNotepad_<version>_x64-setup.exe` 与自包含 `QingNotepad.exe`）。
-- **禁止从分支 ref 手动触发**（会被跳过版本同步）；只允许 `v*` tag 或 `workflow_dispatch`。
+- `tauri.conf.json` 的 bundle target 当前为 `nsis`；Release 产物为 `QingNotepad_<version>_x64-setup.exe`（NSIS 安装包）。
+- **禁止从分支 ref 手动触发**；只允许 `v*` tag 或 `workflow_dispatch`。
+  - `v*` tag：同步版本号 → 构建 → 创建 Release 并上传安装包。
+  - `workflow_dispatch`：**只构建、不发布**（`tagName` 为空，action 跳过建 Release 与上传），
+    避免生成与分支同名的 tag（如 `refs/tags/main`）污染仓库。
 - CI 中 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 为公开 publishable 值，随包分发；`VITE_COLLAB_URL` 取自仓库 `vars`。**`SERVICE_ROLE_KEY` 绝不可写入桌面应用、提交 Git 或放进安装包。**
 
 ---
