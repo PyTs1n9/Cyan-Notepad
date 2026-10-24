@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import NoteTree from "@/components/Layout/NoteTree";
+import ModalShell from "@/components/Layout/ModalShell";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { TRASH_RETENTION_FOREVER, useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
@@ -250,54 +251,41 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {deleteConfirmNote && (
-        <div
-          className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center px-4"
-          style={{ backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 42%))" }}
-        >
-          <div
-            className="app-modal-panel w-full max-w-[320px] overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-xl"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="px-4 pt-4 pb-3">
-              <div className="flex items-center gap-2 text-text-primary">
-                <div className="w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center text-danger flex-shrink-0">
-                  <Trash2 size={16} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">
-                    {t(lang, trashEnabled ? "moveNoteToTrash" : "deleteNote")}
-                  </div>
-                  <div className="text-xs text-text-muted mt-0.5 truncate">
-                    {getNoteTitle(deleteConfirmNote)}
-                  </div>
-                </div>
-              </div>
-              <p className="mt-4 text-sm text-text-secondary leading-relaxed">
-                {trashEnabled
-                  ? tWithParams(lang, "confirmMoveToTrashMessage", {
-                    note: getNoteTitle(deleteConfirmNote),
-                    days: trashRetentionLabel,
-                  })
-                  : t(lang, "confirmDeleteNoteMessage").replace("{note}", getNoteTitle(deleteConfirmNote))}
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+        <ModalShell
+          onClose={() => setDeleteConfirmNote(null)}
+          title={t(lang, trashEnabled ? "moveNoteToTrash" : "deleteNote")}
+          description={getNoteTitle(deleteConfirmNote)}
+          icon={<Trash2 size={16} />}
+          tone="danger"
+          size="sm"
+          footer={(
+            <>
               <button
+                type="button"
                 onClick={() => setDeleteConfirmNote(null)}
-                className="h-8 px-3 rounded-lg border border-border text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                className="h-8 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 {t(lang, "confirmNo")}
               </button>
               <button
+                type="button"
                 onClick={confirmDeleteNote}
-                className="h-8 px-3 rounded-lg bg-danger text-on-danger text-sm hover:bg-danger/90 transition-colors cursor-pointer"
+                className="h-8 rounded-lg bg-danger px-3 text-xs text-on-danger transition-colors hover:bg-danger/90"
               >
                 {t(lang, "confirmYes")}
               </button>
-            </div>
-          </div>
-        </div>
+            </>
+          )}
+        >
+          <p className="text-sm leading-relaxed text-text-secondary">
+            {trashEnabled
+              ? tWithParams(lang, "confirmMoveToTrashMessage", {
+                note: getNoteTitle(deleteConfirmNote),
+                days: trashRetentionLabel,
+              })
+              : t(lang, "confirmDeleteNoteMessage").replace("{note}", getNoteTitle(deleteConfirmNote))}
+          </p>
+        </ModalShell>
       )}
       <TrashModal
         open={trashOpen}

@@ -56,9 +56,9 @@ function sources(dir = path.join(root, "src")) {
 const all = sources();
 
 // ---------------------------------------------------------------- P0-1
-check("P0-1a", "@theme 定义三个 on-* 前景色", () => {
+check("P0-1a", "@theme 定义四个 on-* 前景色", () => {
   const theme = css.slice(css.indexOf("@theme {"), css.indexOf("@theme {") + 2000);
-  for (const kind of ["accent", "success", "danger"]) {
+  for (const kind of ["accent", "success", "danger", "warning"]) {
     if (!new RegExp(`--color-on-${kind}:\\s*#[0-9a-f]{6}`, "i").test(theme)) {
       throw new Error(`@theme 缺少 --color-on-${kind}`);
     }
@@ -66,11 +66,11 @@ check("P0-1a", "@theme 定义三个 on-* 前景色", () => {
   return true;
 });
 
-check("P0-1b", "四个主题各自覆盖三个 on-* 前景色", () => {
+check("P0-1b", "四个主题各自覆盖四个 on-* 前景色", () => {
   for (const theme of ["blue", "dark", "yellow", "green"]) {
     const start = css.indexOf(`.theme-${theme} {`);
     const body = css.slice(start, css.indexOf("}", start));
-    for (const kind of ["accent", "success", "danger"]) {
+    for (const kind of ["accent", "success", "danger", "warning"]) {
       if (!body.includes(`--color-on-${kind}:`)) throw new Error(`.theme-${theme} 缺少 --color-on-${kind}`);
     }
   }
@@ -79,14 +79,14 @@ check("P0-1b", "四个主题各自覆盖三个 on-* 前景色", () => {
 
 check("P0-1c", "剩余的 text-white 都已归类（非主题色块）", () => {
   // Every surviving `text-white` must sit on a background that is not one of the
-  // three themed blocks: hard-coded amber, a black overlay scrim, a runtime
-  // avatar colour, or the (untokenised) warning block.
+  // four themed blocks: hard-coded amber, a black overlay scrim or a runtime
+  // avatar colour. The warning blocks moved to `text-on-warning`, so the two
+  // workspace sidebar sites and the transfer-ownership button are gone from
+  // this list - leaving them listed would make the audit fail *after* the fix.
   const allowed = {
     "src/components/AI/AiSidebar.tsx": 2, // bg-amber-500/90
     "src/components/Settings/AvatarCropper.tsx": 1, // bg-black/55 scrim
     "src/components/Workspace/CloudNoteEditor.tsx": 2, // style={{ backgroundColor: user.color }}
-    "src/components/Workspace/WorkspaceSidebar.tsx": 2, // bg-warning
-    "src/components/Workspace/WorkspaceView.tsx": 1, // bg-warning
   };
   const found = {};
   for (const { file, text } of all) {
@@ -101,7 +101,7 @@ check("P0-1c", "剩余的 text-white 都已归类（非主题色块）", () => {
 
 check("P0-1d", "text-on-* 已覆盖所有主题色块", () => {
   let n = 0;
-  for (const { text } of all) n += (text.match(/\btext-on-(accent|success|danger)\b/g) ?? []).length;
+  for (const { text } of all) n += (text.match(/\btext-on-(accent|success|danger|warning)\b/g) ?? []).length;
   if (n < 40) throw new Error(`只找到 ${n} 处，提示词估算约 40 处`);
   return `${n} 处`;
 });

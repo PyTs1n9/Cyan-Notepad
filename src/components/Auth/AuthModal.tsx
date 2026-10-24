@@ -158,23 +158,23 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 px-4">
+    <div className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center px-3 py-4 sm:px-4">
       <section
-        className="isolate surface-glass surface-glass--dialog w-full max-w-[390px] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
+        className="app-modal-panel isolate surface-glass surface-glass--dialog w-full max-w-[400px] overflow-hidden rounded-xl border border-border bg-bg-primary"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-title"
       >
-        <header className="flex items-center justify-between border-b border-border px-5 py-4">
+        <header className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
-              {user ? <ShieldCheck size={18} /> : <LogIn size={18} />}
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+              {user ? <ShieldCheck size={16} /> : <LogIn size={16} />}
             </div>
             <div className="min-w-0">
               <h1 id="auth-title" className="truncate text-sm font-semibold text-text-primary">
                 {user ? t(lang, "authAccount") : t(lang, "authWelcome")}
               </h1>
-              <p className="mt-0.5 truncate text-xs text-text-muted">
+              <p className="mt-0.5 truncate text-[11px] leading-4 text-text-muted">
                 {user ? t(lang, "authSignedIn") : t(lang, "authSubtitle")}
               </p>
             </div>
@@ -184,9 +184,9 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
             onClick={onClose}
             disabled={loading}
             aria-label={t(lang, "close")}
-            className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </header>
 

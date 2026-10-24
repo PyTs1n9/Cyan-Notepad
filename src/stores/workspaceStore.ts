@@ -168,9 +168,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const documents = await workspaceApi.fetchDocuments(targetId);
       if (get().activeWorkspaceId !== targetId) return;
       const previousId = get().activeDocumentId;
-      const nextId = documents.some((item) => item.id === previousId)
+      // Entering a workspace lands on the overview, not on its first document:
+      // an open document is only kept when it still exists after the reload.
+      // Auto-selecting `documents[0]` here used to make the overview
+      // unreachable for every workspace that had at least one document.
+      const nextId = previousId && documents.some((item) => item.id === previousId)
         ? previousId
-        : documents[0]?.id ?? null;
+        : null;
       set({ documents, activeDocumentId: nextId, error: null });
     } catch (error) {
       set({ error: errorMessage(error) });
@@ -417,9 +421,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         const documents = state.documents.filter((document) => document.id !== documentId);
         return {
           documents,
+          // Deleting the open document returns to the overview. Falling back to
+          // `documents[0]` would silently swap the user into a neighbouring
+          // document they never asked for, and would leave the overview
+          // unreachable from a workspace with a single document.
           activeDocumentId:
             state.activeDocumentId === documentId
-              ? documents[0]?.id ?? null
+              ? null
               : state.activeDocumentId,
           error: null,
         };

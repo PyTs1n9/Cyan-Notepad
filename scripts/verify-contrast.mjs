@@ -70,7 +70,11 @@ const rows = [];
 const fail = [];
 
 for (const [theme, palette] of Object.entries(themes)) {
-  for (const kind of ["accent", "success", "danger"]) {
+  // `warning` joined the audit when the yellow blocks stopped painting white
+  // text: it is a light ground in all four themes, so its foreground has to be
+  // measured like the other three. Only the solid block carries text - the
+  // `/10` variants are hover washes with no glyphs on them.
+  for (const kind of ["accent", "success", "danger", "warning"]) {
     const on = palette[`color-on-${kind}`];
     if (!on) {
       fail.push(`${theme}: missing --color-on-${kind}`);

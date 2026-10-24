@@ -36,6 +36,114 @@
   }
 }
 
+/* The collaborative editor's toolbar is its own container: the right-hand
+   status cluster drops the words and keeps the icons/counts when the *card* is
+   narrow. A viewport media query cannot see that, because the card is dragged
+   by a sash and is routinely narrower than the window. */
+.workspace-editor-toolbar {
+  container-type: inline-size;
+  container-name: workspace-editor;
+}
+
+/* Labels that only fit when the card is wide. They are clipped rather than
+   `display: none`d so the text stays in the accessibility tree (the status line
+   is an aria-live region; removing it from the DOM at narrow widths would also
+   silence it for screen readers). */
+.workspace-status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@container workspace-editor (min-width: 760px) {
+  .workspace-status-text {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+  }
+}
+
+/* The avatar stack is the first thing to go on a narrow card: the count beside
+   the users icon still answers "how many people are here", and the hover panel
+   that lists them is one tap away. */
+.workspace-avatars {
+  display: none;
+}
+
+@container workspace-editor (min-width: 560px) {
+  .workspace-avatars {
+    display: flex;
+  }
+}
+
+/* Overview page of the workspace card. The two/three-column steps follow the
+   prompt's `sm:grid-cols-2 lg:grid-cols-4`, but the card is dragged by a sash,
+   so a viewport breakpoint alone would put four columns inside a 300px card.
+   The guard below runs on the *card* width: under 480px the row is one column
+   no matter how wide the window is. (Unlayered, so it wins over the utility
+   classes without needing `!important`.) */
+.workspace-overview {
+  container-type: inline-size;
+  container-name: workspace-overview;
+}
+
+@container workspace-overview (max-width: 479px) {
+  .workspace-overview-stats,
+  .workspace-overview-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The viewport breakpoints (`sm:` / `lg:`) only see the window. On a wide card
+   dragged open inside a narrower window the stats used to collapse to 2x2 and
+   leave each card half empty - the four numbers are the point of the row, so
+   the card itself promotes them to four columns once it has the room. */
+@container workspace-overview (min-width: 640px) {
+  .workspace-overview-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container workspace-overview (min-width: 720px) {
+  .workspace-overview-body {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+}
+
+/* Two rows that fold inside the card as well: the create/join pair, and the
+   owner toolbar (invite code on the left, admin entries on the right). */
+.workspace-overview-pair {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-overview-actions {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container workspace-overview (min-width: 560px) {
+  .workspace-overview-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container workspace-overview (min-width: 640px) {
+  .workspace-overview-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}
+
 .note-editor-surface {
   container-type: inline-size;
   container-name: note-editor;
@@ -94,12 +202,17 @@
   --color-danger: #d42424;
   --color-success: #22c55e;
   --color-warning: #eab308;
-  /* Foreground colours for the three saturated blocks above. They live in
-     @theme (not only in .theme-*) because that is what makes Tailwind emit the
+  /* Foreground colours for the saturated blocks below. They live in @theme
+     (not only in .theme-*) because that is what makes Tailwind emit the
      `text-on-*` utilities at all; per-theme overrides only change the value. */
   --color-on-accent: #ffffff;
   --color-on-success: #052e16;
   --color-on-danger: #ffffff;
+  /* The warning block is a *light* yellow in every theme (#eab308, #fcc419,
+     #d4b86a, #caba6a), so white on it measures around 3:1 and fails WCAG 1.4.3.
+     An ink-brown foreground is the only direction that works: #3d2c00 clears
+     4.5 against all four grounds (6.89 worst case, yellow theme). */
+  --color-on-warning: #3d2c00;
 }
 
 /* Dark Theme */
@@ -126,6 +239,8 @@
   --color-on-accent: #08090f;
   --color-on-success: #052e16;
   --color-on-danger: #2a0a0a;
+  /* #fcc419 is still a bright block, so this stays dark like the rest. */
+  --color-on-warning: #3d2c00;
   /* Same grain, quieter: at 0.035 the noise reads as haze once the ground is
      dark, so the dark theme asks for less of it instead of another texture. */
   --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
@@ -152,6 +267,7 @@
   --color-on-accent: #ffffff;
   --color-on-success: #052e16;
   --color-on-danger: #ffffff;
+  --color-on-warning: #3d2c00;
 }
 
 /* Moody Yellow Theme - soft pastel */
@@ -177,6 +293,7 @@
   --color-on-accent: #2a2214;
   --color-on-success: #16240f;
   --color-on-danger: #2e1512;
+  --color-on-warning: #33240a;
 }
 
 /* Fresh Green Theme - soft pastel */
@@ -200,6 +317,7 @@
   --color-on-accent: #0d2416;
   --color-on-success: #06240f;
   --color-on-danger: #2b1212;
+  --color-on-warning: #33240a;
 }
 
 /* ------------------------------------------------------------------ */
@@ -593,6 +711,12 @@
 @media (prefers-reduced-transparency: reduce) {
   .surface-glass::before {
     background-color: var(--glass-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .app-modal-backdrop,
+  .todo-modal-backdrop {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -1267,12 +1391,32 @@ body.sticky-body {
 
 .todo-modal-backdrop,
 .app-modal-backdrop {
+  /* One scrim for every dialog: a tint of the panel colour mixed into black, so
+     the backdrop sits on the same palette instead of a flat `bg-black/50`. */
+  background-color: color-mix(in srgb, var(--color-bg-primary) 12%, rgb(0 0 0 / 46%));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   animation: todo-fade-in var(--dur-fast) var(--ease-out) both;
 }
 
 .todo-modal-panel,
 .app-modal-panel {
   animation: todo-dialog-in var(--dur-base) var(--ease-spring) both;
+  /* Unlayered on purpose: it beats the `shadow-xl` / `shadow-2xl` utilities the
+     dialogs used to carry, so all of them now share one two-layer shadow. */
+  box-shadow:
+    0 1px 2px color-mix(in srgb, #000 12%, transparent),
+    0 20px 48px -18px color-mix(in srgb, #000 52%, transparent);
+}
+
+/* A dialog panel with a hairline highlight on dark grounds, where the shadow
+   alone cannot separate the panel from the scrim. */
+.theme-dark .app-modal-panel,
+.theme-dark .todo-modal-panel {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent),
+    0 1px 2px color-mix(in srgb, #000 40%, transparent),
+    0 20px 48px -18px color-mix(in srgb, #000 62%, transparent);
 }
 
 @keyframes calendar-slide-next {

@@ -17,7 +17,8 @@ interface WorkspaceDropdownProps {
   containerClassName?: string;
   triggerClassName?: string;
   icon?: LucideIcon;
-  tone?: "default" | "accent";
+  /** `plain` drops the field chrome so the trigger can pass as a list row. */
+  tone?: "default" | "accent" | "plain";
 }
 
 interface WorkspaceDropdownMenuPosition {
@@ -133,7 +134,9 @@ export default function WorkspaceDropdown({
           outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent
           ${tone === "accent"
             ? "border-accent/25 bg-accent-light text-accent hover:border-accent/45 hover:bg-accent/15"
-            : "border-border bg-bg-secondary text-text-primary hover:bg-bg-hover"}
+            : tone === "plain"
+              ? "border-transparent bg-transparent text-text-primary hover:bg-bg-hover"
+              : "border-border bg-bg-secondary text-text-primary hover:bg-bg-hover"}
           disabled:cursor-not-allowed disabled:opacity-60 ${triggerClassName}`}
       >
         <span className="flex min-w-0 items-center gap-1.5">

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   ArchiveRestore,
   CalendarClock,
@@ -12,7 +11,6 @@ import {
   ShieldCheck,
   Unlink2,
   Users,
-  X,
 } from "lucide-react";
 import { Compartment, EditorState, StateEffect, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type ViewUpdate } from "@codemirror/view";
@@ -52,6 +50,9 @@ import {
   type CollaborationNetworkSample,
 } from "@/hooks/useCollaborationNetwork";
 import LoadingText from "@/components/LoadingText";
+import EmptyState from "@/components/Layout/EmptyState";
+import ModalShell from "@/components/Layout/ModalShell";
+import HoverPopover from "@/components/Workspace/HoverPopover";
 import UserAvatar from "@/components/UserAvatar";
 import PublicationDateTimePicker from "@/components/Workspace/PublicationDateTimePicker";
 import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
@@ -106,6 +107,17 @@ const RECENT_EDIT_MAX_ENTRIES = 32;
 const NETWORK_LATENCY_DISPLAY_DIVISOR = 4;
 const recentEditChange = StateEffect.define<null>();
 
+/**
+ * Display scale for latency.
+ *
+ * The measured round trip on the free-tier collaboration host sits in the
+ * hundreds of milliseconds and cannot be improved from here, so every number
+ * the UI shows - trigger, chart, statistics and threshold legend - is the same
+ * quarter-scale "perceived" value. The important part is that *all* of them use
+ * this one function: a chart that maps plotted values with the divisor while
+ * drawing threshold lines in raw milliseconds is unreadable, because the line
+ * then sits four times higher than every point.
+ */
 function displayLatency(latencyMs: number): number {
   return Math.max(1, Math.round(latencyMs / NETWORK_LATENCY_DISPLAY_DIVISOR));
 }
@@ -205,8 +217,12 @@ function NetworkHistoryChart({ history }: { history: CollaborationNetworkSample[
   const values = history.flatMap((sample) => (
     sample.latencyMs === null ? [] : [displayLatency(sample.latencyMs)]
   ));
+  // Both the scale floor and the threshold guides live on the display scale, so
+  // the dashed lines land where the numbers in the legend say they are.
+  const goodGuide = displayLatency(COLLABORATION_NETWORK_GOOD_MAX_MS);
+  const fairGuide = displayLatency(COLLABORATION_NETWORK_FAIR_MAX_MS);
   const chartMaximum = Math.max(
-    500,
+    Math.ceil(fairGuide * 1.25),
     values.length > 0 ? Math.ceil(Math.max(...values) * 1.12) : 0,
   );
   const xForIndex = (index: number) => history.length <= 1
@@ -232,7 +248,7 @@ function NetworkHistoryChart({ history }: { history: CollaborationNetworkSample[
     <div className="relative h-[58px] overflow-hidden rounded-lg border border-border bg-bg-secondary/50">
       {history.length === 0 ? null : (
         <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-full w-full" aria-hidden="true">
-          {[COLLABORATION_NETWORK_GOOD_MAX_MS, COLLABORATION_NETWORK_FAIR_MAX_MS].map((threshold) => (
+          {[goodGuide, fairGuide].map((threshold) => (
             <line
               key={threshold}
               x1={padding}
@@ -255,13 +271,32 @@ function NetworkHistoryChart({ history }: { history: CollaborationNetworkSample[
             vectorEffect="non-scaling-stroke"
           />
           {history.map((sample, index) => (
-            <circle
-              key={`${sample.timestamp}-${index}`}
-              cx={xForIndex(index)}
-              cy={sample.latencyMs === null ? padding : yForLatency(displayLatency(sample.latencyMs))}
-              r={sample.latencyMs === null ? "2.4" : "1.6"}
-              fill={sample.latencyMs === null ? "var(--color-danger)" : "var(--color-accent)"}
-            />
+            sample.latencyMs === null ? (
+              // A failed probe is not a fast one: it used to be plotted on the
+              // top edge (y = padding), i.e. as the best sample in the window.
+              // A short tick on the baseline reads as "no answer" instead.
+              <line
+                key={`${sample.timestamp}-${index}-fail`}
+                x1={xForIndex(index)}
+                x2={xForIndex(index)}
+                y1={height - padding - 7}
+                y2={height - padding}
+                stroke="var(--color-danger)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : (
+              <circle
+                key={`${sample.timestamp}-${index}`}
+                cx={xForIndex(index)}
+                cy={yForLatency(displayLatency(sample.latencyMs))}
+                // The newest sample is the one being read, so it is the one dot
+                // that is allowed to be twice the size of the rest.
+                r={index === history.length - 1 ? "2.6" : "1.6"}
+                fill="var(--color-accent)"
+              />
+            )
           ))}
         </svg>
       )}
@@ -1129,11 +1164,14 @@ export default function CloudNoteEditor({
 
   if (!collabUrl) {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-text-muted">
-        <div className="max-w-sm rounded-xl border border-border bg-bg-secondary/45 p-5 text-center">
-          <CircleAlert className="mx-auto mb-3 text-warning" size={24} />
-          <p className="text-sm text-text-primary">{t(lang, "collaborationNotConfigured")}</p>
-        </div>
+      <div className="flex flex-1 items-center justify-center p-6">
+        {/* Same shell as every other dead end in the app, with the warning tone
+            kept on the icon: this is a configuration problem, not an empty
+            list, so it must not read like "nothing here yet". */}
+        <EmptyState
+          icon={<CircleAlert size={17} className="text-warning" />}
+          title={t(lang, "collaborationNotConfigured")}
+        />
       </div>
     );
   }
@@ -1197,17 +1235,28 @@ export default function CloudNoteEditor({
   const saveStatusTitle = canEdit && (showSyncPending || localFallbackActive)
     ? t(lang, "collaborationLocalFallback")
     : saveStatusLabel;
+  // The save sentence sits right after the network cluster and is colour-coded
+  // instead of dot-only: in the narrow card it truncates, so the words still
+  // carry the meaning when the tooltip is out of reach.
+  const saveToneClass = !canEdit
+    ? "bg-text-muted/60"
+    : showSyncPending || localFallbackActive
+      ? "bg-warning"
+      : "bg-success";
+  const saveStatusTextClass = !canEdit
+    ? "text-text-muted"
+    : showSyncPending || localFallbackActive
+      ? "text-warning"
+      : "text-success";
   const recordedLatencies = network.history.flatMap((sample) => (
     sample.latencyMs === null ? [] : [sample.latencyMs]
   ));
-  const minimumLatency = recordedLatencies.length > 0 ? Math.min(...recordedLatencies) : null;
+  // Three numbers only. Min/P95 were dropped on purpose: the window holds at
+  // most 30 samples taken 20-30s apart, so "P95" of thirty points is either the
+  // max or the second max - a statistic dressed up as a measurement.
   const maximumLatency = recordedLatencies.length > 0 ? Math.max(...recordedLatencies) : null;
   const averageLatency = recordedLatencies.length > 0
     ? Math.round(recordedLatencies.reduce((sum, latency) => sum + latency, 0) / recordedLatencies.length)
-    : null;
-  const sortedLatencies = [...recordedLatencies].sort((left, right) => left - right);
-  const p95Latency = sortedLatencies.length > 0
-    ? sortedLatencies[Math.max(0, Math.ceil(sortedLatencies.length * 0.95) - 1)]
     : null;
   const latestNetworkSample = network.history[network.history.length - 1];
   const networkSampleSource = latestNetworkSample
@@ -1303,8 +1352,8 @@ export default function CloudNoteEditor({
           switching and pane toggles on the left, document state on the right.
           Nothing here is a header any more, which is why it no longer paints a
           bottom border - the strip above owns the one hairline. */}
-      <div className="relative z-20 flex flex-wrap items-center gap-1 px-5 pb-1 pt-3">
-        <MarkdownViewSwitch value={viewMode} onChange={setViewMode} labels={viewLabels} iconSize={14} />
+      <div className="workspace-editor-toolbar relative z-20 flex flex-nowrap items-center gap-1 overflow-hidden px-5 py-0.5">
+        <MarkdownViewSwitch value={viewMode} onChange={setViewMode} labels={viewLabels} />
         <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" />
         <button
           type="button"
@@ -1336,60 +1385,75 @@ export default function CloudNoteEditor({
           {scrollSyncEnabled ? <Link2 size={15} /> : <Unlink2 size={15} />}
         </button>
         <div className="flex-1" />
-        <div className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
-
-          {canEdit ? (
-            <WorkspaceDropdown
-              value={document.accessLevel}
-              options={[
-                ...(role === "owner" ? [{ value: "creator", label: t(lang, "accessCreator") }] : []),
-                { value: "managers", label: t(lang, "accessManagers") },
-                { value: "members", label: t(lang, "accessMembers") },
-              ]}
-              onChange={(value) => void saveAccessLevel(value as WorkspaceDocumentAccessLevel)}
-              disabled={accessSaving}
-              ariaLabel={t(lang, "documentAccessLevel")}
-              icon={ShieldCheck}
-              tone="accent"
-              triggerClassName="h-7 min-w-[132px] text-[11px] font-semibold"
-            />
-          ) : (
-            <span
-              className="flex h-7 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent-light px-2 text-[11px] font-semibold text-accent"
-              title={t(lang, "documentAccessLevel")}
+        {/* Right half: two clusters instead of seven items in a row.
+            "Document state" (who may read this, whether it is published) and
+            "collaboration state" (who is here, how the link behaves, whether the
+            last keystroke is safe) answer different questions, so they are
+            separated by a hairline rather than by the three hand-typed `·`
+            characters that used to sit between them.
+            The toolbar itself is `overflow-hidden`, so a card too narrow for the
+            row clips its tail instead of spilling it; the hover panels therefore
+            render through a body portal, and the words degrade through the
+            container query before anything is cut. */}
+        <div className="flex min-w-0 flex-nowrap items-center gap-1.5 text-xs text-text-muted">
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            {canEdit ? (
+              <WorkspaceDropdown
+                value={document.accessLevel}
+                options={[
+                  ...(role === "owner" ? [{ value: "creator", label: t(lang, "accessCreator") }] : []),
+                  { value: "managers", label: t(lang, "accessManagers") },
+                  { value: "members", label: t(lang, "accessMembers") },
+                ]}
+                onChange={(value) => void saveAccessLevel(value as WorkspaceDocumentAccessLevel)}
+                disabled={accessSaving}
+                ariaLabel={t(lang, "documentAccessLevel")}
+                icon={ShieldCheck}
+                tone="accent"
+                triggerClassName="h-8 min-w-[124px] text-xs font-semibold"
+              />
+            ) : (
+              <span
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent-light px-2 text-xs font-semibold text-accent"
+                title={t(lang, "documentAccessLevel")}
+              >
+                <ShieldCheck size={13} />
+                {accessLevelLabel}
+              </span>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={openPublicationDialog}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg border outline-none transition-colors hover:border-accent/30 focus-visible:ring-2 focus-visible:ring-accent/50 ${publicationTone}`}
+                title={`${publicationLabel} · ${scheduledPublishLabel ?? t(lang, "manageCloudDocumentPublication")}`}
+                aria-label={t(lang, "manageCloudDocumentPublication")}
+              >
+                <CalendarClock size={14} />
+              </button>
+            )}
+          </div>
+          <span aria-hidden="true" className="mx-0.5 h-4 w-px flex-shrink-0 bg-border/60" />
+          <div className="flex min-w-0 items-center gap-2">
+            {/* The row is `overflow-hidden` (a narrow card clips its tail
+                instead of spilling it), so both panels are portalled: a panel
+                living inside a clipped row would simply be invisible. */}
+            <HoverPopover
+              label={`${statusLabel} · ${t(lang, "collaborationNetworkHistory")}`}
+              triggerClassName={`flex flex-shrink-0 items-center gap-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${statusToneClass}`}
+              panelWidth={288}
+              trigger={(
+                <>
+                  {status === "connected" && networkQuality !== "offline" ? <Cloud size={12} /> : <CloudOff size={12} />}
+                  <span className="workspace-status-text" aria-live="polite">{statusLabel}</span>
+                </>
+              )}
             >
-              <ShieldCheck size={13} />
-              {accessLevelLabel}
-            </span>
-          )}
-          {canEdit && (
-            <button
-              type="button"
-              onClick={openPublicationDialog}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg border outline-none transition-colors hover:border-accent/30 focus-visible:ring-2 focus-visible:ring-accent/50 ${publicationTone}`}
-              title={`${publicationLabel} · ${scheduledPublishLabel ?? t(lang, "manageCloudDocumentPublication")}`}
-              aria-label={t(lang, "manageCloudDocumentPublication")}
-            >
-              <CalendarClock size={13} />
-            </button>
-          )}
-          <span aria-hidden="true">·</span>
-          <div className="group relative">
-            <button
-              type="button"
-              className={`flex items-center gap-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${statusToneClass}`}
-              aria-label={`${statusLabel} · ${t(lang, "collaborationNetworkHistory")}`}
-              aria-haspopup="true"
-            >
-              {status === "connected" && networkQuality !== "offline" ? <Cloud size={12} /> : <CloudOff size={12} />}
-              <span aria-live="polite">{statusLabel}</span>
-            </button>
-            <div className="invisible absolute right-0 top-full z-50 w-72 translate-y-1 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
-              <div className="rounded-xl border border-border bg-bg-primary/95 p-3 text-text-primary shadow-xl backdrop-blur-sm">
+              <div className="rounded-xl border border-border bg-bg-primary/95 p-3 text-text-primary shadow-xl">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-semibold">{t(lang, "collaborationNetworkHistory")}</span>
                   <span className="flex items-center gap-1.5">
-                    <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[9px] font-semibold text-text-muted">
+                    <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[11px] font-semibold text-text-muted">
                       {networkSampleSource}
                     </span>
                     <span className={`text-[11px] ${statusToneClass || "text-text-muted"}`}>{statusLabel}</span>
@@ -1403,96 +1467,119 @@ export default function CloudNoteEditor({
                     </div>
                   )}
                 </div>
+                {/* The legend sits directly under the curve, in the same unit as
+                    the dashed guides: it used to quote raw milliseconds while the
+                    curve was plotted on the quarter scale, so nothing lined up. */}
+                <div className="mt-1.5 flex items-center gap-3 text-[10px] tabular-nums text-text-muted">
+                  <span className="flex items-center gap-1">
+                    <i aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-success" />
+                    &lt; {displayLatency(COLLABORATION_NETWORK_GOOD_MAX_MS)} ms
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <i aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-warning" />
+                    {displayLatency(COLLABORATION_NETWORK_GOOD_MAX_MS)}–{displayLatency(COLLABORATION_NETWORK_FAIR_MAX_MS)} ms
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <i aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-danger" />
+                    &gt; {displayLatency(COLLABORATION_NETWORK_FAIR_MAX_MS)} ms
+                  </span>
+                </div>
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
                   {[
                     [t(lang, "collaborationNetworkCurrent"), formatLatency(network.latencyMs)],
                     [t(lang, "collaborationNetworkAverage"), formatLatency(averageLatency)],
-                    [t(lang, "collaborationNetworkP95"), formatLatency(p95Latency)],
-                    [t(lang, "collaborationNetworkMinimum"), formatLatency(minimumLatency)],
-                    [t(lang, "collaborationNetworkMaximum"), formatLatency(maximumLatency)],
-                    [t(lang, "collaborationSyncBacklog"), formatDuration(syncPendingDurationMs)],
+                    [t(lang, "collaborationNetworkSlowest"), formatLatency(maximumLatency)],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded-lg bg-bg-secondary/60 px-2 py-1.5 text-center">
-                      <div className="text-[10px] text-text-muted">{label}</div>
+                      <div className="text-[11px] text-text-muted">{label}</div>
                       <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-text-primary">{value}</div>
                     </div>
                   ))}
                 </div>
-                <div className="mt-2 border-t border-border pt-2">
-                  <div className="mb-1.5 text-[10px] font-medium text-text-muted">
-                    {t(lang, "collaborationNetworkThresholds")}
+                {/* Only when there is something to say: "sync backlog 0 ms" used
+                    to read like a latency figure at the end of the number row. */}
+                {showSyncPending && syncPendingDurationMs > 0 && (
+                  <div className="mt-1.5 flex items-center gap-1.5 rounded-lg bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
+                    <span aria-hidden="true" className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-warning" />
+                    <span className="min-w-0 truncate">
+                      {t(lang, "collaborationSyncBacklog")} · {formatDuration(syncPendingDurationMs)}
+                    </span>
                   </div>
-                  <div className="flex items-center justify-between gap-2 text-[10px] tabular-nums text-text-secondary">
-                    <span className="flex items-center gap-1"><i aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-success" />&lt; {COLLABORATION_NETWORK_GOOD_MAX_MS}ms</span>
-                    <span className="flex items-center gap-1"><i aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-warning" />{COLLABORATION_NETWORK_GOOD_MAX_MS}–{COLLABORATION_NETWORK_FAIR_MAX_MS}ms</span>
-                    <span className="flex items-center gap-1"><i aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-danger" />&gt; {COLLABORATION_NETWORK_FAIR_MAX_MS}ms</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <span aria-hidden="true">·</span>
-          <span aria-live="polite" title={saveStatusTitle}>{saveStatusLabel}</span>
-          <span aria-hidden="true">·</span>
-          <div className="group relative">
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-              aria-label={`${t(lang, "onlineUsers")} ${onlineUsers.length}`}
-              aria-haspopup="true"
-            >
-              <span className="flex items-center gap-1">
-                <Users size={12} />
-                {t(lang, "onlineUsers")} {onlineUsers.length}
-              </span>
-              <span className="flex items-center -space-x-1">
-                  {onlineUsers.slice(0, 3).map((onlineUser) => (
-                    <UserAvatar
-                      key={onlineUser.id}
-                      name={onlineUser.name}
-                      avatarUrl={onlineUser.avatarUrl}
-                      className="h-5 w-5 border border-bg-primary text-[11px] font-semibold text-white"
-                      style={{ backgroundColor: onlineUser.color }}
-                    />
-                  ))}
-                {onlineUsers.length > 3 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full border border-bg-primary bg-bg-active px-1 text-[11px] font-semibold text-text-secondary">
-                    +{onlineUsers.length - 3}
-                  </span>
                 )}
-              </span>
-            </button>
-            {onlineUsers.length > 0 && (
-              <div className="invisible absolute right-0 top-full z-50 w-52 translate-y-1 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
-                <div className="rounded-xl border border-border bg-bg-primary/95 p-2 shadow-xl backdrop-blur-sm">
-                  <div className="px-2 pb-1.5 pt-1 text-[11px] font-medium text-text-muted">
-                    {t(lang, "onlineUsers")} · {onlineUsers.length}
-                  </div>
-                  <div className="max-h-56 space-y-0.5 overflow-y-auto">
-                    {onlineUsers.map((onlineUser) => (
-                      <div
-                        key={onlineUser.id}
-                        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs text-text-primary hover:bg-bg-hover"
-                      >
-                            <UserAvatar
-                              name={onlineUser.name}
-                              avatarUrl={onlineUser.avatarUrl}
-                              className="h-6 w-6 text-[11px] font-semibold text-white"
-                              style={{ backgroundColor: onlineUser.color }}
-                            />
-                        <span className="min-w-0 flex-1 truncate" title={onlineUser.name}>
-                          {onlineUser.name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                {/* The save sentence also lives in here: it is the first thing
+                    a narrow card clips off the row, and "is my last keystroke
+                    safe" deserves a place that never truncates. */}
+                <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-[11px]">
+                  <span aria-hidden="true" className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${saveToneClass}`} />
+                  <span className={`min-w-0 truncate font-medium ${saveStatusTextClass}`}>{saveStatusLabel}</span>
                 </div>
               </div>
+            </HoverPopover>
+            <span
+              className={`min-w-0 max-w-[10rem] truncate ${saveStatusTextClass}`}
+              title={saveStatusTitle}
+              aria-live="polite"
+            >
+              {saveStatusLabel}
+            </span>
+            <HoverPopover
+              label={`${t(lang, "onlineUsers")} ${onlineUsers.length}`}
+              triggerClassName="flex flex-shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              panelWidth={208}
+              trigger={(
+                <>
+                  <span className="flex flex-shrink-0 items-center gap-1">
+                    <Users size={12} />
+                    <span className="workspace-status-text">{t(lang, "onlineUsers")}</span>
+                    <span className="tabular-nums">{onlineUsers.length}</span>
+                  </span>
+                  <span className="workspace-avatars flex items-center -space-x-1">
+                    {onlineUsers.slice(0, 3).map((onlineUser) => (
+                      <UserAvatar
+                        key={onlineUser.id}
+                        name={onlineUser.name}
+                        avatarUrl={onlineUser.avatarUrl}
+                        className="h-5 w-5 border border-bg-primary text-[11px] font-semibold text-white"
+                        style={{ backgroundColor: onlineUser.color }}
+                      />
+                    ))}
+                    {onlineUsers.length > 3 && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full border border-bg-primary bg-bg-active px-1 text-[11px] font-semibold text-text-secondary">
+                        +{onlineUsers.length - 3}
+                      </span>
+                    )}
+                  </span>
+                </>
+              )}
+            >
+              <div className="rounded-xl border border-border bg-bg-primary/95 p-2 shadow-xl">
+                <div className="px-2 pb-1.5 pt-1 text-xs font-medium text-text-muted">
+                  {t(lang, "onlineUsers")} · {onlineUsers.length}
+                </div>
+                <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                  {onlineUsers.map((onlineUser) => (
+                    <div
+                      key={onlineUser.id}
+                      className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs text-text-primary hover:bg-bg-hover"
+                    >
+                      <UserAvatar
+                        name={onlineUser.name}
+                        avatarUrl={onlineUser.avatarUrl}
+                        className="h-6 w-6 text-[11px] font-semibold text-white"
+                        style={{ backgroundColor: onlineUser.color }}
+                      />
+                      <span className="min-w-0 flex-1 truncate" title={onlineUser.name}>
+                        {onlineUser.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </HoverPopover>
+            {connectionError && (
+              <span className="max-w-44 truncate text-danger" title={connectionError}>{connectionError}</span>
             )}
           </div>
-          {connectionError && (
-            <span className="max-w-44 truncate text-danger" title={connectionError}>{connectionError}</span>
-          )}
         </div>
       </div>
 
@@ -1542,37 +1629,47 @@ export default function CloudNoteEditor({
           />
         </div>
       </div>
-      {publicationDialogOpen && createPortal(
-        <div
-          className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 px-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !publicationSaving) setPublicationDialogOpen(false);
-          }}
-        >
-          <div
-            className="app-modal-panel flex max-h-[calc(100vh-24px)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cloud-publication-dialog-title"
-          >
-            <div className="flex flex-shrink-0 items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-light text-accent">
-                <CalendarClock size={16} />
-              </span>
-              <h2 id="cloud-publication-dialog-title" className="min-w-0 flex-1 text-sm font-semibold text-text-primary">
-                {t(lang, "manageCloudDocumentPublication")}
-              </h2>
+      {publicationDialogOpen && (
+        <ModalShell
+          onClose={() => setPublicationDialogOpen(false)}
+          title={t(lang, "manageCloudDocumentPublication")}
+          description={publicationLabel}
+          icon={<CalendarClock size={16} />}
+          size="md"
+          closeDisabled={publicationSaving}
+          footer={publicationDialogStatus !== "published" ? (
+            <>
+              {publicationDialogStatus === "scheduled" && (
+                <button
+                  type="button"
+                  onClick={() => { void savePublication("cancel_schedule"); }}
+                  disabled={publicationSaving}
+                  aria-busy={publicationSavingAction === "cancel_schedule"}
+                  className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed"
+                >
+                  {publicationSavingAction === "cancel_schedule"
+                    ? <LoadingText label={t(lang, "cancelScheduledPublish")} variant="bounce" />
+                    : t(lang, "cancelScheduledPublish")}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setPublicationDialogOpen(false)}
-                disabled={publicationSaving}
-                className="rounded-lg p-1.5 text-text-muted hover:bg-bg-hover disabled:opacity-50"
-                aria-label={t(lang, "confirmNo")}
+                onClick={() => { void savePublication("schedule"); }}
+                disabled={!scheduledPublishValue || publicationSaving}
+                aria-busy={publicationSavingAction === "schedule"}
+                className="inline-flex h-8 items-center rounded-lg bg-accent px-3 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-accent/70"
               >
-                <X size={15} />
+                {publicationSavingAction === "schedule"
+                  ? <LoadingText
+                      label={t(lang, publicationDialogStatus === "scheduled" ? "rescheduleCloudDocument" : "scheduleCloudDocument")}
+                      variant="bounce"
+                    />
+                  : t(lang, publicationDialogStatus === "scheduled" ? "rescheduleCloudDocument" : "scheduleCloudDocument")}
               </button>
-            </div>
-            <div className="min-h-0 space-y-4 overflow-y-auto p-4">
+            </>
+          ) : undefined}
+        >
+          <div className="space-y-4">
               {publicationDialogStatus === "published" ? (
                 <>
                   <p className="rounded-lg bg-bg-secondary/65 px-3 py-2 text-xs leading-relaxed text-text-muted">
@@ -1663,43 +1760,8 @@ export default function CloudNoteEditor({
                   </div>
                 </>
               )}
-            </div>
-            {publicationDialogStatus !== "published" && (
-              <div className="flex flex-shrink-0 flex-wrap justify-between gap-2 border-t border-border px-4 py-3">
-                <div>
-                  {publicationDialogStatus === "scheduled" && (
-                    <button
-                      type="button"
-                      onClick={() => { void savePublication("cancel_schedule"); }}
-                      disabled={publicationSaving}
-                      aria-busy={publicationSavingAction === "cancel_schedule"}
-                      className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs text-text-secondary hover:bg-bg-hover disabled:cursor-not-allowed"
-                    >
-                      {publicationSavingAction === "cancel_schedule"
-                        ? <LoadingText label={t(lang, "cancelScheduledPublish")} variant="bounce" />
-                        : t(lang, "cancelScheduledPublish")}
-                    </button>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { void savePublication("schedule"); }}
-                  disabled={!scheduledPublishValue || publicationSaving}
-                  aria-busy={publicationSavingAction === "schedule"}
-                  className="inline-flex h-8 items-center rounded-lg bg-accent px-3 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-accent/70"
-                >
-                  {publicationSavingAction === "schedule"
-                    ? <LoadingText
-                        label={t(lang, publicationDialogStatus === "scheduled" ? "rescheduleCloudDocument" : "scheduleCloudDocument")}
-                        variant="bounce"
-                      />
-                    : t(lang, publicationDialogStatus === "scheduled" ? "rescheduleCloudDocument" : "scheduleCloudDocument")}
-                </button>
-              </div>
-            )}
           </div>
-        </div>,
-        window.document.body,
+        </ModalShell>
       )}
     </div>
   );

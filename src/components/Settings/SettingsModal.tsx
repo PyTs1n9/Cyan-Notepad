@@ -19,6 +19,7 @@ import {
   Pencil,
   RotateCcw,
   Save,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -642,7 +643,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/35" onClick={onClose} />
+      <div className="app-modal-backdrop absolute inset-0" onClick={onClose} />
 
       <section
         role="dialog"
@@ -650,8 +651,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         aria-labelledby="settings-title"
         className="isolate surface-glass surface-glass--dialog relative flex h-[min(680px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
       >
-        <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-5">
-          <h1 id="settings-title" className="text-base font-semibold text-text-primary">
+        <header className="flex flex-shrink-0 items-center gap-2.5 border-b border-border px-4 py-3">
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+            <Settings size={16} />
+          </span>
+          <h1 id="settings-title" className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
             {t(lang, "settingsTitle")}
           </h1>
           <button
@@ -659,9 +663,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={onClose}
             aria-label={t(lang, "close")}
             title={t(lang, "close")}
-            className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent cursor-pointer"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </header>
 
@@ -676,13 +680,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="button"
                     onClick={() => handleSectionChange(id)}
                     aria-current={selected ? "page" : undefined}
-                    className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-accent
+                    className={`group relative flex w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-accent
                       ${selected
-                        ? "bg-bg-active text-text-primary shadow-sm"
+                        ? "flat-active-row font-medium text-text-primary"
                         : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
                   >
+                    {selected && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r-full bg-accent"
+                      />
+                    )}
                     <Icon
-                      size={16}
+                      size={14}
                       className={`flex-shrink-0 transition-colors ${selected ? "text-accent" : "text-text-muted group-hover:text-accent"}`}
                     />
                     <span className="truncate">{label}</span>
@@ -694,7 +704,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <main className="min-w-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl p-5 sm:p-7">
-              <h2 className="mb-5 text-lg font-semibold text-text-primary">{sectionTitle}</h2>
+              <h2 className="mb-4 text-[15px] font-semibold text-text-primary">{sectionTitle}</h2>
 
               {activeSection === "ai" && (
                 <PanelErrorBoundary lang={lang}>
@@ -703,7 +713,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
 
               {activeSection === "basic" && (
-                <div className="overflow-visible rounded-xl border border-border bg-bg-secondary/35">
+                <div className="overflow-visible rounded-xl border border-border bg-bg-secondary/40">
                   <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
@@ -719,7 +729,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="button"
                         onClick={() => setAutoSaveDropdownOpen(!autoSaveDropdownOpen)}
                         aria-expanded={autoSaveDropdownOpen}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                        className="flex w-full items-center justify-between gap-2 h-8 rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover"
                       >
                         <span className="truncate">{t(lang, selectedAutoSaveOption.labelKey)}</span>
                         <ChevronDown
@@ -737,7 +747,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 setAutoSaveInterval(option.value);
                                 setAutoSaveDropdownOpen(false);
                               }}
-                              className={`w-full px-3 py-2 text-left text-sm transition-colors cursor-pointer
+                              className={`w-full px-2.5 py-1.5 text-left text-[13px] transition-colors
                                 ${autoSaveInterval === option.value
                                   ? "bg-accent-light text-accent"
                                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
@@ -770,7 +780,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="button"
                         onClick={() => setTrashDropdownOpen(!trashDropdownOpen)}
                         aria-expanded={trashDropdownOpen}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                        className="flex w-full items-center justify-between gap-2 h-8 rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover"
                       >
                         <span className="truncate">{t(lang, selectedTrashRetentionOption.labelKey)}</span>
                         <ChevronDown
@@ -788,7 +798,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 setTrashRetentionDays(option.value);
                                 setTrashDropdownOpen(false);
                               }}
-                              className={`w-full px-3 py-2 text-left text-sm transition-colors cursor-pointer
+                              className={`w-full px-2.5 py-1.5 text-left text-[13px] transition-colors
                                 ${trashRetentionDays === option.value
                                   ? "bg-accent-light text-accent"
                                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
@@ -882,7 +892,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleOpenDataDirectory}
                       title={dataDirectory ?? undefined}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                      className="flex w-full items-center justify-center gap-2 h-8 rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       <span className="truncate">{t(lang, "openDataFolder")}</span>
                       <FolderOpen size={14} className="flex-shrink-0 text-accent" />
@@ -903,7 +913,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleOpenImageCacheDirectory}
                       title={imageCacheDirectory ?? undefined}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+                      className="flex w-full items-center justify-center gap-2 h-8 rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       <span className="truncate">{t(lang, "openImageCache")}</span>
                       <FolderOpen size={14} className="flex-shrink-0 text-accent" />
@@ -928,7 +938,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           className={`flex min-w-0 items-center gap-3 rounded-xl border-2 p-3 text-left transition-all cursor-pointer
                             ${theme === item.value
                               ? "border-accent bg-accent-light"
-                              : "border-border bg-bg-secondary/35 hover:border-text-muted hover:bg-bg-hover"}`}
+                              : "border-border bg-bg-secondary/40 hover:border-text-muted hover:bg-bg-hover"}`}
                         >
                           <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-lg border border-border shadow-sm">
                             <div className="absolute inset-0" style={{ backgroundColor: item.preview }} />
@@ -942,7 +952,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </section>
 
-                  <section className="rounded-xl border border-border bg-bg-secondary/35 p-4">
+                  <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
                     <div className="mb-4 flex items-center gap-2">
                       <Droplets size={16} className="text-accent" />
                       <h3 className="text-sm font-medium text-text-primary">{t(lang, "customPalette")}</h3>
@@ -1056,7 +1066,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </section>
 
-                  <section className="rounded-xl border border-border bg-bg-secondary/35 p-4">
+                  <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
                     <div className="mb-4 flex items-start gap-2">
                       <ImagePlus size={16} className="mt-0.5 flex-shrink-0 text-accent" />
                       <div className="min-w-0">
@@ -1139,7 +1149,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                   </section>
 
-                  <section className="rounded-xl border border-border bg-bg-secondary/35 p-4">
+                  <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
                     <div className="mb-4 flex items-start gap-2">
                       <SlidersHorizontal size={16} className="mt-0.5 flex-shrink-0 text-accent" />
                       <div className="min-w-0">
@@ -1250,7 +1260,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-all cursor-pointer
                         ${lang === item.value
                           ? "border-accent bg-accent-light text-accent"
-                          : "border-border bg-bg-secondary/35 text-text-secondary hover:border-text-muted hover:bg-bg-hover"}`}
+                          : "border-border bg-bg-secondary/40 text-text-secondary hover:border-text-muted hover:bg-bg-hover"}`}
                     >
                       <Globe size={17} className="flex-shrink-0" />
                       <span className="truncate text-sm font-medium">{t(lang, item.labelKey)}</span>
@@ -1269,7 +1279,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="space-y-4">
                   {!user ? (
                     <>
-                      <section className="rounded-xl border border-border bg-bg-secondary/35 p-5">
+                      <section className="rounded-xl border border-border bg-bg-secondary/40 p-5">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex min-w-0 items-start gap-3">
                             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent">
@@ -1314,7 +1324,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </>
                   ) : (
                     <>
-                      <section className="rounded-xl border border-border bg-bg-secondary/35 p-5">
+                      <section className="rounded-xl border border-border bg-bg-secondary/40 p-5">
                         <div className="flex items-center gap-4">
                           <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-full bg-accent-light text-accent">
                             {avatarUrl ? (
@@ -1340,7 +1350,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                       </section>
 
-                      <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/35">
+                      <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/40">
                         <div className="flex items-center gap-2 p-4">
                           <UserRound size={16} className="text-accent" />
                           <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalProfile")}</h3>
@@ -1448,7 +1458,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         )}
                       </section>
 
-                      <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/35">
+                      <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/40">
                         {!passwordOpen ? (
                           <button
                             type="button"

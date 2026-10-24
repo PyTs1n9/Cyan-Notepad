@@ -164,7 +164,7 @@ export default function PublicationDateTimePicker({
 
   const renderTimeControl = (part: "hour" | "minute", label: string, draft: string) => (
     <div className="min-w-0 flex-1">
-      <div className="mb-1.5 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-text-muted">
+      <div className="mb-1.5 text-center text-[11px] font-medium uppercase tracking-[0.12em] text-text-muted">
         {label}
       </div>
       <div className="flex h-10 items-center overflow-hidden rounded-lg border border-border bg-bg-primary shadow-sm shadow-black/[0.03] focus-within:border-accent">
@@ -241,7 +241,7 @@ export default function PublicationDateTimePicker({
       <div className="p-3">
         <div className="mb-1 grid grid-cols-7 gap-1">
           {weekdays.map((weekday, index) => (
-            <div key={`${weekday}-${index}`} className="flex h-6 items-center justify-center text-[10px] font-medium text-text-muted">
+            <div key={`${weekday}-${index}`} className="flex h-6 items-center justify-center text-[11px] font-medium text-text-muted">
               {weekday}
             </div>
           ))}

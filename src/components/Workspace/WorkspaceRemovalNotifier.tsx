@@ -10,6 +10,7 @@ import {
 } from "@/utils/workspaceApi";
 import { supabase } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
+import ModalShell from "@/components/Layout/ModalShell";
 
 function mergeNotifications(
   current: WorkspaceRemovalNotification[],
@@ -83,43 +84,31 @@ export default function WorkspaceRemovalNotifier() {
   if (!currentNotification) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[20000] flex items-center justify-center px-4"
-      style={{ backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 48%))" }}
+    <ModalShell
+      onClose={acknowledge}
+      title={t(lang, "removedFromWorkspaceTitle")}
+      description={currentNotification.workspaceName}
+      icon={<UserMinus size={16} />}
+      tone="danger"
+      size="sm"
+      role="alertdialog"
+      footer={(
+        <button
+          type="button"
+          onClick={acknowledge}
+          autoFocus
+          className="h-8 rounded-lg bg-accent px-3 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover"
+        >
+          {t(lang, "acknowledge")}
+        </button>
+      )}
     >
-      <div
-        className="w-full max-w-[360px] overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-2xl"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="workspace-removal-notice-title"
-      >
-        <div className="px-5 pb-4 pt-5">
-          <div className="flex items-center gap-3 text-text-primary">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-danger/10 text-danger">
-              <UserMinus size={19} />
-            </div>
-            <div id="workspace-removal-notice-title" className="text-sm font-semibold">
-              {t(lang, "removedFromWorkspaceTitle")}
-            </div>
-          </div>
-          <p className="mt-4 text-sm leading-relaxed text-text-secondary">
-            {t(lang, "removedFromWorkspaceMessage").replace(
-              "{workspace}",
-              currentNotification.workspaceName,
-            )}
-          </p>
-        </div>
-        <div className="flex justify-end border-t border-border px-5 py-3">
-          <button
-            type="button"
-            onClick={acknowledge}
-            autoFocus
-            className="h-8 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
-          >
-            {t(lang, "acknowledge")}
-          </button>
-        </div>
-      </div>
-    </div>
+      <p className="text-sm leading-relaxed text-text-secondary">
+        {t(lang, "removedFromWorkspaceMessage").replace(
+          "{workspace}",
+          currentNotification.workspaceName,
+        )}
+      </p>
+    </ModalShell>
   );
 }

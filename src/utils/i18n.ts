@@ -163,6 +163,22 @@ export type TranslationKeys = {
   authNotConfiguredHint: string;
   workspace: string;
   workspaceTitle: string;
+  workspaceOverview: string;
+  overviewDocuments: string;
+  overviewMembers: string;
+  overviewRecent: string;
+  overviewRecentEmpty: string;
+  overviewRecentEmptyHint: string;
+  overviewOwnerTools: string;
+  overviewInviteCode: string;
+  overviewCopyInvite: string;
+  overviewCopied: string;
+  overviewPendingPublish: string;
+  overviewBackToOverview: string;
+  overviewNoWorkspaceTitle: string;
+  overviewNoWorkspaceHint: string;
+  overviewReadOnlyHint: string;
+  overviewUpdatedAt: string;
   workspaceLoginRequired: string;
   workspaceLoginHint: string;
   createWorkspace: string;
@@ -263,6 +279,7 @@ export type TranslationKeys = {
   collaborationNetworkCurrent: string;
   collaborationNetworkMinimum: string;
   collaborationNetworkMaximum: string;
+  collaborationNetworkSlowest: string;
   collaborationNetworkAverage: string;
   collaborationNetworkP95: string;
   collaborationSyncBacklog: string;
@@ -903,6 +920,22 @@ const zh: TranslationKeys = {
   authNotConfiguredHint: "请在 .env.local 中填写 Supabase Project URL 和 publishable/anon key，然后重新启动应用。",
   workspace: "工作台",
   workspaceTitle: "工作台",
+  workspaceOverview: "概览",
+  overviewDocuments: "文档",
+  overviewMembers: "成员",
+  overviewRecent: "最近编辑",
+  overviewRecentEmpty: "还没有可显示的编辑记录",
+  overviewRecentEmptyHint: "新建一篇云文档，它会出现在这里",
+  overviewOwnerTools: "工作台管理",
+  overviewInviteCode: "邀请码",
+  overviewCopyInvite: "复制邀请码",
+  overviewCopied: "已复制",
+  overviewPendingPublish: "待发布",
+  overviewBackToOverview: "返回概览",
+  overviewNoWorkspaceTitle: "还没有工作台",
+  overviewNoWorkspaceHint: "创建一个工作台，或用邀请码加入一个",
+  overviewReadOnlyHint: "你在当前工作台中是阅读者，可以浏览但不能新建文档",
+  overviewUpdatedAt: "最近更新",
   workspaceLoginRequired: "登录后使用工作台",
   workspaceLoginHint: "登录后即可创建或加入多人协作工作台",
   createWorkspace: "创建工作台",
@@ -1003,6 +1036,7 @@ const zh: TranslationKeys = {
   collaborationNetworkCurrent: "当前",
   collaborationNetworkMinimum: "最低",
   collaborationNetworkMaximum: "最高",
+  collaborationNetworkSlowest: "最慢",
   collaborationNetworkAverage: "平均",
   collaborationNetworkP95: "P95",
   collaborationSyncBacklog: "同步积压",
@@ -1646,6 +1680,22 @@ const en: TranslationKeys = {
   authNotConfiguredHint: "Add the Supabase Project URL and publishable/anon key to .env.local, then restart the app.",
   workspace: "Workspace",
   workspaceTitle: "Online Workspace",
+  workspaceOverview: "Overview",
+  overviewDocuments: "Documents",
+  overviewMembers: "Members",
+  overviewRecent: "Recently edited",
+  overviewRecentEmpty: "Nothing edited yet",
+  overviewRecentEmptyHint: "Create a cloud document and it will show up here",
+  overviewOwnerTools: "Workspace admin",
+  overviewInviteCode: "Invite code",
+  overviewCopyInvite: "Copy invite code",
+  overviewCopied: "Copied",
+  overviewPendingPublish: "To publish",
+  overviewBackToOverview: "Back to overview",
+  overviewNoWorkspaceTitle: "No workspace yet",
+  overviewNoWorkspaceHint: "Create one, or join with an invite code",
+  overviewReadOnlyHint: "You are a viewer here: browsing only",
+  overviewUpdatedAt: "Updated",
   workspaceLoginRequired: "Sign in to use workspaces",
   workspaceLoginHint: "Create or join a collaborative workspace after signing in",
   createWorkspace: "Create Workspace",
@@ -1746,6 +1796,7 @@ const en: TranslationKeys = {
   collaborationNetworkCurrent: "Current",
   collaborationNetworkMinimum: "Minimum",
   collaborationNetworkMaximum: "Maximum",
+  collaborationNetworkSlowest: "Slowest",
   collaborationNetworkAverage: "Average",
   collaborationNetworkP95: "P95",
   collaborationSyncBacklog: "Sync backlog",

@@ -21,6 +21,7 @@ import { t } from "@/utils/i18n";
 import { dispatchPortalAction } from "@/utils/portalActions";
 import { requestTodoIntent } from "@/utils/todoIntent";
 import TreeContextMenu, { type TreeMenuItem } from "@/components/Layout/TreeContextMenu";
+import ModalShell from "@/components/Layout/ModalShell";
 import type { Todo, TodoList } from "@/types";
 
 /** One menu at a time; a task entry carries the list it belongs to as well. */
@@ -653,45 +654,38 @@ const TodoSidebar: React.FC = () => {
       )}
 
       {deleteConfirmList && (
-        <div className="todo-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/35" onMouseDown={() => setDeleteConfirmList(null)}>
-          <div
-            className="todo-modal-panel w-[340px] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="px-4 pb-3 pt-4">
-              <div className="flex items-center gap-2 text-text-primary">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-danger/10 text-danger">
-                  <Trash2 size={16} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">{t(lang, "deleteTodoList")}</div>
-                  <div className="mt-0.5 truncate text-xs text-text-muted">{deleteConfirmList.name}</div>
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-relaxed text-text-secondary">
-                {t(lang, "confirmDeleteTodoListMessage")
-                  .replace("{list}", deleteConfirmList.name)
-                  .replace("{count}", String(todos.filter((todo) => todo.listId === deleteConfirmList.id).length))}
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+        <ModalShell
+          onClose={() => setDeleteConfirmList(null)}
+          title={t(lang, "deleteTodoList")}
+          description={deleteConfirmList.name}
+          icon={<Trash2 size={16} />}
+          tone="danger"
+          size="sm"
+          footer={(
+            <>
               <button
+                type="button"
                 onClick={() => setDeleteConfirmList(null)}
-                className="h-8 rounded-lg border border-border px-3 text-sm text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                className="h-8 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 {t(lang, "confirmNo")}
               </button>
               <button
+                type="button"
                 onClick={confirmDelete}
-                className="h-8 rounded-lg bg-danger px-3 text-sm text-on-danger transition-colors hover:bg-danger/90"
+                className="h-8 rounded-lg bg-danger px-3 text-xs text-on-danger transition-colors hover:bg-danger/90"
               >
                 {t(lang, "confirmYes")}
               </button>
-            </div>
-          </div>
-        </div>
+            </>
+          )}
+        >
+          <p className="text-sm leading-relaxed text-text-secondary">
+            {t(lang, "confirmDeleteTodoListMessage")
+              .replace("{list}", deleteConfirmList.name)
+              .replace("{count}", String(todos.filter((todo) => todo.listId === deleteConfirmList.id).length))}
+          </p>
+        </ModalShell>
       )}
     </aside>
   );

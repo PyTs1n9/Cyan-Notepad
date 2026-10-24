@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, RotateCcw, Trash2, X } from "lucide-react";
+import { AlertTriangle, RotateCcw, Trash2 } from "lucide-react";
 import { useNoteStore } from "@/stores/noteStore";
 import {
   TRASH_RETENTION_FOREVER,
@@ -7,6 +7,7 @@ import {
 } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import EmptyState from "@/components/Layout/EmptyState";
+import ModalShell from "@/components/Layout/ModalShell";
 import {
   emptyNoteTrash,
   listTrashNotes,
@@ -157,37 +158,48 @@ const TrashModal: React.FC<TrashModalProps> = ({
     : "";
 
   return (
-    <div
-      className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center px-4"
-      style={{ backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 42%))" }}
-    >
-      <div
-        className="app-modal-panel flex max-h-[72vh] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t(lang, "trash")}
-      >
-        <div className="flex items-start gap-2 border-b border-border px-4 py-3">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
-            <Trash2 size={16} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold text-text-primary">{t(lang, "trash")}</div>
-            <div className="mt-0.5 text-xs text-text-muted">{t(lang, "trashHint")}</div>
-          </div>
+    <ModalShell
+      onClose={onClose}
+      title={t(lang, "trash")}
+      description={t(lang, "trashHint")}
+      icon={<Trash2 size={16} />}
+      size="lg"
+      scrollBody={false}
+      footerStart={pendingConfirm ? undefined : (
+        <span className="text-xs tabular-nums text-text-muted">
+          {entries.length} · {t(lang, "trash")}
+        </span>
+      )}
+      footer={pendingConfirm ? (
+        <>
           <button
             type="button"
-            onClick={onClose}
-            aria-label={t(lang, "close")}
-            title={t(lang, "close")}
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+            onClick={() => setPendingConfirm(null)}
+            className="h-8 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
-            <X size={15} />
+            {t(lang, "confirmNo")}
           </button>
-        </div>
-
+          <button
+            type="button"
+            onClick={() => void handleConfirmedAction()}
+            className="h-8 rounded-lg bg-danger px-3 text-xs text-on-danger transition-colors hover:bg-danger/90"
+          >
+            {t(lang, "confirmYes")}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPendingConfirm({ type: "empty" })}
+          disabled={entries.length === 0}
+          className="h-8 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:border-danger/40 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {t(lang, "trashClearAll")}
+        </button>
+      )}
+    >
         {trashDisabled ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+          <div className="flex flex-1 flex-col items-center gap-3 py-10 text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-bg-secondary text-text-muted">
               <Trash2 size={18} />
             </div>
@@ -201,13 +213,19 @@ const TrashModal: React.FC<TrashModalProps> = ({
                 onClose();
                 onOpenSettings();
               }}
-              className="mt-1 h-8 rounded-lg bg-accent px-3 text-sm text-on-accent transition-colors hover:bg-accent-hover cursor-pointer"
+              className="mt-1 h-8 rounded-lg bg-accent px-3 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover"
             >
               {t(lang, "trashOpenSettings")}
             </button>
           </div>
         ) : (
           <>
+            {pendingConfirm && (
+              <div className="flex flex-shrink-0 items-start gap-2 border-b border-border bg-danger/5 px-4 py-2.5 text-text-secondary">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-danger" />
+                <p className="min-w-0 flex-1 text-xs leading-relaxed">{confirmMessage}</p>
+              </div>
+            )}
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {notice && (
                 <div
@@ -278,49 +296,9 @@ const TrashModal: React.FC<TrashModalProps> = ({
                 </div>
               )}
             </div>
-
-            {pendingConfirm ? (
-              <div className="border-t border-border bg-bg-secondary px-4 py-3">
-                <div className="flex items-start gap-2 text-text-secondary">
-                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-danger" />
-                  <p className="min-w-0 flex-1 text-xs leading-relaxed">{confirmMessage}</p>
-                </div>
-                <div className="mt-3 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPendingConfirm(null)}
-                    className="h-8 rounded-lg border border-border px-3 text-sm text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-                  >
-                    {t(lang, "confirmNo")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleConfirmedAction()}
-                    className="h-8 rounded-lg bg-danger px-3 text-sm text-on-danger transition-colors hover:bg-danger/90 cursor-pointer"
-                  >
-                    {t(lang, "confirmYes")}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
-                <span className="text-xs text-text-muted tabular-nums">
-                  {entries.length} · {t(lang, "trash")}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPendingConfirm({ type: "empty" })}
-                  disabled={entries.length === 0}
-                  className="h-8 rounded-lg border border-border px-3 text-xs text-text-secondary transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {t(lang, "trashClearAll")}
-                </button>
-              </div>
-            )}
           </>
         )}
-      </div>
-    </div>
+    </ModalShell>
   );
 };
 

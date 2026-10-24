@@ -4,15 +4,12 @@ import { useDialogStore, type AppDialogTone, type AppProgress } from "@/stores/d
 import { pauseShortcuts, resumeShortcuts } from "@/utils/shortcutManager";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { tWithParams } from "@/utils/i18n";
+import ModalShell from "@/components/Layout/ModalShell";
 
-const TONE_STYLES: Record<AppDialogTone, { icon: typeof Info; className: string }> = {
-  info: { icon: Info, className: "bg-accent-light text-accent" },
-  warning: { icon: AlertTriangle, className: "bg-warning/12 text-warning" },
-  danger: { icon: OctagonAlert, className: "bg-danger/12 text-danger" },
-};
-
-const BACKDROP_STYLE = {
-  backgroundColor: "color-mix(in srgb, var(--color-bg-primary) 18%, rgb(0 0 0 / 42%))",
+const TONE_ICON: Record<AppDialogTone, typeof Info> = {
+  info: Info,
+  warning: AlertTriangle,
+  danger: OctagonAlert,
 };
 
 function progressPercent(progress: AppProgress): number | null {
@@ -25,9 +22,6 @@ function progressPercent(progress: AppProgress): number | null {
   // Still counting the source: no percentage exists yet.
   return null;
 }
-
-const PANEL_CLASS =
-  "app-modal-panel flex w-full max-w-[460px] flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-xl";
 
 /**
  * Single host for app-styled confirmations, notices and long-task progress.
@@ -75,49 +69,28 @@ export default function AppDialog() {
   if (!request && !progress) return null;
 
   const tone = request?.tone ?? "info";
-  const { icon: Icon, className: iconClassName } = TONE_STYLES[tone];
+  const Icon = TONE_ICON[tone];
   const destructive = tone === "danger";
   const percent = progress ? progressPercent(progress) : null;
 
   return (
     <>
       {request && (
-        <div
-          className="app-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center px-4"
-          style={BACKDROP_STYLE}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) close(false);
-          }}
-        >
-          <div
-            className={`${PANEL_CLASS} max-h-[72vh]`}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby={`app-dialog-title-${request.id}`}
-          >
-            <div className="flex items-start gap-3 px-5 py-4">
-              <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${iconClassName}`}>
-                <Icon size={18} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h2 id={`app-dialog-title-${request.id}`} className="text-sm font-semibold text-text-primary">
-                  {request.title}
-                </h2>
-                {request.body && (
-                  <p className="mt-1.5 whitespace-pre-line break-words text-xs leading-relaxed text-text-secondary">
-                    {request.body}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+        <ModalShell
+          onClose={() => close(false)}
+          title={request.title}
+          icon={<Icon size={16} />}
+          tone={destructive ? "danger" : tone === "warning" ? "warning" : "accent"}
+          size="md"
+          role="alertdialog"
+          initialFocusRef={confirmRef}
+          footer={(
+            <>
               {request.cancelLabel && (
                 <button
                   type="button"
                   onClick={() => close(false)}
-                  className="rounded-lg border border-border px-3.5 py-1.5 text-xs font-medium text-text-secondary
-                    transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                  className="h-8 rounded-lg border border-border px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
                 >
                   {request.cancelLabel}
                 </button>
@@ -126,59 +99,63 @@ export default function AppDialog() {
                 ref={confirmRef}
                 type="button"
                 onClick={() => close(true)}
-                className={`rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer
-                  ${destructive ? "bg-danger text-on-danger hover:opacity-90" : "bg-accent text-on-accent hover:bg-accent-hover"}`}
+                className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${
+                  destructive ? "bg-danger text-on-danger hover:bg-danger/90" : "bg-accent text-on-accent hover:bg-accent-hover"
+                }`}
               >
                 {request.confirmLabel}
               </button>
-            </div>
-          </div>
-        </div>
+            </>
+          )}
+        >
+          {request.body && (
+            <p className="whitespace-pre-line break-words text-xs leading-relaxed text-text-secondary">
+              {request.body}
+            </p>
+          )}
+        </ModalShell>
       )}
 
       {progress && (
-        // Rendered on top of everything and without a dismiss affordance: the
-        // task owns the files, cancelling halfway would be worse than waiting.
-        <div
-          className="app-modal-backdrop fixed inset-0 z-[10001] flex items-center justify-center px-4"
-          style={BACKDROP_STYLE}
+        // Rendered without a dismiss affordance: the task owns the files,
+        // cancelling halfway would be worse than waiting.
+        <ModalShell
+          onClose={() => undefined}
+          title={progress.title}
+          icon={<Loader2 size={16} className="animate-spin" />}
+          size="sm"
+          closeDisabled
         >
-          <div className={`${PANEL_CLASS} max-w-[400px]`} role="status" aria-live="polite">
-            <div className="flex items-center gap-2.5 px-5 py-4">
-              <Loader2 size={16} className="animate-spin text-accent" />
-              <h2 className="text-sm font-semibold text-text-primary">{progress.title}</h2>
-              {percent !== null && (
-                <span className="ml-auto text-xs font-medium tabular-nums text-text-primary">{percent}%</span>
-              )}
-            </div>
-            <div className="px-5 pb-5">
-              <p className="mb-2 text-xs text-text-secondary">
-                {progress.totalFiles > 0
-                  ? tWithParams(lang, "storageMigrating", {
-                      files: progress.files,
-                      total: progress.totalFiles,
-                    })
-                  : progress.label}
-              </p>
+          <p className="mb-2 flex items-center justify-between gap-2 text-xs text-text-secondary">
+            <span className="min-w-0">
+              {progress.totalFiles > 0
+                ? tWithParams(lang, "storageMigrating", {
+                    files: progress.files,
+                    total: progress.totalFiles,
+                  })
+                : progress.label}
+            </span>
+            {percent !== null && (
+              <span className="flex-shrink-0 font-medium tabular-nums text-text-primary">{percent}%</span>
+            )}
+          </p>
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-bg-hover"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent ?? undefined}
+          >
+            {percent === null ? (
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-accent/60" />
+            ) : (
               <div
-                className="h-1.5 w-full overflow-hidden rounded-full bg-bg-hover"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={percent ?? undefined}
-              >
-                {percent === null ? (
-                  <div className="h-full w-1/3 animate-pulse rounded-full bg-accent/60" />
-                ) : (
-                  <div
-                    className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out"
-                    style={{ width: `${percent}%` }}
-                  />
-                )}
-              </div>
-            </div>
+                className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out"
+                style={{ width: `${percent}%` }}
+              />
+            )}
           </div>
-        </div>
+        </ModalShell>
       )}
     </>
   );

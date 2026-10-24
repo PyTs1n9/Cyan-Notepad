@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileCheck2, FileClock, FileText, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
+import { ChevronLeft, FileCheck2, FileClock, FileText, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorkspaceUiStore } from "@/stores/workspaceUi";
@@ -36,6 +36,7 @@ const WorkspaceStrip: React.FC = () => {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const activeDocumentId = useWorkspaceStore((state) => state.activeDocumentId);
   const updateDocumentTitle = useWorkspaceStore((state) => state.updateDocumentTitle);
+  const selectDocument = useWorkspaceStore((state) => state.selectDocument);
   const onlineCollaborators = useWorkspaceUiStore((state) => state.onlineCollaborators);
   const requestDelete = useWorkspaceUiStore((state) => state.requestDelete);
 
@@ -170,16 +171,30 @@ const WorkspaceStrip: React.FC = () => {
     <ShellStrip
       leading={
         activeDocument ? (
-          <PublicationIcon
-            size={14}
-            className={`flex-shrink-0 ${
-              activeDocument.publicationStatus === "published"
-                ? "text-success"
-                : activeDocument.publicationStatus === "scheduled"
-                  ? "text-warning"
-                  : "text-accent"
-            }`}
-          />
+          <>
+            {/* With a document open the strip carries the document title, so the
+                workspace name is gone and this chevron is the only way back to
+                the overview from a collapsed sidebar. */}
+            <button
+              type="button"
+              onClick={() => selectDocument(null)}
+              title={t(lang, "overviewBackToOverview")}
+              aria-label={t(lang, "overviewBackToOverview")}
+              className="-ml-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <PublicationIcon
+              size={14}
+              className={`flex-shrink-0 ${
+                activeDocument.publicationStatus === "published"
+                  ? "text-success"
+                  : activeDocument.publicationStatus === "scheduled"
+                    ? "text-warning"
+                    : "text-accent"
+              }`}
+            />
+          </>
         ) : (
           <Users size={14} className="flex-shrink-0 text-accent" />
         )
@@ -263,7 +278,7 @@ const WorkspaceStrip: React.FC = () => {
             </span>
           )}
           <span
-            className={`shell-strip__optional flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+            className={`shell-strip__optional flex-shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-medium ${
               PUBLICATION_TONE[activeDocument.publicationStatus] ?? PUBLICATION_TONE.draft
             }`}
           >
@@ -272,9 +287,25 @@ const WorkspaceStrip: React.FC = () => {
         </>
       ) : (
         <>
-          <span className="min-w-0 max-w-[220px] truncate text-[13px] font-semibold text-text-primary">
-            {activeWorkspace?.name ?? t(lang, "workspaceTitle")}
-          </span>
+          {/* Without an open document this strip *is* the overview header, so
+              the name doubles as the "back to overview" target. With a document
+              open the editor owns the card and the name stays plain text -
+              a fake link back to where the user already is would only add noise. */}
+          {activeWorkspace ? (
+            <button
+              type="button"
+              onClick={() => selectDocument(null)}
+              title={t(lang, "overviewBackToOverview")}
+              aria-label={t(lang, "overviewBackToOverview")}
+              className="min-w-0 max-w-[220px] truncate rounded text-left text-[13px] font-semibold text-text-primary transition-colors hover:text-accent"
+            >
+              {activeWorkspace.name}
+            </button>
+          ) : (
+            <span className="min-w-0 max-w-[220px] truncate text-[13px] font-semibold text-text-primary">
+              {t(lang, "workspaceTitle")}
+            </span>
+          )}
           <span className="shell-strip__optional flex-shrink-0 text-[11px] text-text-muted">
             <span className="tabular-nums">{documents.length}</span> {t(lang, "workspaceDocuments")}
           </span>

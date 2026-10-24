@@ -129,16 +129,16 @@ export default function PasswordRecoveryModal() {
         aria-modal="true"
         aria-labelledby="password-recovery-title"
       >
-        <header className="flex items-center justify-between border-b border-border px-5 py-4">
+        <header className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
-              {isRequestStage || isEmailSentStage ? <KeyRound size={18} /> : <ShieldCheck size={18} />}
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+              {isRequestStage || isEmailSentStage ? <KeyRound size={16} /> : <ShieldCheck size={16} />}
             </div>
             <div className="min-w-0">
               <h1 id="password-recovery-title" className="text-sm font-semibold text-text-primary">
                 {title}
               </h1>
-              <p className="mt-0.5 truncate text-xs text-text-muted">
+              <p className="mt-0.5 truncate text-[11px] text-text-muted">
                 {isResetStage && user?.email
                   ? user.email
                   : isEmailSentStage
@@ -152,9 +152,9 @@ export default function PasswordRecoveryModal() {
             onClick={closeRecovery}
             disabled={loading}
             aria-label={t(lang, "close")}
-            className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </header>
 
@@ -168,7 +168,7 @@ export default function PasswordRecoveryModal() {
               <button
                 type="button"
                 onClick={finishPasswordRecovery}
-                className="h-9 w-full rounded-lg bg-accent text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
+                className="h-8 w-full rounded-lg bg-accent text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover"
               >
                 {t(lang, "authPasswordResetDone")}
               </button>

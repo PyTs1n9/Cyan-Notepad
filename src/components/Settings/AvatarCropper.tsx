@@ -174,14 +174,14 @@ export default function AvatarCropper({
         role="dialog"
         aria-modal="true"
         aria-labelledby="avatar-crop-title"
-        className="relative w-[min(440px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-border bg-bg-primary shadow-2xl"
+        className="app-modal-panel relative w-[min(440px,calc(100vw-32px))] overflow-hidden rounded-xl border border-border bg-bg-primary"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+        <header className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
           <div>
-            <h2 id="avatar-crop-title" className="text-base font-semibold text-text-primary">
+            <h2 id="avatar-crop-title" className="truncate text-sm font-semibold text-text-primary">
               {t(lang, "avatarCropTitle")}
             </h2>
-            <p className="mt-1 text-xs leading-relaxed text-text-muted">
+            <p className="mt-0.5 truncate text-[11px] leading-4 text-text-muted">
               {t(lang, "avatarCropHint")}
             </p>
           </div>
@@ -191,9 +191,9 @@ export default function AvatarCropper({
             disabled={saving}
             aria-label={t(lang, "avatarCropCancel")}
             title={t(lang, "avatarCropCancel")}
-            className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 cursor-pointer"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </header>
 

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { BookOpen, HelpCircle, Keyboard, MousePointer2, X } from "lucide-react";
+import { BookOpen, HelpCircle, Keyboard, MousePointer2 } from "lucide-react";
 import manualRaw from "../../../docs/user-manual.md?raw";
 import faqRaw from "../../../docs/user-faq.md?raw";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import { renderMarkdown } from "@/utils/markdown";
+import ModalShell from "@/components/Layout/ModalShell";
 import { SHORTCUT_REFERENCE } from "@/utils/shortcutReference";
 
 export type HelpTab = "manual" | "faq" | "shortcuts" | "canvas";
@@ -90,49 +91,39 @@ export default function HelpCenterModal({ tab, onTabChange, onClose }: HelpCente
   if (!tab) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-4" role="presentation">
-      <div className="absolute inset-0 bg-black/45" onClick={onClose} />
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={t(lang, "helpMenu")}
-        className="relative flex h-[min(84vh,660px)] w-[min(94vw,760px)] flex-col overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-2xl"
-      >
-        <header className="flex h-11 flex-shrink-0 items-center gap-1 border-b border-border px-2">
-          <div className="flex items-center gap-1 overflow-x-auto">
-            {TAB_KEYS.map(({ id, labelKey, icon: Icon }) => {
-              const active = tab === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => onTabChange(id)}
-                  className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
-                    active
-                      ? "bg-bg-active text-text-primary"
-                      : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
-                  }`}
-                >
-                  <Icon size={13} />
-                  {t(lang, labelKey)}
-                </button>
-              );
-            })}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t(lang, "close")}
-            title={t(lang, "close")}
-            className="ml-auto flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-          >
-            <X size={15} />
-          </button>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+    <ModalShell
+      onClose={onClose}
+      title={t(lang, "helpMenu")}
+      icon={<BookOpen size={16} />}
+      size="lg"
+      scrollBody={false}
+      bodyClassName="px-6 py-5"
+      tabs={(
+        <div className="flex items-center gap-1 overflow-x-auto px-2">
+          {TAB_KEYS.map(({ id, labelKey, icon: Icon }) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onTabChange(id)}
+                className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
+                  active
+                    ? "bg-bg-active text-text-primary"
+                    : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
+                }`}
+              >
+                <Icon size={13} />
+                {t(lang, labelKey)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto">
           {tab === "shortcuts" ? (
             <div className="mx-auto w-full max-w-[560px]">
               {SHORTCUT_REFERENCE.map((group) => (
@@ -204,7 +195,6 @@ export default function HelpCenterModal({ tab, onTabChange, onClose }: HelpCente
             </div>
           )}
         </div>
-      </section>
-    </div>
+    </ModalShell>
   );
 }
