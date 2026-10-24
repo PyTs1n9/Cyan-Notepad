@@ -37,11 +37,7 @@ const cases: Array<[string, RegExp]> = [
   ["怎么让 AI 帮我改笔记？", /Q19/],
   ["AI 修改错了怎么办？", /Q19/],
   ["助手能改笔记吗？", /Q19/],
-  // 联网搜索 (Q20) must own its phrasing without stealing Q2's 搜索 question:
-  ["联网搜索怎么开？", /Q20/],
-  ["怎么开启联网搜索？", /Q20/],
-  ["联网搜索要另外收费吗？", /Q20/],
-  ["搜索要花钱吗？", /Q20/],
+  // 联网搜索 was removed on 2026-10-23, so its four Q20 cases went with it.
   ["怎么搜索笔记？能搜正文吗？", /Q2/],
 ];
 

@@ -1,35 +1,28 @@
 @import "tailwindcss";
 
-/* The title-bar menus stay icon-only on compact windows so labels never
-   collapse into vertically stacked characters. */
-.titlebar-menu-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  white-space: nowrap;
-  flex-shrink: 0;
+/* The only downloaded file in the app: a Latin-only display face for the brand
+   mark and empty-state headings. Self-hosted rather than linked, because the
+   window has to render offline, and subset to Latin because a CJK face is
+   megabytes for one heading - Chinese body text keeps the system stack.
+   Fraunces is an ink-on-paper serif with slightly wonky terminals and optical
+   sizes; that warmth is the "notepad" character a neutral grotesque cannot give.
+   18,096 bytes, 600 weight only (the gate is 60 KiB for the whole batch). */
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/fraunces-latin-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-024F, U+2013-2014, U+2018-201D, U+2026;
 }
 
-.titlebar-menu-icon {
-  display: none;
-  flex-shrink: 0;
-}
-
-@media (max-width: 520px) {
-  .titlebar-menu-button {
-    width: 2.25rem;
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .titlebar-menu-label {
-    display: none;
-  }
-
-  .titlebar-menu-icon {
-    display: block;
-  }
+/* Anything non-Latin in the string (a user-renamed title, a Chinese empty
+   state) falls through to the system stack per glyph, so this class is safe to
+   put on headings that may mix scripts. */
+.brand-face {
+  font-family: "Fraunces", "Segoe UI", "PingFang SC", "Microsoft YaHei", serif;
+  font-weight: 600;
+  letter-spacing: -0.011em;
 }
 
 /* Both editor toolbars are single-row and icon-only, so there is no label to
@@ -46,6 +39,19 @@
 .note-editor-surface {
   container-type: inline-size;
   container-name: note-editor;
+}
+
+/* The export label only appears when the editor card itself is wide enough.
+   Container query, not a media query: the left card is resizable, so the
+   viewport width says nothing about the room this row actually has. */
+.note-export-label {
+  display: none;
+}
+
+@container note-editor (min-width: 620px) {
+  .note-export-label {
+    display: inline;
+  }
 }
 
 .note-editor-toolbar button,
@@ -82,9 +88,18 @@
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --color-accent-light: #dbeafe;
-  --color-danger: #ef4444;
+  /* Deeper than the usual #ef4444: white on the lighter red measures 3.76,
+     and the 12 `hover:bg-danger/90` sites composite to an even lighter block.
+     #d42424 keeps the solid block at 5.15 and its /90 hover at 4.63. */
+  --color-danger: #d42424;
   --color-success: #22c55e;
   --color-warning: #eab308;
+  /* Foreground colours for the three saturated blocks above. They live in
+     @theme (not only in .theme-*) because that is what makes Tailwind emit the
+     `text-on-*` utilities at all; per-theme overrides only change the value. */
+  --color-on-accent: #ffffff;
+  --color-on-success: #052e16;
+  --color-on-danger: #ffffff;
 }
 
 /* Dark Theme */
@@ -105,6 +120,15 @@
   --color-danger: #ff6b6b;
   --color-success: #51cf66;
   --color-warning: #fcc419;
+  /* The accent is too bright for white (3.68), so the fore colour goes to the
+     other end of the scale instead of dragging the ring darker - a darker
+     accent would drop `text-accent` on the night ground to 3.06. */
+  --color-on-accent: #08090f;
+  --color-on-success: #052e16;
+  --color-on-danger: #2a0a0a;
+  /* Same grain, quieter: at 0.035 the noise reads as haze once the ground is
+     dark, so the dark theme asks for less of it instead of another texture. */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
 }
 
 /* Blue Theme (default) - applied via .theme-blue or no class */
@@ -122,9 +146,12 @@
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --color-accent-light: #dbeafe;
-  --color-danger: #ef4444;
+  --color-danger: #d42424;
   --color-success: #22c55e;
   --color-warning: #eab308;
+  --color-on-accent: #ffffff;
+  --color-on-success: #052e16;
+  --color-on-danger: #ffffff;
 }
 
 /* Moody Yellow Theme - soft pastel */
@@ -145,6 +172,11 @@
   --color-danger: #d98a7a;
   --color-success: #8ab88a;
   --color-warning: #d4b86a;
+  /* Low-saturation Morandi blocks: dark foregrounds read as ink on the paper
+     palette and clear 4.5 on every block, which white never did here. */
+  --color-on-accent: #2a2214;
+  --color-on-success: #16240f;
+  --color-on-danger: #2e1512;
 }
 
 /* Fresh Green Theme - soft pastel */
@@ -165,6 +197,9 @@
   --color-danger: #d88a8a;
   --color-success: #6aba6a;
   --color-warning: #caba6a;
+  --color-on-accent: #0d2416;
+  --color-on-success: #06240f;
+  --color-on-danger: #2b1212;
 }
 
 /* ------------------------------------------------------------------ */
@@ -174,8 +209,13 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-  --shell-pad: 10px;
-  --shell-gutter: 10px;
+  --shell-pad: 6px;
+  --shell-gutter: 6px;
+  /* Space above the card row, below the title bar. Kept apart from the gutter
+     so the cards keep the same floating margin as the other three sides
+     without touching the sash width; mirrors --shell-pad at both breakpoints
+     (see SHELL_TOP_GAP_* in shellLayout.ts). */
+  --shell-top-gap: 6px;
   --box-radius: 10px;
 
   /* Unitless on purpose: only calc(var(--x) * 1px) / * 1% add units, and a
@@ -183,14 +223,43 @@
   --glass-blur: 12;
   --glass-saturate: 120;
   --glass-tint-side: 80;
+  /* Derived from --glass-tint-side in App.tsx; this is only the no-JS fallback
+     for the base profile (no wallpaper). */
   --glass-tint-editor: 92;
+  /* Dialogs are transient surfaces, not part of the depth ladder, so they keep
+     their own near-opaque floor. */
+  --glass-tint-dialog: 92;
+  --glass-panel-side: var(--color-bg-sidebar);
   --glass-tint-light: 60;
+
+  /* Paper grain, 120px tile, painted only by `.surface-glass::before`. The two
+     variants differ by a single number, but that number sits inside the data
+     URI, so they cannot share one declaration. */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+
+  /* Motion vocabulary: three curves, three durations. The six hand-written
+     beziers that used to be scattered through this sheet were drifting copies
+     of these, which is why no two transitions felt like the same product.
+     `--ease-spring` overshoots on purpose (entry/pop); `--ease-out` is the
+     neutral one for anything that just fades or slides into place.
+     Durations collapse to the nearest step: anything that answers a pointer
+     stays at `--dur-fast`, entrances and layout moves land on base/slow. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.2, 1.35, 0.38, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
 }
 
+/* Both breakpoints currently carry the same 6px rhythm, so this block is a
+   no-op today; it stays to mirror the breakpoint in shellLayout.ts and to give
+   a future narrower value somewhere to land. */
 @media (max-width: 720px) {
   :root {
     --shell-pad: 6px;
     --shell-gutter: 6px;
+    --shell-top-gap: 6px;
   }
 }
 
@@ -215,7 +284,11 @@
  * the neighbouring card paint over an open context menu.
  */
 .surface-glass {
-  --glass-panel: var(--color-bg-sidebar);
+  /* Rails are the depth anchor of the shell. Behind a wallpaper App.tsx swaps
+     this for a slightly darkened sidebar colour, so the rails read deeper than
+     the main card on every theme - including the dark one, where
+     --color-bg-sidebar is actually *lighter* than --color-bg-primary. */
+  --glass-panel: var(--glass-panel-side);
   --glass-tint-here: var(--glass-tint-side);
   position: relative;
   background-color: transparent;
@@ -229,14 +302,39 @@
   border-radius: inherit;
   pointer-events: none;
   background-color: color-mix(in srgb, var(--glass-panel) calc(var(--glass-tint-here) * 1%), transparent);
+  /* Paper grain. It is a background-*image* on purpose: the tint above is a
+     background-*color*, so the two stack instead of replacing each other. It
+     must stay on this layer for the same reason the blur does - a filter on the
+     card itself would make it a containing block for the fixed overlays that
+     render inside it. */
+  background-image: var(--paper-grain);
   backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
 }
 
-/* Editor card: nearly opaque so long-form text keeps its contrast. */
+/* A wallpaper carries its own texture; a second one on top reads as dirt. Only
+   the wallpaper switches the grain off - `data-glass="off"` must keep it, since
+   that path is about translucency, not texture. */
+.app-root.app-has-custom-background .surface-glass::before {
+  background-image: none;
+}
+
+/* Main card. Behind a wallpaper it is the *lightest* surface of the three: the
+   wallpaper has to read through the middle of the window, so its tint is
+   derived one step below the rails instead of holding a high floor. Without a
+   wallpaper there is nothing to see through, so it stays near-opaque. */
 .surface-glass--editor {
   --glass-panel: var(--color-bg-primary);
   --glass-tint-here: var(--glass-tint-editor);
+}
+
+/* Dialogs, auth and about panels: transient surfaces stacked over the app.
+   Deliberately *not* tied to --glass-tint-editor - they need their own
+   near-opaque floor, otherwise they would inherit the main card's new
+   translucency and the text inside them would sit on the wallpaper. */
+.surface-glass--dialog {
+  --glass-panel: var(--color-bg-primary);
+  --glass-tint-here: var(--glass-tint-dialog);
 }
 
 /* Title bar: lighter, with half the blur of a panel. */
@@ -271,13 +369,57 @@
 .shell-box {
   border-radius: var(--box-radius);
   border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-  box-shadow: 0 1px 2px color-mix(in srgb, #000 18%, transparent);
+  /* Two layers, not one: the contact shadow is what makes the edge meet the
+     gutter, the wide halo is what makes the card read as *above* it. A single
+     mid-size blur looked pressed onto the shell. */
+  box-shadow:
+    0 1px 1px color-mix(in srgb, #000 10%, transparent),
+    0 10px 24px -14px color-mix(in srgb, #000 55%, transparent);
   overflow: hidden;
 }
 
 /* A dark shadow is invisible on a dark gutter: lift the edge instead. */
 .theme-dark .shell-box {
   border-color: color-mix(in srgb, var(--color-border) 92%, transparent);
+  box-shadow:
+    inset 0 1px color-mix(in srgb, #fff 5%, transparent),
+    0 12px 28px -16px #000;
+}
+
+/* Activity bar selection. A tinted block plus an accent bloom: the bloom is what
+   says "this is the current page", so the old 2px left rail was the same fact
+   stated twice. A box-shadow rather than a filter, because this span lives
+   inside the card that also hosts the fixed context menus. */
+.activity-capsule {
+  background-color: var(--color-bg-active);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 32%, transparent);
+}
+
+/* The brand wordmark moves one letter at a time. The stagger delay is set per
+   letter inline (index * 12ms); everything else lives here so the
+   reduced-motion branch can cancel the movement while keeping the colour. */
+.title-brand-letter {
+  display: inline-block;
+  cursor: default;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  will-change: transform;
+}
+
+.title-brand-letter:hover {
+  transform: translateY(-1px) scale(1.1);
+  color: var(--color-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-brand-letter {
+    transition-property: color;
+  }
+
+  .title-brand-letter:hover {
+    transform: none;
+  }
 }
 
 /* The tab strip sits inside the editor card, so it only tints — a nested
@@ -301,6 +443,153 @@
   }
 }
 
+/* The AI panel is its own query container for the same reason as the shell
+   strip: its width is dragged by the user, so the viewport says nothing about
+   how much room the transcript actually has.
+
+   Geometry scales *continuously* in `cqw` (1cqw = 1% of this panel), so a drag
+   reflows every metric in step instead of snapping between two layouts. Type
+   does not: 13px to 14px is a 1px span, and interpolating it lands on 12.4px
+   glyphs that render soft on non-integer-DPI screens. The font therefore steps
+   once, while spacing, tiles and padding glide. */
+.ai-panel {
+  container-type: inline-size;
+  container-name: ai-sidebar;
+  /* Every clamp below ends on the value the panel wants at its 280px floor and
+     its 500px ceiling; between them the change is linear. */
+  --ai-gutter: clamp(0.5rem, 2.4cqw, 0.75rem); /* 8 → 12 */
+  --ai-head-gutter: clamp(0.5rem, 2.8cqw, 0.875rem); /* 8 → 14 */
+  --ai-row-gap: clamp(0.3125rem, 1.6cqw, 0.5rem); /* 5 → 8 */
+  --ai-avatar-size: clamp(1.25rem, 0.4rem + 4.35cqw, 1.625rem); /* 20 → 26 */
+  --ai-bubble-px: clamp(0.625rem, 3.2cqw, 1rem); /* 10 → 16 */
+  --ai-bubble-py: clamp(0.5rem, 2.2cqw, 0.6875rem); /* 8 → 11 */
+  /* Share of the row a bubble may take. The AI answer is the content users
+     actually read, so it takes more of the row than the question does. */
+  --ai-bubble-max: 95%;
+  --ai-user-bubble-max: 85%;
+  --ai-font: 0.875rem;
+}
+
+.ai-head {
+  padding-inline: var(--ai-head-gutter);
+}
+
+.ai-msg-list,
+.ai-composer,
+.ai-pane {
+  padding-inline: var(--ai-gutter);
+}
+
+.ai-edit-bar {
+  margin-inline: var(--ai-gutter);
+}
+
+.ai-msg-row {
+  gap: var(--ai-row-gap);
+}
+
+.ai-msg-col {
+  max-width: var(--ai-bubble-max);
+}
+
+.ai-msg-col--user {
+  max-width: var(--ai-user-bubble-max);
+}
+
+.ai-bubble {
+  padding: var(--ai-bubble-py) var(--ai-bubble-px);
+  font-size: var(--ai-font);
+}
+
+/* The tile glyph follows the tile whether the size comes from the variable or
+   from an inline header/empty-state override. */
+.ai-avatar {
+  width: var(--ai-avatar-size);
+  height: var(--ai-avatar-size);
+  font-size: calc(var(--ai-avatar-size) * 0.42);
+}
+
+.ai-avatar > svg {
+  width: 54%;
+  height: 54%;
+}
+
+/* A vendor mark replaces the accent tile rather than sitting inside it: the
+   logo brings its own colour, and an accent disc behind it reads as a second,
+   competing brand. */
+.ai-avatar--brand {
+  background: transparent;
+  box-shadow: none;
+}
+
+.ai-avatar--brand > .ai-brand {
+  font-size: calc(var(--ai-avatar-size) * 0.8);
+}
+
+/* Vendor marks are authored at `1em`, so they track the type size around them
+   — which is what makes them scale with the panel for free. */
+.ai-brand {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.ai-brand svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+
+/* Narrow: give the bubbles the whole row — the avatar column is already the
+   tightest thing in a 300px panel. */
+@container ai-sidebar (max-width: 340px) {
+  .ai-msg-col {
+    --ai-bubble-max: 100%;
+  }
+
+  .ai-msg-col--user {
+    --ai-user-bubble-max: 92%;
+  }
+}
+
+@container ai-sidebar (max-width: 320px) {
+  .ai-bubble {
+    --ai-font: 0.8125rem;
+  }
+
+  /* The chip keeps only the vendor mark. At this width the model name is the
+     first thing worth trading away: the logo still says who answers, and the
+     tooltip keeps the full name one hover away. */
+  .ai-model-chip__label,
+  .ai-model-chip__level {
+    display: none;
+  }
+
+  .ai-model-chip {
+    max-width: none;
+    padding-inline: 0.375rem;
+  }
+
+  .ai-model-chip .ai-brand {
+    font-size: 0.875rem;
+  }
+}
+
+/* A wide panel spends its extra room on padding and a calmer measure rather
+   than on lines long enough to lose the eye's place on the way back. */
+@container ai-sidebar (min-width: 440px) {
+  .ai-msg-col {
+    --ai-bubble-max: 88%;
+  }
+
+  .ai-msg-col--user {
+    --ai-user-bubble-max: 80%;
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .surface-glass::before {
     background-color: var(--glass-panel);
@@ -314,8 +603,6 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    scrollbar-color: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-bg-primary)) transparent;
-    scrollbar-width: thin;
   }
 
   body {
@@ -323,7 +610,20 @@
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
     overflow: hidden;
-    transition: background-color 0.2s, color 0.2s;
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+
+  /* Scrollbars. The two Firefox properties must not be declared globally: in
+     Chromium, `scrollbar-width` wins over the `::-webkit-scrollbar` rules below
+     and they are silently ignored. Gating them on the pseudo-element being
+     unsupported is what lets both worlds work from one sheet. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-color: color-mix(in srgb, var(--color-text-muted) 45%, transparent) transparent;
+      scrollbar-width: thin;
+    }
   }
 
   ::-webkit-scrollbar {
@@ -336,12 +636,34 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-bg-primary));
-    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
+    border-radius: 3px;
+    transition: background-color var(--dur-fast) linear;
   }
 
+  /* Resting at 45% keeps the thumb from drawing a line down the edge of a
+     floating card. It deepens on hover of the *container*, not just the thumb:
+     6px is too narrow a target to aim at deliberately. */
+  :hover::-webkit-scrollbar-thumb,
   ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--color-text-secondary) 86%, var(--color-bg-primary));
+    background: color-mix(in srgb, var(--color-text-muted) 78%, transparent);
+  }
+
+  /* One ring for everything reachable by keyboard. Until this existed only the
+     sticky editor and the canvas switcher drew a focus style at all, while the
+     note tree implemented a roving tabindex with nothing visible to show for it.
+     `:where()` keeps the specificity at zero so a component that already owns a
+     focus style (.canvas-switcher-create, .sticky-content) still wins. */
+  :where(button, a, input, textarea, select, [role="treeitem"], [tabindex]):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Scroll containers clip a positive offset, so the ring goes inward there.
+     Same reason for the tab strip: it is a 36px horizontal scroller. */
+  [role="treeitem"]:focus-visible,
+  .note-tab-strip button:focus-visible {
+    outline-offset: -2px;
   }
 }
 
@@ -447,9 +769,9 @@
     inset 1px 0 color-mix(in srgb, white 22%, transparent);
   backdrop-filter: blur(16px) saturate(1.12);
   transition:
-    width 280ms cubic-bezier(0.2, 0.9, 0.25, 1.18),
-    box-shadow 220ms ease,
-    background-color 220ms ease;
+    width var(--dur-slow) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
 }
 
 .canvas-switcher-panel::before {
@@ -464,7 +786,7 @@
   background: color-mix(in srgb, var(--color-accent) 22%, transparent);
   opacity: 0;
   filter: blur(22px);
-  transition: opacity 280ms ease;
+  transition: opacity var(--dur-slow) var(--ease-out);
 }
 
 .canvas-switcher-panel--open {
@@ -493,7 +815,7 @@
   pointer-events: none;
   background: linear-gradient(105deg, color-mix(in srgb, var(--color-accent) 13%, transparent), transparent 58%);
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .canvas-switcher-new:hover::after,
@@ -511,7 +833,9 @@
   border-radius: 0.55rem;
   background: color-mix(in srgb, var(--color-accent-light) 72%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent);
-  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1.25), background-color 180ms ease;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    background-color var(--dur-base) var(--ease-out);
 }
 
 .canvas-switcher-new:hover .canvas-switcher-plus {
@@ -524,12 +848,12 @@
   border-radius: 0.5rem;
   background: color-mix(in srgb, var(--color-bg-primary) 78%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent);
-  animation: canvas-switcher-input-in 180ms ease-out both;
+  animation: canvas-switcher-input-in var(--dur-base) var(--ease-out) both;
 }
 
 .canvas-switcher-rename,
 .canvas-switcher-confirm {
-  animation: canvas-switcher-input-in 180ms ease-out both;
+  animation: canvas-switcher-input-in var(--dur-base) var(--ease-out) both;
 }
 
 .canvas-switcher-confirm {
@@ -540,8 +864,10 @@
 
 .canvas-switcher-row {
   position: relative;
-  animation: canvas-switcher-row-in 260ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
-  transition: transform 160ms ease, opacity 160ms ease;
+  animation: canvas-switcher-row-in var(--dur-slow) var(--ease-out) both;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
 }
 
 .canvas-switcher-row--active::before {
@@ -561,7 +887,10 @@
 }
 
 .canvas-switcher-index {
-  transition: color 160ms ease, background-color 160ms ease, transform 180ms cubic-bezier(0.2, 0.9, 0.25, 1.2);
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-spring);
 }
 
 .canvas-switcher-row:hover .canvas-switcher-index {
@@ -570,13 +899,19 @@
 
 .canvas-switcher-row--active .canvas-switcher-index {
   background: var(--color-accent);
-  color: white;
+  /* Same rule as the `text-on-accent` utilities: the accent block is bright in
+     the dark theme, where white only measures 3.68. */
+  color: var(--color-on-accent);
   box-shadow: 0 3px 10px color-mix(in srgb, var(--color-accent) 28%, transparent);
 }
 
 .canvas-switcher-delete {
   transform: scale(0.86);
-  transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease, transform 160ms ease;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .canvas-switcher-delete:hover {
@@ -664,6 +999,89 @@
   box-shadow: 0 0 9px color-mix(in srgb, var(--color-accent) 80%, transparent);
 }
 
+/* The sash between two shell cards: a 2px accent divider that only exists while
+   the pointer is on it.
+   Style reference: a thin saturated seam that fades out at both ends - the fade
+   is what keeps the mark from reading as a bar that cuts the window in two.
+   It stays invisible at rest on purpose: two permanent accent lines would be
+   decoration the shell does not need, and the gutter's job when nobody is
+   reaching for it is to be empty space between floating cards. */
+.seam {
+  /* Above the neighbouring cards for hit-testing only: the widened pointer area
+     below must not be swallowed by the card that paints after this seam. The
+     line is 2px inside a 6px gutter, so nothing overlaps visually. The seam has
+     no fixed descendants, so this stacking context is harmless. */
+  z-index: 1;
+}
+
+/* A 6px gutter is too narrow to aim at deliberately. `::after` widens the
+   pointer area to 14px without touching layout: hits on a pseudo-element target
+   the originating element, so the drag handlers need no extra wiring. The 4px
+   overhang overlaps each card by 1px, which cannot reach a control - cards keep
+   at least 6px of inner padding. */
+.seam::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  content: "";
+}
+
+.seam-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--color-accent) 22%,
+    var(--color-accent) 78%,
+    transparent
+  );
+  opacity: 0;
+  /* scaleX, not width: the strip never reflows while the pointer crosses it. */
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+/* Hover is the highlight: full accent at 2px, no glow and no added width, so the
+   line arrives as a clean mark rather than a glowing object. */
+.seam:hover .seam-line {
+  opacity: 1;
+}
+
+/* Declared after the hover rule on purpose: both selectors weigh the same, so
+   the drag state wins on source order - and it is keyed on an attribute because
+   `:hover` stops matching the moment the pointer leaves a 6px strip mid-drag.
+   Dragging adds the only depth cue left, since `.sidebar-resizing` drops the
+   cards' shadows for redraw cost. The glow is a box-shadow, never
+   `filter: blur()`, which would repaint the whole full-height strip every frame. */
+.seam[data-dragging="true"] .seam-line {
+  opacity: 1;
+  transform: scaleX(1.5);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+/* Movement carries no information here, only "this is live" does, so the
+   reduced-motion branch keeps the fade and drops the widening. */
+@media (prefers-reduced-motion: reduce) {
+  .seam-line {
+    transition-property: opacity, box-shadow;
+  }
+
+  .seam[data-dragging="true"] .seam-line {
+    transform: none;
+  }
+}
+
 .sidebar-resizing .sidebar-width-shell {
   transition: none !important;
   will-change: width;
@@ -673,7 +1091,7 @@
    A collapsed shell keeps its width transition even mid-drag, so the collapse
    and the re-expand are animated while ordinary resizing stays instant. */
 .sidebar-resizing .sidebar-width-shell.sidebar-collapse-anim {
-  transition: width 200ms cubic-bezier(0.33, 1, 0.68, 1) !important;
+  transition: width var(--dur-base) var(--ease-out) !important;
 }
 
 /* Sticky Note Mode — transparent semi-compact layout */
@@ -684,8 +1102,8 @@ body.sticky-body {
 
 .calendar-motion {
   will-change: transform, opacity;
-  animation-duration: 120ms;
-  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  animation-duration: var(--dur-fast);
+  animation-timing-function: var(--ease-out);
   animation-fill-mode: both;
 }
 
@@ -707,7 +1125,7 @@ body.sticky-body {
 
 .markdown-view-pill {
   will-change: transform;
-  transition: transform 360ms cubic-bezier(0.2, 1.35, 0.38, 1);
+  transition: transform var(--dur-slow) var(--ease-spring);
 }
 
 .markdown-view-pill-fill {
@@ -715,7 +1133,7 @@ body.sticky-body {
   inset: 0;
   border-radius: inherit;
   background: var(--color-accent);
-  animation: markdown-pill-jelly 360ms cubic-bezier(0.2, 1.35, 0.38, 1);
+  animation: markdown-pill-jelly var(--dur-slow) var(--ease-spring);
 }
 
 .loading-dots {
@@ -726,7 +1144,7 @@ body.sticky-body {
 
 .loading-dot {
   opacity: 0.18;
-  animation: loading-dot 1.2s ease-in-out infinite;
+  animation: loading-dot 1.2s var(--ease-in-out) infinite;
 }
 
 .loading-dot:nth-child(2) {
@@ -745,7 +1163,7 @@ body.sticky-body {
 .loading-bounce-character {
   display: inline-block;
   transform-origin: center bottom;
-  animation: loading-character-bounce 1.2s cubic-bezier(0.3, 0.75, 0.35, 1) infinite;
+  animation: loading-character-bounce 1.2s var(--ease-spring) infinite;
 }
 
 /* Todo interactions */
@@ -753,12 +1171,12 @@ body.sticky-body {
 .app-interactive-surface button {
   -webkit-tap-highlight-color: transparent;
   transition:
-    transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1.25),
-    color 160ms ease,
-    background-color 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    opacity 160ms ease;
+    transform var(--dur-fast) var(--ease-spring),
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
 }
 
 .todo-surface button:active:not(:disabled),
@@ -795,7 +1213,7 @@ body.sticky-body {
 .flat-create-panel {
   background: color-mix(in srgb, var(--color-bg-primary) 78%, var(--color-bg-sidebar));
   transform-origin: top center;
-  animation: todo-create-in 220ms cubic-bezier(0.2, 0.95, 0.35, 1.2) both;
+  animation: todo-create-in var(--dur-base) var(--ease-spring) both;
 }
 
 .todo-list-active,
@@ -814,33 +1232,47 @@ body.sticky-body {
 }
 
 .todo-task-row {
-  animation: todo-row-in 190ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation: todo-row-in var(--dur-base) var(--ease-out) both;
   transition:
-    transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background-color 170ms ease,
-    border-color 170ms ease,
-    box-shadow 170ms ease,
-    opacity 170ms ease;
+    transform var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+/* The todo list is ruled like a notebook page. The rule belongs to the task
+   group (see `border-b` on `.todo-task-group`), not to a repeating background:
+   a fixed-pitch background drifts the moment one row expands its subtasks or
+   shows a description, and a line that crosses a row midway reads as a bug.
+   A group-owned border can never come loose from the row it belongs to.
+   45px = the 44px row (py-2 + the 28px toggle) plus its own 1px rule. */
+.todo-rule-fill {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 44px,
+    color-mix(in srgb, var(--color-border) 55%, transparent) 44px 45px
+  );
 }
 
 .todo-check-done svg {
-  animation: todo-check-pop 280ms cubic-bezier(0.2, 1.4, 0.35, 1) both;
+  animation: todo-check-pop var(--dur-slow) var(--ease-spring) both;
 }
 
 .todo-popover,
 .app-popover {
   transform-origin: top center;
-  animation: todo-popover-in 150ms cubic-bezier(0.2, 0.85, 0.3, 1.08) both;
+  animation: todo-popover-in var(--dur-fast) var(--ease-spring) both;
 }
 
 .todo-modal-backdrop,
 .app-modal-backdrop {
-  animation: todo-fade-in 150ms ease-out both;
+  animation: todo-fade-in var(--dur-fast) var(--ease-out) both;
 }
 
 .todo-modal-panel,
 .app-modal-panel {
-  animation: todo-dialog-in 190ms cubic-bezier(0.2, 0.9, 0.3, 1.12) both;
+  animation: todo-dialog-in var(--dur-base) var(--ease-spring) both;
 }
 
 @keyframes calendar-slide-next {
@@ -1073,6 +1505,34 @@ body.sticky-body {
   font-weight: 600;
 }
 
+/* An <img> pointing outside the data directory (asset scope no longer reaches
+   Pictures/Desktop/Downloads). Shown as a labelled chip instead of a broken
+   icon, with the original path in the tooltip. */
+.markdown-external-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--color-bg-secondary) 80%, transparent);
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+.markdown-external-image::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-text-muted) 55%, transparent);
+  mask: linear-gradient(#000 0 0) center / 2px 8px no-repeat,
+    linear-gradient(#000 0 0) center / 8px 2px no-repeat;
+}
+
 .markdown-code-block {
   margin: 0;
   overflow-x: auto;
@@ -1223,7 +1683,7 @@ li:has(> p:first-child > .markdown-task-checkbox) {
   border-width: 0 2px 2px 0;
   content: "";
   transform: translateY(-0.05rem) rotate(45deg) scale(0);
-  transition: transform 120ms ease;
+  transition: transform var(--dur-fast) var(--ease-spring);
 }
 
 .markdown-task-checkbox:checked {
@@ -1287,9 +1747,12 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   border-radius: 4px;
 }
 
-/* Placeholder when empty */
+/* Placeholder when empty. `.sticky-content` is a plain contentEditable div (not
+   ProseMirror), so a note with no text really does leave it childless and
+   `:empty` matches. The string can therefore not be hard-coded here any more:
+   it comes from `data-placeholder`, which the window sets through `t(lang, …)`. */
 .sticky-mode .sticky-content:empty::before {
-  content: "双击此处开始编辑…";
+  content: attr(data-placeholder);
   color: var(--color-text-muted);
   pointer-events: none;
   opacity: 0.6;
@@ -1561,7 +2024,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   vertical-align: -0.15em;
   background: currentColor;
   border-radius: 1px;
-  animation: ai-cursor-blink 0.9s ease-in-out infinite;
+  animation: ai-cursor-blink 0.9s var(--ease-in-out) infinite;
 }
 
 @keyframes ai-cursor-blink {
@@ -1579,7 +2042,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   height: 4px;
   border-radius: 9999px;
   background: currentColor;
-  animation: ai-typing-bounce 1.2s ease-in-out infinite;
+  animation: ai-typing-bounce 1.2s var(--ease-in-out) infinite;
 }
 
 .ai-typing-dots > span:nth-child(2) { animation-delay: 0.15s; }

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  FileDown,
   FilePlus2,
   FileText,
   Folder,
@@ -11,6 +12,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  SearchX,
   Trash2,
 } from "lucide-react";
 import {
@@ -24,6 +26,7 @@ import {
 } from "@/components/Layout/noteTreeModel";
 import TreeContextMenu, { type TreeMenuItem } from "@/components/Layout/TreeContextMenu";
 import MoveToFolderDialog, { type MoveTarget } from "@/components/Layout/MoveToFolderDialog";
+import EmptyState from "@/components/Layout/EmptyState";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useSettingsStore, type LangType } from "@/stores/settingsStore";
@@ -40,6 +43,8 @@ interface NoteTreeProps {
   onRequestNewNote: (folderId: string | null) => void;
   /** Creates an unnamed folder immediately; `parentId` nests it. */
   onRequestNewCategory: (parentId: string | null) => void;
+  /** Exports this note as a file — the same handler the tab strip and editor toolbar use. */
+  onExportNote: (note: Note) => void;
   /** Folder created from outside the tree that still needs an inline rename. */
   autoRenameCategoryId?: string | null;
   onAutoRenameHandled?: () => void;
@@ -60,6 +65,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
   onRequestDeleteCategory,
   onRequestNewNote,
   onRequestNewCategory,
+  onExportNote,
   autoRenameCategoryId = null,
   onAutoRenameHandled,
 }) => {
@@ -519,6 +525,12 @@ const NoteTree: React.FC<NoteTreeProps> = ({
         onSelect: () => setMoveDialogNote(note),
       },
       {
+        key: "export",
+        label: t(lang, "exportFile"),
+        icon: <FileDown size={12} />,
+        onSelect: () => onExportNote(note),
+      },
+      {
         key: "delete",
         label: t(lang, "deleteNote"),
         icon: <Trash2 size={12} />,
@@ -782,7 +794,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
           <span
             className={`inline-flex h-[17px] min-w-[17px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none tabular-nums
               ${isActive
-                ? "bg-accent text-white"
+                ? "bg-accent text-on-accent"
                 : "border border-border/70 bg-bg-primary/70 text-text-muted"}`}
           >
             {noteCount}
@@ -888,9 +900,22 @@ const NoteTree: React.FC<NoteTreeProps> = ({
         }}
       >
         {rows.map((row, index) => (row.kind === "folder" ? renderFolderRow(row, index) : renderNoteRow(row, index)))}
-        {rows.length === 0 && (
-          <p className="px-3 py-4 text-center text-xs text-text-muted">{t(lang, "noNotes")}</p>
-        )}
+        {/* An empty tree means two different things, and only one of them wants
+            a "create something" button: a filtered tree wants the query gone. */}
+        {rows.length === 0 &&
+          (searchQuery.trim() ? (
+            <EmptyState
+              icon={<SearchX size={17} />}
+              title={t(lang, "searchNoResults")}
+              description={t(lang, "searchNoResultsHint")}
+            />
+          ) : (
+            <EmptyState
+              icon={<FilePlus2 size={17} />}
+              title={t(lang, "noNotes")}
+              action={{ label: t(lang, "newNote"), onClick: () => onRequestNewNote(null) }}
+            />
+          ))}
       </div>
       {menu && (
         <TreeContextMenu

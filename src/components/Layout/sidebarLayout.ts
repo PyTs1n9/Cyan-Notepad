@@ -12,9 +12,18 @@ export const SIDEBAR_MAX_WIDTH = 400;
 // fresh launch (or expand) returns to; the panel keeps its natural width inside
 // the shell so the slide never reflows the chat.
 export const AI_SIDEBAR_WIDTH = 340;
-// The right handle drags up to 500 (the left sidebars keep SIDEBAR_MAX_WIDTH);
-// the minimum and collapse threshold stay shared with the left handle.
+// The right handle drags up to 500 (the left sidebars keep SIDEBAR_MAX_WIDTH).
 export const AI_SIDEBAR_MAX_WIDTH = 500;
+// The AI panel holds a chat transcript, so its floor is higher than the tree
+// sidebars'. At 240 the fixed chrome (avatar + row gap + list gutter + bubble
+// padding = 58px) eats a quarter of the panel and CJK text wraps to ~10 glyphs
+// per line, which no amount of inner tightening can fix. 280 is the width where
+// the tightened transcript below still holds ~15 glyphs per line.
+export const AI_SIDEBAR_MIN_WIDTH = 280;
+// Kept 60px under the floor, mirroring SIDEBAR_COLLAPSE_THRESHOLD: the pointer
+// must travel past the clamped width before the panel goes away, which keeps
+// accidental collapses rare.
+export const AI_SIDEBAR_COLLAPSE_THRESHOLD = AI_SIDEBAR_MIN_WIDTH - 60;
 
 // Dragging narrower than this collapses the sidebar instead of clamping it at
 // SIDEBAR_MIN_WIDTH, and the same threshold brings it back, so the boundary is
@@ -39,11 +48,12 @@ export function isBelowSidebarCollapseThreshold(
 
 /**
  * The AI sidebar hugs the right edge, so its width is the distance from the
- * pointer to the right of the window. It shares the left handle's minimum and
- * collapse threshold, but its own wider ceiling (AI_SIDEBAR_MAX_WIDTH).
+ * pointer to the right of the window. It uses its own floor and ceiling
+ * (AI_SIDEBAR_MIN_WIDTH / AI_SIDEBAR_MAX_WIDTH) because a transcript needs more
+ * room than a note tree does.
  */
 export function resolveRightSidebarWidth(pointerX: number, viewportWidth: number): number {
-  return Math.min(AI_SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, viewportWidth - pointerX));
+  return Math.min(AI_SIDEBAR_MAX_WIDTH, Math.max(AI_SIDEBAR_MIN_WIDTH, viewportWidth - pointerX));
 }
 
 /** True when the pointer has crossed far enough right to collapse the AI sidebar. */
@@ -51,7 +61,7 @@ export function isBelowRightSidebarCollapseThreshold(
   pointerX: number,
   viewportWidth: number,
 ): boolean {
-  return viewportWidth - pointerX < SIDEBAR_COLLAPSE_THRESHOLD;
+  return viewportWidth - pointerX < AI_SIDEBAR_COLLAPSE_THRESHOLD;
 }
 
 export const SIDEBAR_LABEL_MIN_WIDTH: Record<LangType, number> = {

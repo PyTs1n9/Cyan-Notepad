@@ -14,10 +14,10 @@ import rust from "highlight.js/lib/languages/rust";
 import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
-import { readFile } from "@tauri-apps/plugin-fs";
+import { readFile, stat } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { join } from "@tauri-apps/api/path";
-import { getDataDirectory, resolveImageAttachment } from "@/utils/storage";
+import { join, resourceDir } from "@tauri-apps/api/path";
+import { getDataDirectory, getStorageLocation, resolveImageAttachment } from "@/utils/storage";
 
 const markdownRenderer = new marked.Renderer();
 
@@ -108,7 +108,7 @@ function highlightCode(text: string, language: string): string | null {
  * scheme was the remaining hole.
  */
 const LINK_SCHEME_ALLOWLIST = /^(?:https?|mailto|tel)$/i;
-const IMAGE_SCHEME_ALLOWLIST = /^(?:https?|blob|attachment|data)$/i;
+const IMAGE_SCHEME_ALLOWLIST = /^(?:https?|blob|attachment|asset|data)$/i;
 const HAS_SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
 /** True when the target carries no scheme at all (`#anchor`, `/path`, `x.md`). */
@@ -164,7 +164,17 @@ markdownRenderer.checkbox = ({ checked }: Tokens.Checkbox): string => {
 markdownRenderer.image = ({ href, title, text }: Tokens.Image): string => {
   const marker = /#attachment=([^#]+)$/i.exec(href);
   const src = marker ? href.slice(0, marker.index) : href;
-  if (!isSafeImageSrc(src)) return escapeHtml(text);
+  if (!isSafeImageSrc(src)) {
+    // A local absolute path that did not resolve (outside the data directory, or
+    // it does not exist). Rendering the bare alt text hides the problem, so it
+    // becomes a labelled chip that names the file in its tooltip.
+    const localPath = localPathFromImageSource(src);
+    if (localPath) {
+      const label = text.trim() || "Image";
+      return `<span class="markdown-external-image" title="${escapeHtml(localPath)}">${escapeHtml(label)}</span>`;
+    }
+    return escapeHtml(text);
+  }
   const attributes = [`src="${escapeHtml(src)}"`, `alt="${escapeHtml(text)}"`];
   if (title) attributes.push(`title="${escapeHtml(title)}"`);
   if (marker) {
@@ -197,7 +207,10 @@ function decodeUrl(value: string): string {
 }
 
 function isNonFileImageSource(source: string): boolean {
-  return /^(?:https?:|data:|blob:|\/\/|about:|#)/i.test(source);
+  // `asset:` and `http://asset.localhost` are what `convertFileSrc` returns for
+  // an already-resolved local image. Without them a re-render would treat the
+  // URL as a relative path and join it onto the data directory again.
+  return /^(?:https?:|data:|blob:|asset:|\/\/|about:|#)/i.test(source);
 }
 
 function fileUrlToPath(source: string): string | null {
@@ -253,46 +266,234 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function resolveLocalImagePath(source: string): Promise<string | null> {
-  const decodedSource = decodeUrl(source.trim());
+/**
+ * Where the resolved URL ends up decides how a local image may be read.
+ *
+ * - `render`: the preview, sticky window, tile window and AI panel. The URL is
+ *   handed to the webview as an asset URL; the asset-protocol scope in
+ *   `tauri.conf.json` is the boundary, so an out-of-scope path never reaches JS.
+ * - `export`: DOCX and PDF. Both loaders only understand `data:` URLs, so the
+ *   bytes still have to be inlined — under a tighter cap and restricted to the
+ *   data directory, which is what stops "read any file on disk".
+ */
+type ImageResolutionMode = "render" | "export";
 
-  const attachmentMatch = /^attachment:\/\/([^/?#]+)$/i.exec(decodedSource);
-  if (attachmentMatch) {
-    const attachmentPath = await resolveImageAttachment(attachmentMatch[1]);
-    return attachmentPath
-      ? `${convertFileSrc(attachmentPath)}#attachment=${encodeURIComponent(attachmentMatch[1])}`
-      : null;
-  }
+const MAX_RENDER_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_EXPORT_IMAGE_BYTES = 8 * 1024 * 1024;
 
-  const filePath = fileUrlToPath(decodedSource) ?? decodedSource;
-
-  let path = filePath;
-  if (!isAbsoluteFilePath(path)) {
-    try {
-      const dataDirectory = await getDataDirectory();
-      path = await join(dataDirectory, "notes", path);
-    } catch {
-      return null;
+/** Collapse `a/../b`, unify separators and drop trailing slashes. */
+function normalizeFilePath(path: string): string {
+  const unified = path.replace(/\\/g, "/");
+  const prefix = /^(?:[A-Za-z]:\/|\/\/[^/]+\/[^/]+\/|\/)/.exec(unified)?.[0] ?? "";
+  const segments = unified.slice(prefix.length).split("/");
+  const stack: string[] = [];
+  for (const segment of segments) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      stack.pop();
+      continue;
     }
+    stack.push(segment);
   }
+  return prefix + stack.join("/");
+}
 
+/**
+ * Prefix comparison on normalized paths. Windows is case-insensitive, so the
+ * comparison is too; the asset-protocol scope remains the final authority.
+ */
+function isInsideDirectory(path: string, directory: string): boolean {
+  const target = normalizeFilePath(path).toLowerCase();
+  const root = normalizeFilePath(directory).replace(/\/+$/, "").toLowerCase();
+  if (!root) return false;
+  return target === root || target.startsWith(`${root}/`);
+}
+
+let assetScopeCoversDataPromise: Promise<boolean> | null = null;
+
+/**
+ * Whether an asset URL for a data-directory file is reachable.
+ *
+ * - A custom data directory is registered into the asset scope by Rust on
+ *   startup (`storage_get_root`), so asset URLs work there.
+ * - The default directory is only covered when it sits under `$RESOURCE`
+ *   (installed builds). Dev keeps `data/` in the repository, outside the scope,
+ *   so those renders fall back to a capped data URL.
+ */
+function assetScopeCoversDataDirectory(): Promise<boolean> {
+  if (!assetScopeCoversDataPromise) {
+    assetScopeCoversDataPromise = (async () => {
+      try {
+        const location = await getStorageLocation();
+        if (location.custom) return true;
+        return isInsideDirectory(location.path, await resourceDir());
+      } catch {
+        // Unknown: keep the asset protocol, whose scope still rejects the path.
+        return true;
+      }
+    })();
+  }
+  return assetScopeCoversDataPromise;
+}
+
+async function readImageAsDataUrl(path: string, maxBytes: number): Promise<string | null> {
   try {
+    const info = await stat(path);
+    if ((info.size ?? 0) > maxBytes) return null;
     const bytes = await readFile(path);
     return `data:${imageMimeType(path)};base64,${bytesToBase64(bytes)}`;
   } catch {
-    // Keep the original source when a referenced file is unavailable. This
-    // preserves normal browser/network URLs and makes broken links inspectable.
     return null;
   }
 }
 
-async function resolveImageSource(source: string): Promise<string> {
-  const trimmed = source.trim();
-  if (!trimmed || isNonFileImageSource(trimmed)) return trimmed;
-  return (await resolveLocalImagePath(trimmed)) ?? source;
+/**
+ * URL a renderer can load for a local image: an asset URL, except where the
+ * asset-protocol scope cannot reach the file (dev keeps `data/` in the
+ * repository), which falls back to an inlined copy under the same byte cap.
+ *
+ * Anything outside the data directory gets `null`: the asset-protocol scope no
+ * longer covers the user's Pictures/Desktop/Downloads, so handing back an asset
+ * URL would only produce a 403. Those images render as a visible placeholder
+ * instead of a silently broken <img>.
+ */
+async function renderUrlForLocalImage(path: string): Promise<string | null> {
+  const dataDirectory = await getDataDirectory().catch(() => null);
+  const insideDataDirectory = dataDirectory !== null && isInsideDirectory(path, dataDirectory);
+
+  let size: number | null = null;
+  try {
+    size = (await stat(path)).size ?? 0;
+  } catch {
+    size = null;
+  }
+  if (size !== null && size > MAX_RENDER_IMAGE_BYTES) return null;
+
+  // Outside the data directory nothing is readable any more: the fs scope was
+  // narrowed to the data root, so both stat above and the asset protocol fail.
+  if (!insideDataDirectory) return null;
+  // A file we cannot even measure is one the webview cannot load either.
+  if (size === null) return null;
+  if (!(await assetScopeCoversDataDirectory())) {
+    return readImageAsDataUrl(path, MAX_RENDER_IMAGE_BYTES);
+  }
+  return convertFileSrc(path);
 }
 
-async function resolveMarkdownImages(content: string): Promise<string> {
+async function resolveLocalImagePath(
+  source: string,
+  mode: ImageResolutionMode,
+): Promise<string | null> {
+  const decodedSource = decodeUrl(source.trim());
+
+  const attachmentMatch = /^attachment:\/\/([^/?#]+)$/i.exec(decodedSource);
+  if (attachmentMatch) {
+    const filename = attachmentMatch[1];
+    const attachmentPath = await resolveImageAttachment(filename);
+    if (!attachmentPath) return null;
+    if (mode === "export") return readImageAsDataUrl(attachmentPath, MAX_EXPORT_IMAGE_BYTES);
+    const url = await renderUrlForLocalImage(attachmentPath);
+    if (!url) return null;
+    // The marker is how a later edit maps an <img> back to its attachment.
+    return url.startsWith("data:")
+      ? url
+      : `${url}#attachment=${encodeURIComponent(filename)}`;
+  }
+
+  const filePath = fileUrlToPath(decodedSource) ?? decodedSource;
+  const dataDirectory = await getDataDirectory().catch(() => null);
+
+  let path: string;
+  if (isAbsoluteFilePath(filePath)) {
+    // Absolute paths are no longer read here. They become an asset URL and the
+    // protocol scope decides; the export path below has to keep them inside the
+    // data directory because it reads the bytes itself.
+    path = normalizeFilePath(filePath);
+  } else {
+    if (!dataDirectory) return null;
+    try {
+      path = normalizeFilePath(await join(dataDirectory, "notes", filePath));
+    } catch {
+      return null;
+    }
+    if (!isInsideDirectory(path, dataDirectory)) return null;
+  }
+
+  if (mode === "export") {
+    if (!dataDirectory || !isInsideDirectory(path, dataDirectory)) return null;
+    return readImageAsDataUrl(path, MAX_EXPORT_IMAGE_BYTES);
+  }
+
+  return renderUrlForLocalImage(path);
+}
+
+async function resolveImageSource(
+  source: string,
+  mode: ImageResolutionMode,
+): Promise<string> {
+  const trimmed = source.trim();
+  if (!trimmed || isNonFileImageSource(trimmed)) return trimmed;
+  return (await resolveLocalImagePath(trimmed, mode)) ?? source;
+}
+
+const ASSET_URL_PATTERN = /^https?:\/\/asset\.localhost\/(.+)$/i;
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/** Local filesystem path behind an `<img src>`, or null for every other scheme. */
+function localPathFromImageSource(source: string): string | null {
+  const assetMatch = ASSET_URL_PATTERN.exec(source);
+  if (assetMatch) {
+    try {
+      const decoded = decodeURIComponent(assetMatch[1]);
+      // Only an absolute path is a real file reference. A hand-written
+      // `http://asset.localhost/x.png` carries a relative fragment and must be
+      // left alone, otherwise a re-render would nest placeholders.
+      return isAbsoluteFilePath(decoded) ? decoded : null;
+    } catch {
+      return null;
+    }
+  }
+  return isAbsoluteFilePath(source) ? source : null;
+}
+
+/**
+ * Turn `<img>` tags that point outside the data directory into a visible
+ * placeholder.
+ *
+ * The asset-protocol scope no longer covers the user's Pictures/Desktop/
+ * Downloads, so those tags would 403 and leave a broken-image icon with no
+ * explanation. Re-inserting the picture from the editor copies it into
+ * `data/img`, which is the supported path.
+ *
+ * Runs on the HTML string rather than the DOM so the headless harness
+ * (`npm run verify:batch2`) can cover it.
+ */
+function replaceExternalImages(html: string, dataDirectory: string | null): string {
+  if (!dataDirectory) return html;
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = decodeHtmlEntities(
+      /\bsrc\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? /\bsrc\s*=\s*'([^']*)'/i.exec(tag)?.[1] ?? "",
+    );
+    const path = src ? localPathFromImageSource(src) : null;
+    if (!path || isInsideDirectory(path, dataDirectory)) return tag;
+    const alt = decodeHtmlEntities(/\balt\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? "");
+    const label = alt.trim() || "Image";
+    return `<span class="markdown-external-image" title="${escapeHtml(path)}">${escapeHtml(label)}</span>`;
+  });
+}
+
+async function resolveMarkdownImages(
+  content: string,
+  mode: ImageResolutionMode,
+): Promise<string> {
   const matches = [...content.matchAll(IMAGE_MARKDOWN_PATTERN)];
   if (matches.length === 0) return content;
 
@@ -306,7 +507,7 @@ async function resolveMarkdownImages(content: string): Promise<string> {
     const destinationStart = match[0].indexOf("](") + 2;
     const sourceOffset = match[0].indexOf(source, destinationStart);
     const absoluteSourceStart = matchIndex + sourceOffset;
-    const resolvedSource = await resolveImageSource(source);
+    const resolvedSource = await resolveImageSource(source, mode);
 
     result += content.slice(cursor, absoluteSourceStart);
     result += resolvedSource;
@@ -315,7 +516,10 @@ async function resolveMarkdownImages(content: string): Promise<string> {
   return result + content.slice(cursor);
 }
 
-export async function resolveHtmlImages(content: string): Promise<string> {
+export async function resolveHtmlImages(
+  content: string,
+  mode: ImageResolutionMode = "render",
+): Promise<string> {
   const matches = [...content.matchAll(IMAGE_HTML_PATTERN)];
   if (matches.length === 0) return content;
 
@@ -327,7 +531,7 @@ export async function resolveHtmlImages(content: string): Promise<string> {
     const quote = match[2];
     const source = match[3];
     const absoluteSourceStart = matchIndex + prefix.length + quote.length;
-    const resolvedSource = await resolveImageSource(source);
+    const resolvedSource = await resolveImageSource(source, mode);
 
     result += content.slice(cursor, absoluteSourceStart);
     result += resolvedSource;
@@ -336,14 +540,23 @@ export async function resolveHtmlImages(content: string): Promise<string> {
   return result + content.slice(cursor);
 }
 
-export async function renderMarkdown(content: string): Promise<string> {
-  const resolvedContent = await resolveMarkdownImages(content);
+async function renderMarkdownWithMode(
+  content: string,
+  mode: ImageResolutionMode,
+): Promise<string> {
+  const resolvedContent = await resolveMarkdownImages(content, mode);
   const html = marked.parse(resolvedContent, {
     breaks: true,
     gfm: true,
     renderer: markdownRenderer,
   });
   return typeof html === "string" ? html : await html;
+}
+
+export async function renderMarkdown(content: string): Promise<string> {
+  const html = await renderMarkdownWithMode(content, "render");
+  const dataDirectory = await getDataDirectory().catch(() => null);
+  return replaceExternalImages(html, dataDirectory);
 }
 
 function highlightStoredHtmlCodeBlocks(html: string): string {
@@ -393,7 +606,28 @@ function isHtmlContent(content: string): boolean {
     || /<(?:img|br|hr)\b(?:\s+[^>]*)?\/?\s*>/i.test(content);
 }
 
+async function renderStoredContent(
+  content: string,
+  mode: ImageResolutionMode,
+): Promise<string> {
+  const html = isHtmlContent(content)
+    ? highlightStoredHtmlCodeBlocks(await resolveHtmlImages(content, mode))
+    : await renderMarkdownWithMode(content, mode);
+  if (mode !== "render") return html;
+  // Export paths keep their <img> tags: DOCX/PDF need real images, and they read
+  // the bytes themselves under the data-directory + 8MB cap.
+  const dataDirectory = await getDataDirectory().catch(() => null);
+  return replaceExternalImages(html, dataDirectory);
+}
+
 export async function renderStoredNoteContent(content: string): Promise<string> {
-  if (!isHtmlContent(content)) return renderMarkdown(content);
-  return highlightStoredHtmlCodeBlocks(await resolveHtmlImages(content));
+  return renderStoredContent(content, "render");
+}
+
+/**
+ * DOCX and PDF need `data:` URLs for images, so this variant inlines them —
+ * restricted to the data directory and to `MAX_EXPORT_IMAGE_BYTES`.
+ */
+export async function renderStoredNoteContentForExport(content: string): Promise<string> {
+  return renderStoredContent(content, "export");
 }

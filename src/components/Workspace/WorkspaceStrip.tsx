@@ -5,6 +5,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorkspaceUiStore } from "@/stores/workspaceUi";
 import { t } from "@/utils/i18n";
 import ShellStrip from "@/components/Layout/ShellStrip";
+import DropdownMenu, { type DropdownEntry } from "@/components/Layout/DropdownMenu";
 import { publicationStatusLabel } from "@/components/Workspace/workspaceLabels";
 
 /** Tone of the publication chip; muted while the document is still a draft. */
@@ -42,7 +43,6 @@ const WorkspaceStrip: React.FC = () => {
   const activeDocument = documents.find((item) => item.id === activeDocumentId) ?? null;
   const canEdit = activeWorkspace?.role === "owner" || activeWorkspace?.role === "editor";
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [draft, setDraft] = useState("");
   const draftRef = useRef("");
@@ -51,7 +51,6 @@ const WorkspaceStrip: React.FC = () => {
   const queuedTitleRef = useRef<string | null>(null);
   const titleSaveInProgressRef = useRef(false);
   const titleSaveTimerRef = useRef<number | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const documentId = activeDocument?.id ?? null;
@@ -69,7 +68,6 @@ const WorkspaceStrip: React.FC = () => {
   // A different document closes the editor instead of carrying the draft over.
   useEffect(() => {
     setEditingTitle(false);
-    setMenuOpen(false);
     titleDirtyRef.current = false;
     queuedTitleRef.current = null;
     if (titleSaveTimerRef.current !== null) {
@@ -77,23 +75,6 @@ const WorkspaceStrip: React.FC = () => {
       titleSaveTimerRef.current = null;
     }
   }, [documentId]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnOutside = (event: MouseEvent) => {
-      if (menuRef.current?.contains(event.target as Node)) return;
-      setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", closeOnOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
 
   useEffect(() => {
     if (!editingTitle) return;
@@ -178,7 +159,6 @@ const WorkspaceStrip: React.FC = () => {
       : FileText;
 
   const startRenaming = () => {
-    setMenuOpen(false);
     if (!activeDocument) return;
     draftRef.current = activeDocument.title;
     setDraft(activeDocument.title);
@@ -215,51 +195,33 @@ const WorkspaceStrip: React.FC = () => {
               <span className="tabular-nums">{onlineCollaborators}</span>
             </span>
             {canEdit && (
-              <div className="relative flex-shrink-0" ref={menuRef}>
-                <button
-                  type="button"
-                  onClick={() => setMenuOpen((open) => !open)}
-                  aria-haspopup="menu"
-                  aria-expanded={menuOpen}
-                  aria-label={t(lang, "documentActions")}
-                  title={t(lang, "documentActions")}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-                >
-                  <MoreHorizontal size={15} />
-                </button>
-                {menuOpen && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-full z-30 mt-1 min-w-[150px] overflow-hidden rounded-lg border border-border bg-bg-primary p-1 shadow-lg shadow-black/15"
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={startRenaming}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                    >
-                      <Pencil size={12} />
-                      {t(lang, "renameCloudDocument")}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        requestDelete({
-                          kind: "document",
-                          id: activeDocument.id,
-                          title: activeDocument.title,
-                        });
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger/10"
-                    >
-                      <Trash2 size={12} />
-                      {t(lang, "deleteCloudDocument")}
-                    </button>
-                  </div>
-                )}
-              </div>
+              <DropdownMenu
+                label={t(lang, "documentActions")}
+                icon={MoreHorizontal}
+                iconSize={15}
+                align="end"
+                triggerClassName="flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+                entries={[
+                  {
+                    id: "rename",
+                    label: t(lang, "renameCloudDocument"),
+                    icon: Pencil,
+                    onSelect: startRenaming,
+                  },
+                  { separator: true },
+                  {
+                    id: "delete",
+                    label: t(lang, "deleteCloudDocument"),
+                    icon: Trash2,
+                    danger: true,
+                    onSelect: () => requestDelete({
+                      kind: "document",
+                      id: activeDocument.id,
+                      title: activeDocument.title,
+                    }),
+                  },
+                ] satisfies DropdownEntry[]}
+              />
             )}
           </>
         ) : null

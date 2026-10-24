@@ -8,6 +8,7 @@ import {
   Eye,
   FolderOpen,
   Globe,
+  HardDrive,
   ImagePlus,
   KeyRound,
   Keyboard,
@@ -63,19 +64,22 @@ import {
   saveCustomBackground,
 } from "@/utils/storage";
 import type { StoredImageHistoryItem } from "@/utils/storage";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import AvatarCropper from "@/components/Settings/AvatarCropper";
+import StorageSection from "@/components/Settings/StorageSection";
 import AiSettingsPanel from "@/components/AI/AiSettingsPanel";
+import PanelErrorBoundary from "@/components/PanelErrorBoundary";
 import LoadingText from "@/components/LoadingText";
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
   onOpenAuth: () => void;
+  /** Section to land on when the modal opens; defaults to the first one. */
+  initialSection?: SettingsSection;
 }
 
-type SettingsSection = "basic" | "theme" | "language" | "ai" | "personal";
+export type SettingsSection = "basic" | "theme" | "language" | "ai" | "personal" | "storage";
 type DisplayHistoryItem = StoredImageHistoryItem & { url: string };
 
 function getUploadImageExtension(file: File): string | null {
@@ -119,7 +123,12 @@ const GlassSlider: React.FC<GlassSliderProps> = ({ label, value, min, max, unit,
   </label>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({
+  open,
+  onClose,
+  onOpenAuth,
+  initialSection,
+}) => {
   const {
     theme,
     lang,
@@ -162,6 +171,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     : null;
 
   const [activeSection, setActiveSection] = useState<SettingsSection>("basic");
+  // A caller can request a section (the model picker's「添加模型」jumps to AI
+  // settings). Re-applied on every open so it wins over last time's manual pick.
+  useEffect(() => {
+    if (open && initialSection) setActiveSection(initialSection);
+  }, [open, initialSection]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [autoSaveDropdownOpen, setAutoSaveDropdownOpen] = useState(false);
   const [trashDropdownOpen, setTrashDropdownOpen] = useState(false);
@@ -500,6 +514,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     { id: "basic" as const, label: t(lang, "settingsBasic"), icon: SlidersHorizontal },
     { id: "theme" as const, label: t(lang, "settingsTheme"), icon: Palette },
     { id: "language" as const, label: t(lang, "language"), icon: Globe },
+    { id: "storage" as const, label: t(lang, "settingsStorage"), icon: HardDrive },
     { id: "ai" as const, label: t(lang, "aiSettings"), icon: Sparkles },
     { id: "personal" as const, label: t(lang, "personal"), icon: UserRound },
   ];
@@ -584,11 +599,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     }
   };
 
+  // Both buttons go through the backend: the opener permission list can only
+  // name build-time paths, while the data directory can be moved anywhere.
+  // `open_data_path` verifies the folder really is inside that directory.
   const handleOpenDataDirectory = async () => {
     try {
       const path = dataDirectory ?? await getNotesDirectory();
       setDataDirectory(path);
-      await openPath(path);
+      await invoke("open_data_path", { path });
     } catch (error) {
       console.error("Failed to open data directory:", error);
     }
@@ -598,7 +616,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
     try {
       const path = imageCacheDirectory ?? await getImageTrashRootDirectory();
       setImageCacheDirectory(path);
-      await openPath(path);
+      await invoke("open_data_path", { path });
     } catch (error) {
       console.error("Failed to open image cache directory:", error);
     }
@@ -630,7 +648,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        className="isolate surface-glass surface-glass--editor relative flex h-[min(680px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
+        className="isolate surface-glass surface-glass--dialog relative flex h-[min(680px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
       >
         <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-5">
           <h1 id="settings-title" className="text-base font-semibold text-text-primary">
@@ -678,7 +696,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
             <div className="mx-auto w-full max-w-3xl p-5 sm:p-7">
               <h2 className="mb-5 text-lg font-semibold text-text-primary">{sectionTitle}</h2>
 
-              {activeSection === "ai" && <AiSettingsPanel />}
+              {activeSection === "ai" && (
+                <PanelErrorBoundary lang={lang}>
+                  <AiSettingsPanel />
+                </PanelErrorBoundary>
+              )}
 
               {activeSection === "basic" && (
                 <div className="overflow-visible rounded-xl border border-border bg-bg-secondary/35">
@@ -925,7 +947,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                       <Droplets size={16} className="text-accent" />
                       <h3 className="text-sm font-medium text-text-primary">{t(lang, "customPalette")}</h3>
                       {theme === "custom" && (
-                        <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-white">
+                        <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-on-accent">
                           {t(lang, "customTheme")}
                         </span>
                       )}
@@ -1054,7 +1076,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                         )}
                       </div>
                       <div className="flex flex-col justify-center gap-2">
-                        <label className={`flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover ${backgroundBusy ? "cursor-wait opacity-60" : "cursor-pointer"}`}>
+                        <label className={`flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover ${backgroundBusy ? "cursor-wait opacity-60" : "cursor-pointer"}`}>
                           <ImagePlus size={14} />
                           {backgroundBusy
                             ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
@@ -1237,6 +1259,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                 </div>
               )}
 
+              {activeSection === "storage" && (
+                <PanelErrorBoundary lang={lang}>
+                  <StorageSection lang={lang} />
+                </PanelErrorBoundary>
+              )}
+
               {activeSection === "personal" && (
                 <div className="space-y-4">
                   {!user ? (
@@ -1259,7 +1287,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                           <button
                             type="button"
                             onClick={onOpenAuth}
-                            className="flex flex-shrink-0 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover cursor-pointer"
+                            className="flex flex-shrink-0 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover cursor-pointer"
                           >
                             <LogIn size={15} />
                             {t(lang, "personalOpenSignIn")}
@@ -1341,7 +1369,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                                 aria-busy={personalAction === "nickname"}
                                 aria-label={t(lang, "personalSaveNickname")}
                                 title={t(lang, "personalSaveNickname")}
-                                className="flex h-9 min-w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent px-2 text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                                className="flex h-9 min-w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent px-2 text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                               >
                                 {personalAction === "nickname"
                                   ? <LoadingText label={t(lang, "personalSaving")} className="text-[10px]" variant="bounce" />
@@ -1486,7 +1514,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, onOpenAuth
                                   type="submit"
                                   disabled={authLoading || personalAction !== null}
                                   aria-busy={personalAction === "password"}
-                                  className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                                  className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                                 >
                                   {personalAction === "password"
                                     ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />

@@ -17,6 +17,10 @@ const CUSTOM_PROPS = [
   "--color-accent-light",
   "--color-accent-hover",
   "--color-danger",
+  // Written inline for the custom theme only (the four presets declare theirs
+  // in `index.css`), so they have to be cleared on the way back to a preset.
+  "--color-on-accent",
+  "--color-on-danger",
 ] as const;
 
 /** Rough relative brightness of a #rrggbb color; enough to split light/dark. */
@@ -30,6 +34,77 @@ function luma(hex: string): number {
     return Number.isFinite(channel) ? channel : 0;
   });
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/** WCAG relative luminance of a #rrggbb colour. */
+function channelLuminance(channel: number): number {
+  const srgb = channel / 255;
+  return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = parseRgb(hex);
+  return 0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b);
+}
+
+function parseRgb(hex: string): [number, number, number] {
+  const value = hex.trim().replace("#", "");
+  const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value;
+  return [0, 2, 4].map((offset) => Number.parseInt(full.slice(offset, offset + 2), 16)) as [number, number, number];
+}
+
+function contrastRatio(a: string, b: string): number {
+  const [lighter, darker] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** Mirrors `color-mix(in srgb, base <weight>%, tint)`. */
+function mixHex(base: string, tint: string, baseWeight: number): string {
+  const a = parseRgb(base);
+  const b = parseRgb(tint);
+  const channels = [0, 1, 2].map((index) => Math.round(a[index] * baseWeight + b[index] * (1 - baseWeight)));
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+const ON_COLORS = { light: "#ffffff", dark: "#0f1114" } as const;
+
+/**
+ * The user picks their own accent, so the preset table in `index.css` cannot
+ * cover this theme. Pick the foreground that actually wins on the block instead
+ * of inheriting white and hoping: white wins ties, because a light foreground on
+ * a coloured block is what every other surface in the app does.
+ */
+function onColorFor(background: string): string {
+  return contrastRatio(background, ON_COLORS.light) >= contrastRatio(background, ON_COLORS.dark)
+    ? ON_COLORS.light
+    : ON_COLORS.dark;
+}
+
+/**
+ * The value of `--color-bg-primary` as `#rrggbb`, for the native window surface.
+ *
+ * Custom properties are not resolved by the cascade, so the declared token comes
+ * back verbatim — which is a hex literal for every theme that defines one. The
+ * probe element is only there for the day a theme stops being a literal: painting
+ * the value and reading `color` back lets the browser do the resolution.
+ */
+export function resolvedBackgroundHex(): string | null {
+  const declared = getComputedStyle(document.documentElement).getPropertyValue("--color-bg-primary").trim();
+  if (/^#[0-9a-f]{6}$/i.test(declared)) return declared.toLowerCase();
+
+  const probe = document.createElement("span");
+  probe.style.color = "var(--color-bg-primary)";
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const resolved = getComputedStyle(probe).color;
+  probe.remove();
+
+  const match = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(resolved);
+  if (!match) return null;
+  return `#${match
+    .slice(1, 4)
+    .map((channel) => Number(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 export function applyTheme(theme: ThemeType, customColors: CustomColors | null): void {
@@ -60,6 +135,10 @@ export function applyTheme(theme: ThemeType, customColors: CustomColors | null):
     root.style.setProperty("--color-accent-light", customColors.bgSecondary);
     root.style.setProperty("--color-accent-hover", customColors.accent);
     root.style.setProperty("--color-danger", `color-mix(in srgb, #ef4444 72%, ${customColors.accent})`);
+    // Same derivation as the line above, in JS, so the fore colour is measured
+    // against the block that is actually painted rather than the preset red.
+    root.style.setProperty("--color-on-accent", onColorFor(customColors.accent));
+    root.style.setProperty("--color-on-danger", onColorFor(mixHex("#ef4444", customColors.accent, 0.72)));
   } else {
     // Clear inline custom properties
     for (const prop of CUSTOM_PROPS) {

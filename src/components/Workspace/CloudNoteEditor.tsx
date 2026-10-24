@@ -1602,7 +1602,7 @@ export default function CloudNoteEditor({
                           onClick={() => { void savePublication("unpublish"); }}
                           disabled={publicationSaving}
                           aria-busy={publicationSavingAction === "unpublish"}
-                          className="inline-flex h-8 items-center rounded-lg bg-danger px-3 text-xs font-medium text-white hover:bg-danger/90 disabled:cursor-not-allowed disabled:bg-danger/80"
+                          className="inline-flex h-8 items-center rounded-lg bg-danger px-3 text-xs font-medium text-on-danger hover:bg-danger/90 disabled:cursor-not-allowed disabled:bg-danger/80"
                         >
                           {publicationSavingAction === "unpublish"
                             ? <LoadingText label={t(lang, "confirmUnpublishCloudDocument")} variant="bounce" />
@@ -1636,7 +1636,7 @@ export default function CloudNoteEditor({
                     aria-busy={publicationSavingAction === "publish_now"}
                     className="flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent-light px-3 py-3 text-left text-sm font-medium text-accent transition-colors hover:border-accent/40 disabled:cursor-not-allowed"
                   >
-                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent text-white">
+                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent text-on-accent">
                       <Send size={14} />
                     </span>
                     {publicationSavingAction === "publish_now"
@@ -1686,7 +1686,7 @@ export default function CloudNoteEditor({
                   onClick={() => { void savePublication("schedule"); }}
                   disabled={!scheduledPublishValue || publicationSaving}
                   aria-busy={publicationSavingAction === "schedule"}
-                  className="inline-flex h-8 items-center rounded-lg bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-accent/70"
+                  className="inline-flex h-8 items-center rounded-lg bg-accent px-3 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-accent/70"
                 >
                   {publicationSavingAction === "schedule"
                     ? <LoadingText

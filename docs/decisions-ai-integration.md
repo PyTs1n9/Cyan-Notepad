@@ -41,6 +41,8 @@
 
 ### 3. DeepSeek：RAG 问答 + 实时网页搜索 + 润色
 
+> **2026-10-23 作废**：实时网页搜索（联网搜索）功能已整体移除，见 `docs/decisions-ai-api-settings.md`「后续变更」。
+
 结论：选中 DeepSeek 时，知识库检索片段注入上下文后生成回答（RAG）；「联网问答」= 实时网页搜索，**默认开启、可关闭**；文章润色走 DeepSeek。当前有效模型 `deepseek-flash`（V4.1 Flash，1M ctx）。
 
 理由：用户明确「要实时搜索」「默认开可关」。
@@ -90,6 +92,10 @@
 结论：请求层做成 `ChatProvider` 适配器接口（`stream` / `testKey`），本期只内置 DeepSeek 预设（第一个实现）；扩展位分两类留好——OpenAI 兼容协议（Kimi/GLM/通义等共用一个适配器）与非兼容协议（每家一个小适配器挂同一接口）；搜索侧同理挂 `SearchProvider`，默认预设博查 Web Search（用户自配 Key，BYOK）。不做用户自定义 endpoint UI。
 
 理由：用户明确「预留接口、仅代码层抽象」「后续可能接入更多 API」；博查国内直连、引用字段（标题/摘要/站点/时间）齐备。API 费用全部用户自理，选型不比价。
+
+> **2026-10-23 作废**：「不做用户自定义 endpoint UI」与「只内置 DeepSeek 预设」两条均被推翻，
+> 改为多接口 + 用户自配 baseUrl/Key + `/models` 勾选。见 `docs/decisions-ai-api-settings.md`。
+> 适配器接口本身（`ChatProvider` / `stream` / `testKey`）仍然有效，只是注册表改为运行时派生。
 
 ## 实现约定（按实际落地更新）
 
@@ -190,6 +196,8 @@
 
 ## 第五轮：联网搜索改用 DeepSeek 官方搜索（2026-10-23）
 
+> 该功能已于同日整体移除，本节仅作历史记录。
+
 结论：删除 `search/bocha.ts`，新增 `search/deepseek.ts`（`POST https://api.deepseek.com/v1/tools/search`），注册表只留 `deepseek`，`DEFAULT_SEARCH_PROVIDER_ID = "deepseek"`。搜索不再有独立 Key：`aiStore` 删掉 `searchApiKey` / `hasSearchKey` / `saveSearchKey` / `clearSearchKey` / `verifySearchKey` 与 `ai/search-credentials.bin` 的读写（`storage.ts` 同步移除三个 cipher 函数），`sendMessage` 直接把已校验的聊天 key 传给搜索适配器，并把问题原文作为 `ori_question` 一起发。
 
 理由：
@@ -200,3 +208,120 @@
 4. **失败降级保持不变**：搜索抛错仍只置 `searchError` 提示，不阻塞回答、不改变 `sending`。
 
 验证：`npm run build` 通过；`scripts/smoke-manual-bm25.mts` 21/21（手册/FAQ 的联网搜索条目已改为「复用同一把 DeepSeek Key」，Q20 仍独占其问法）。真实 key 的联网问答与来源标注待 GUI 手测。
+
+## 第六轮：思考档位即模型选择（2026-10-23）
+
+结论：聊天栏的「思考档位」从「只调推理参数」升级为**决定用哪个模型**的唯一入口，设置页那份删除，只保留输入栏控件。
+
+做法：
+
+1. `ChatProvider` 新增 `resolveTarget(level: ThinkingLevel): ModelTarget`，`ModelTarget = { model, thinking, reasoningEffort }`。映射逻辑集中在 `utils/ai/thinking.ts` 的 `resolveTarget()`，`openaiCompat` 通过 preset 的可选 `modelByLevel?` 表注入差异（目前 DeepSeek 三档都指向 `deepseek-flash`，所以表为空）。
+2. `ChatRequest` 新增可选 `model`：适配器用 `request.model ?? config.model`，于是「档位 → 模型」的解析结果可以逐次请求传递，而不必改 provider 实例。
+3. 三处生成入口统一走 `provider.resolveTarget(level)`：`aiStore.runGeneration`（对话）、`polish.generateSelectionAction`（选区动作）、`structured.generateSummaryCard`（摘要卡）。没有任何调用点再自己拼 `thinking` / `reasoning_effort`。
+4. 输入栏模型芯片显示**解析后的模型名**（`activeTargetModel`）而不是 provider 默认模型，保证「看到的模型 = 会答的模型」。
+
+理由：
+
+1. 用户后续要加更多 API 与模型，如果档位和模型是两个独立旋钮，就会出现「选了 pro 但档位关着」这种自相矛盾的状态；把档位作为唯一决策点，状态空间是线性的。
+2. 加一个更重的模型只需要在 preset 里写一行 `modelByLevel: { high: "..." }`，UI、偏好字段、调用点都不用动 —— 这正是 `decisions-ai-integration.md #11` 想要的扩展槽。
+3. 设置页里的那份是纯重复：两个入口写同一个字段，用户看到两份控件却不知道哪份生效。
+
+验证：`npx tsc --noEmit` 通过；`npm run build` 通过。GUI 表现（弹出层、芯片文案、档位切换后请求体里的 `model`）待手测。
+
+### 第六轮补充：面板形态（2026-10-23，按参考图调整）
+
+参考了两种模型选择器的交互（左侧模型列表 + 右侧模型详情/思考强度、触发条显示「模型 + 档位」），
+本项目的输入栏宽度只有一列，因此合成为单列两段式面板，而不是两栏：
+
+```
+[deepseek-flash 低 ⌃]     ← 触发条：模型名 + 当前档位徽标
+  模型
+    小青            本地检索，不联网
+    deepseek-flash  DeepSeek          ✓
+  思考强度
+    关闭            deepseek-flash
+    低              deepseek-flash    ✓
+    高              deepseek-flash
+  提示：思考按输出计费、与正文共享预算
+```
+
+键点：
+
+1. **模型行按模型去重，不按档位展开**。`ChatProvider.models` 由档位表折叠得出（`LEVEL_ORDER`
+   以 `low` 打头，保证同一模型的多档只留一条，且代表档位不是看起来最便宜的 `off`）。这样
+   DeepSeek 三档共用一个模型时只显示一行，等 `modelByLevel` 引入第二个模型才自然分裂成两行。
+2. **行与档位两个轴都在同一个面板里**：选模型行只在「模型真的变了」时才改写档位
+   （`levelOfTarget`），否则保留用户已有的更细档位；选档位行永远直接生效。避免「点回当前模型
+   把 low 降级成 off」这类静默改状态。
+3. **悬停与点击都能开**，二者共用一个 `menuOpen`。但点击态才渲染全屏遮罩——悬停态渲染遮罩会
+   把鼠标压在遮罩上，`mouseleave` 立刻触发，面板闪一下就关。面板与触发条之间不留 margin，
+   否则指针穿过间隙时会触发容器的 `mouseleave`（面板虽是 DOM 子节点，但空隙不在容器盒内）。
+4. 触发条上的档位徽标让「当前档位」不用展开即可见，对应参考图里模型名后面的 High 标签。
+
+验证：`npx tsc --noEmit` 通过；`npm run build` 8.51s 通过；改动的 5 个模块已 curl 核对转换结果。
+
+### 第六轮补充二：档位改为「悬停模型行内展开」（2026-10-23）
+
+按用户反馈调整两点：
+
+1. **思考强度不再是常驻区块**，只在指针停在某个模型行时，于该行下方缩进展开（左侧 1px 竖线 +
+   缩进）。原因：常驻会让面板一打开就有 4 行，其中一个模型的情况下三档全指向同一模型名，信息密度
+   极低。展开状态用 `hoveredModelKey`（`providerId:model`），行与展开区包在同一个 wrapper 里，
+   指针从行移到档位不会触发容器的 `mouseleave`；切到下一行时用 `current === key ? null : current`
+   避免「新行的 enter 被旧行的 leave 清空」。
+2. **删除底部提示文案**（`aiThinkingHint` 及中英词条）。面板只保留可操作项。`aiThinkingTitle`
+   保留为展开区的 `aria-label`。
+
+档位行里只在「该档位解析出的模型与本行模型不同」时才显示模型名，同一模型三档不重复三遍。
+
+## 第七轮：模型选择改为「列表卡 + 行旁档位浮卡」（2026-10-23，grill 细问收敛）
+
+背景：第六轮的「档位在模型行内展开」有两个问题——展开/收起会改变列表高度，鼠标移向某行时
+列表在指针下位移，点击落空；用户反馈「点小青无法选中、面板直接消失」。另外用户要求：只有
+**有思考模式**的模型才展示档位，且档位在**右侧**以悬浮卡展开。
+
+结论：
+
+| 主题 | 决定 | 理由 |
+| --- | --- | --- |
+| 结构 | 列表卡（模型）+ 行旁档位浮卡，不再行内展开 | 行内展开改变布局高度，是丢点击的根因；浮卡不占布局高度 |
+| 触发 | 悬停有思考能力的模型行展开浮卡；**点击模型行也能固定浮卡** | 纯 hover 在触屏与键盘下不可达 |
+| 无思考能力的模型 | 只用点击正常选中并收起，不展开浮卡 | 小青无生成阶段，档位对它无意义 |
+| 浮卡内容 | 小标题「思考强度」+ 关闭/低/高，每行附该档解析出的模型名 | 用户指定；模型名让「档位=模型」可验证 |
+| 浮卡初始 | 面板打开时即显示当前模型的档位（不是空白等悬停） | 否则第一眼像没有档位可选 |
+| 窄宽度 | 不做断点，按用户要求「直接悬浮处理」 | 已知代价：合计宽度约 294px，侧栏窄于 ~320px 时贴边裁剪 |
+
+实现几何（既定）：列表卡与浮卡各 `w-36`（144px），间距 6px，浮卡 `left-full` 贴列表卡右侧；
+默认侧栏 340px、胶囊内边距 10px，可用约 320px，恰好容纳。
+
+已排除：向右溢出到编辑区（AI 卡在壳层里是 `overflow-hidden`，会被裁）；面板内左右两栏（用户
+改选「列表 + 行旁浮卡」）。
+
+### 第七轮修正：改用 portal 悬浮（2026-10-23，按参考图最终定稿）
+
+用户给了宽列表卡参考图（模型名 + 副行 + 勾选 + 底部「配置自定义模型」），并明确「类似这样悬浮」。
+几何约束随之改变：
+
+- **AI 卡在壳层里是 `overflow-hidden`**（`App.tsx` 的 `sidebar-width-shell`），所以任何在卡内
+  absolute 定位的浮层都会被裁。340px 侧栏里塞不下「240 列表 + 160 档位」。
+- 结论：模型选择器改为 **portal 到 `document.body` + `fixed` 定位**。这样浮卡可以超出侧栏边界，
+  不再受裁剪；代价是要自己做视口夹取与定位重算。
+
+实现（`components/AI/ModelPicker.tsx`，从 `AiSidebar` 抽出）：
+
+| 项 | 值 / 行为 |
+| --- | --- |
+| 列表卡 | 宽 240，`left` 夹取在 `[8, innerWidth-8-240]`，锚点取触发条 `getBoundingClientRect` |
+| 档位卡 | 宽 160，默认贴列表卡右侧 +8；右侧放不下时镜像到左侧并夹取到 `left>=8` |
+| 垂直 | 档位卡 `top` 对齐被悬停行的 `rect.top`，夹取到视口内 |
+| 触发 | 悬停（140ms 宽限）与点击（pin）都能开；pin 后渲染全屏遮罩，点外部关闭 |
+| 无思考能力模型 | `supportsThinking === false`（小青）→ 点击即选中并全部收起，不弹档位卡 |
+| 有思考能力模型 | 点击选中模型并 pin 档位卡，接着选档位后收起 |
+| 键盘 | 行 `onFocus` 等价于悬停，Tab 可依次到达模型行与档位 |
+| 层级 | 遮罩 `z-70` / 列表 `z-71` / 档位 `z-72`（在应用内容之上、上下文菜单之下） |
+
+同时把 `AiSidebar` 里的 `modelMenuOpen/modelMenuHover/hoveredModelKey/chooseModel/chooseLevel`
+全部删掉，头部模型名改由 `headerModelLabel` 计算（与 chip 同源，避免两处漂移）。
+
+已知代价：列表滚动时档位卡不跟随（悬停离开即收，实际不可见）；侧栏拖得极窄时列表卡靠 `left`
+夹取保持可见，但会盖住部分输入区。

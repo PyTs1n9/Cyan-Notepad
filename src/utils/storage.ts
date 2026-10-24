@@ -11,8 +11,10 @@ import {
   stat,
 } from "@tauri-apps/plugin-fs";
 import { join, resourceDir } from "@tauri-apps/api/path";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Note, NoteCategory, TodoListData } from "@/types";
 import { markKnowledgeDirty, markNoteContentDirty } from "@/utils/ai/knowledgeDirty";
+import { isAiEndpoint, normalizeEndpoint, type AiEndpoint } from "@/utils/ai/chat/endpoints";
 import {
   TRASH_RETENTION_DISABLED,
   TRASH_RETENTION_FOREVER,
@@ -43,8 +45,13 @@ const FONTS_FILE = "fonts.json";
 const SETTINGS_FILE = "settings.json";
 const UI_STATE_FILE = "ui-state.json";
 const AI_DIR = "ai";
+/** Legacy single-key blob; migrated into `endpoint-keys.json` on first load. */
 const AI_CREDENTIALS_FILE = "credentials.bin";
 const AI_PREFERENCES_FILE = "preferences.json";
+/** User-owned chat endpoints (base URL + model list); see `endpoints.ts`. */
+const AI_ENDPOINTS_FILE = "endpoints.json";
+/** endpointId -> DPAPI cipher text, one entry per configured endpoint. */
+const AI_ENDPOINT_KEYS_FILE = "endpoint-keys.json";
 /** One file per conversation; see `saveAiConversation`. */
 const AI_CHATS_DIR = "chats";
 /** Legacy single-file store; migrated into `chats/` on the first load. */
@@ -55,6 +62,24 @@ let imageNeedDirectoryPromise: Promise<string> | null = null;
 let legacyImageTrashMigrationPromise: Promise<void> | null = null;
 
 export type ImageTrashPartition = keyof typeof IMAGE_TRASH_PARTITION_DIRS;
+
+/**
+ * Note ids become file (and directory) names, so every entry point that turns
+ * one into a path validates it. Real ids come from `crypto.randomUUID()`, but
+ * `index.json` and the trash manifest are plain files that a backup restore, a
+ * user edit or a future sync can repopulate — those values are not trusted.
+ */
+const NOTE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function isSafeNoteId(id: unknown): id is string {
+  return typeof id === "string" && NOTE_ID_PATTERN.test(id);
+}
+
+/** Throws: used on write/delete paths so the caller cannot silently no-op. */
+function assertSafeNoteId(id: string): string {
+  if (!isSafeNoteId(id)) throw new Error(`Invalid note id: ${id}`);
+  return id;
+}
 
 async function ensureDirectory(path: string): Promise<void> {
   if (!(await exists(path))) {
@@ -73,7 +98,150 @@ async function resolveLocalProjectDataDirectory(): Promise<string | null> {
   return null;
 }
 
+/**
+ * The data directory can be relocated from Settings. The pointer file lives in
+ * the OS config directory (read and written by `src-tauri/src/storage.rs`), so
+ * it survives the move and is readable before the data directory is known.
+ */
+const DATA_DIRECTORY_UNAVAILABLE = "DATA_DIRECTORY_UNAVAILABLE";
+
+export interface StorageLocationState {
+  path: string;
+  custom: boolean;
+  available: boolean;
+}
+
+export interface StorageProbeResult {
+  path: string;
+  exists: boolean;
+  isDir: boolean;
+  writable: boolean;
+  fileCount: number;
+  totalBytes: number;
+  isEmpty: boolean;
+  /** The folder already looks like a Qing Notepad data directory. */
+  isLibrary: boolean;
+}
+
+export interface StorageMigrationReport {
+  files: number;
+  bytes: number;
+  sameVolume: boolean;
+}
+
+async function readCustomDataRoot(): Promise<string | null> {
+  if (!isTauri()) return null;
+  try {
+    const root = await invoke<string | null>("storage_get_root");
+    return typeof root === "string" && root.trim() ? root : null;
+  } catch (error) {
+    console.warn("Failed to read the custom data directory:", error);
+    return null;
+  }
+}
+
+export function isDataDirectoryUnavailable(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith(DATA_DIRECTORY_UNAVAILABLE);
+}
+
+/** Drop the memoized root so the next call re-reads the pointer file. */
+export function resetDataDirectoryCache(): void {
+  dataDirectoryPromise = null;
+  imageNeedDirectoryPromise = null;
+}
+
+export async function getStorageLocation(): Promise<StorageLocationState> {
+  const custom = await readCustomDataRoot();
+  if (custom) return { path: custom, custom: true, available: await exists(custom) };
+  try {
+    return { path: await getDataRoot(), custom: false, available: true };
+  } catch {
+    return { path: "", custom: false, available: false };
+  }
+}
+
+/** File count and size for a directory, computed on the Rust side. */
+export async function probeStorageLocation(path: string): Promise<StorageProbeResult | null> {
+  try {
+    return await invoke<StorageProbeResult>("storage_probe", { path });
+  } catch (error) {
+    console.warn("Failed to inspect a directory:", error);
+    return null;
+  }
+}
+
+/**
+ * Move the live data directory and point the app at the new location.
+ * Rust moves, verifies, and only then rewrites the pointer file, so a failure
+ * leaves the app on the old directory. The target has to be empty.
+ */
+export async function migrateDataDirectory(target: string): Promise<StorageMigrationReport> {
+  const from = await getDataRoot();
+  await ensureDirectory(from);
+  const report = await invoke<StorageMigrationReport>("storage_migrate", {
+    from,
+    to: target,
+    replaceBootstrap: false,
+  });
+  resetDataDirectoryCache();
+  return report;
+}
+
+/**
+ * Point the app at a directory that already holds a library (a restored backup
+ * or a previously migrated folder). Nothing is copied or deleted.
+ */
+export async function adoptDataDirectory(path: string): Promise<void> {
+  await invoke("storage_set_root", { path });
+  resetDataDirectoryCache();
+}
+
+/**
+ * Go back to the default directory, carrying the data with it.
+ *
+ * Restoring used to only clear the pointer, which stranded the notes in the old
+ * custom directory and left the user to move them by hand. The default directory
+ * usually holds a few regenerated config files by then, so the move is allowed
+ * to replace them (`replaceBootstrap`) — but never a directory with real notes.
+ */
+export async function restoreDefaultDataDirectory(): Promise<StorageMigrationReport | null> {
+  const location = await getStorageLocation();
+  const defaultRoot = await resolveDefaultDataDirectory();
+  let report: StorageMigrationReport | null = null;
+
+  if (location.custom) {
+    if (!location.available) {
+      // Never clear the pointer while the data is unreachable: that would look
+      // like the notes were deleted.
+      throw new Error(`${DATA_DIRECTORY_UNAVAILABLE}:${location.path}`);
+    }
+    report = await invoke<StorageMigrationReport>("storage_migrate", {
+      from: location.path,
+      to: defaultRoot,
+      replaceBootstrap: true,
+    });
+  }
+
+  await invoke("storage_clear_root");
+  resetDataDirectoryCache();
+  return report;
+}
+
 async function resolveDataDirectory(): Promise<string> {
+  const customRoot = await readCustomDataRoot();
+  if (customRoot) {
+    // Never create a missing custom root: an unplugged drive would otherwise
+    // look like an empty library and new notes would land nowhere useful.
+    if (!(await exists(customRoot))) {
+      throw new Error(`${DATA_DIRECTORY_UNAVAILABLE}:${customRoot}`);
+    }
+    return customRoot;
+  }
+  return resolveDefaultDataDirectory();
+}
+
+/** The built-in location, used when no custom directory is configured. */
+async function resolveDefaultDataDirectory(): Promise<string> {
   if (!import.meta.env.PROD) {
     // Tauri dev runs use the repository's data directory.
     const localProjectData = await resolveLocalProjectDataDirectory();
@@ -149,19 +317,88 @@ export async function deleteAiCredentialCipher(): Promise<void> {
 }
 
 /**
+ * Configured chat endpoints. A hand-edited or half-written file must never
+ * break boot, so invalid rows are dropped here instead of blowing up a store
+ * hydrate.
+ */
+export async function loadAiEndpoints(): Promise<AiEndpoint[]> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_ENDPOINTS_FILE);
+    if (!(await exists(path))) return [];
+    const parsed = JSON.parse(await readTextFile(path)) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isAiEndpoint).map(normalizeEndpoint);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveAiEndpoints(endpoints: AiEndpoint[]): Promise<void> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_ENDPOINTS_FILE);
+    await writeTextFile(path, JSON.stringify(endpoints, null, 2));
+  } catch (e) {
+    console.error("Failed to save AI endpoints:", e);
+  }
+}
+
+/**
+ * One DPAPI cipher text per endpoint id. Read as a whole map because the
+ * settings page needs every key's presence at once to render its status dots.
+ */
+export async function loadAiEndpointKeyCiphers(): Promise<Record<string, string>> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_ENDPOINT_KEYS_FILE);
+    if (!(await exists(path))) return {};
+    const parsed = JSON.parse(await readTextFile(path)) as unknown;
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const out: Record<string, string> = {};
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "string" && value.trim()) out[id] = value.trim();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function saveAiEndpointKeyCiphers(
+  ciphers: Record<string, string>,
+): Promise<void> {
+  try {
+    const dir = await ensureAiDir();
+    const path = await join(dir, AI_ENDPOINT_KEYS_FILE);
+    await writeTextFile(path, JSON.stringify(ciphers, null, 2));
+  } catch (e) {
+    console.error("Failed to save AI endpoint keys:", e);
+  }
+}
+
+/**
  * AI assistant preferences (model selection etc.), kept beside the AI
  * credentials so the AI module owns its own restore path. Plain JSON —
  * nothing secret lives here.
  */
 export interface StoredAiPreferences {
-  /** "local" (小青) or a chat provider id, e.g. "deepseek". */
+  /**
+   * Selected chat target: `"local"` (小青) or `"<endpointId>::<modelId>"`.
+   * A bare provider id from the pre-endpoint builds is still accepted and
+   * remapped on restore (see `normalizeChatSelection`).
+   */
   chatModel?: string;
-  /** Generative provider id used by 润色. */
+  /** Same shape as `chatModel`, used by 润色 / 选区动作. */
   polishModel?: string;
-  /** Whether DeepSeek-mode turns run a real-time web search. */
-  searchEnabled?: boolean;
   /** Note-write permission for the chat assistant (default "readonly"). */
   noteWriteMode?: "readonly" | "full";
+  /**
+   * Reasoning depth for thinking-capable models (default "low"). `"off"` skips
+   * the reasoning phase entirely: it is billed as output and shares the same
+   * `max_tokens` budget as the visible answer.
+   */
+  thinkingLevel?: "off" | "low" | "high";
 }
 
 export async function loadAiPreferences(): Promise<StoredAiPreferences> {
@@ -204,12 +441,10 @@ export interface StoredAiChatMessage {
   hits: unknown[];
   streaming?: boolean;
   errorCode?: string;
-  /** Web search failed on this turn; drives a hint under the answer. */
-  searchError?: boolean;
-  /** Web results the answer was built from; rendered as source links. */
-  sources?: { title: string; url: string; siteName?: string }[];
   /** The answer hit `max_tokens` and is cut off. */
   truncated?: boolean;
+  /** Vendor mark key of the model that produced this turn (see `modelBrand`). */
+  brandKey?: string;
   /** Note writes performed in this turn (full-permission mode), for undo. */
   edits?: {
     noteId: string;
@@ -334,7 +569,7 @@ export async function savePolishSnapshot(
 ): Promise<string | null> {
   try {
     const aiDir = await ensureAiDir();
-    const snapshotDir = await join(aiDir, AI_SNAPSHOTS_DIR, noteId);
+    const snapshotDir = await join(aiDir, AI_SNAPSHOTS_DIR, assertSafeNoteId(noteId));
     await ensureDirectory(snapshotDir);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const path = await join(snapshotDir, `${stamp}.md`);
@@ -363,7 +598,7 @@ export async function saveNoteSnapshot(
 ): Promise<string | null> {
   try {
     const aiDir = await ensureAiDir();
-    const snapshotDir = await join(aiDir, AI_SNAPSHOTS_DIR, noteId);
+    const snapshotDir = await join(aiDir, AI_SNAPSHOTS_DIR, assertSafeNoteId(noteId));
     await ensureDirectory(snapshotDir);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const path = await join(snapshotDir, `${stamp}.json`);
@@ -555,15 +790,36 @@ export async function saveTodos<T>(todos: T[]): Promise<void> {
 }
 
 // --- Notes ---
-async function recoverNoteListFromFiles(base: string): Promise<Note[]> {
+/** File names only: reading every body on boot is what this replaces. */
+async function listNoteFileIds(base: string): Promise<string[]> {
   try {
     const entries = await readDir(base);
-    const files = entries
-      .filter((entry) => entry.isFile && entry.name.endsWith(".md"))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const notes = await Promise.all(files.map(async (file, index) => {
-      const id = file.name.replace(/\.md$/i, "");
-      const path = await join(base, file.name);
+    return entries
+      .filter((entry) => entry.isFile && entry.name.toLowerCase().endsWith(".md"))
+      .map((entry) => entry.name.replace(/\.md$/i, ""))
+      .filter(isSafeNoteId)
+      .sort((a, b) => a.localeCompare(b));
+  } catch (error) {
+    console.warn("Failed to list note files:", error);
+    return [];
+  }
+}
+
+/**
+ * Metadata for `.md` files, derived from their bodies.
+ *
+ * `onlyIds` limits the pass to the files the index does not describe yet — that
+ * is the crash-recovery case (body on disk, index not updated). The full scan is
+ * only used when no index survived at all.
+ */
+async function recoverNoteListFromFiles(base: string, onlyIds?: Set<string>): Promise<Note[]> {
+  const allIds = await listNoteFileIds(base);
+  const wanted = onlyIds ? allIds.filter((id) => onlyIds.has(id)) : allIds;
+  const positionById = new Map(allIds.map((id, index) => [id, index]));
+
+  const notes = await Promise.all(wanted.map(async (id): Promise<Note | null> => {
+    const path = await join(base, `${id}.md`);
+    try {
       const [content, info] = await Promise.all([readTextFile(path), stat(path)]);
       const modifiedAt = info.mtime?.toISOString() ?? new Date().toISOString();
       return {
@@ -573,16 +829,17 @@ async function recoverNoteListFromFiles(base: string): Promise<Note[]> {
         tags: [],
         categoryId: null,
         pinned: false,
-        order: index,
+        // Stable position in the full directory listing, not in the subset.
+        order: positionById.get(id) ?? 0,
         createdAt: modifiedAt,
         updatedAt: modifiedAt,
       };
-    }));
-    return notes;
-  } catch (e) {
-    console.error("Failed to recover note list from files:", e);
-  }
-  return [];
+    } catch (error) {
+      console.warn("Failed to recover a note file:", id, error);
+      return null;
+    }
+  }));
+  return notes.filter((note): note is Note => note !== null);
 }
 
 interface NoteIndexPayload {
@@ -594,9 +851,19 @@ async function readNoteIndexFile(path: string): Promise<NoteIndexPayload | null>
   if (!(await exists(path))) return null;
   try {
     const parsed = JSON.parse(await readTextFile(path));
-    if (Array.isArray(parsed)) return { notes: parsed, categories: [] };
+    const rawNotes: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : (Array.isArray(parsed?.notes) ? parsed.notes : []);
+    const notes = rawNotes.filter((note): note is Note => isSafeNoteId((note as Note | null)?.id));
+    if (notes.length !== rawNotes.length) {
+      console.warn(
+        `Dropped ${rawNotes.length - notes.length} note index entries with invalid ids:`,
+        path,
+      );
+    }
+    if (Array.isArray(parsed)) return { notes, categories: [] };
     return {
-      notes: Array.isArray(parsed?.notes) ? parsed.notes : [],
+      notes,
       categories: Array.isArray(parsed?.categories) ? parsed.categories : [],
     };
   } catch (error) {
@@ -633,52 +900,91 @@ export async function saveTodoLists(data: TodoListData): Promise<void> {
 export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteCategory[] }> {
   const base = await ensureNotesDir();
   try {
-    const [indexPath, backupPath, recovered] = await Promise.all([
-      join(base, NOTE_INDEX_FILE),
-      join(base, NOTE_INDEX_BACKUP_FILE),
-      recoverNoteListFromFiles(base),
-    ]);
+    const indexPath = await join(base, NOTE_INDEX_FILE);
+    const backupPath = await join(base, NOTE_INDEX_BACKUP_FILE);
     const [primary, backup] = await Promise.all([
       readNoteIndexFile(indexPath),
       readNoteIndexFile(backupPath),
     ]);
-    const fileIds = new Set(recovered.map((note) => note.id));
+
+    // Both indexes unusable: the directory is the only source left, so this is
+    // the one path that still reads every body.
+    if (!primary && !backup) {
+      return { notes: await recoverNoteListFromFiles(base), categories: [] };
+    }
+
+    // Coverage only needs the file names, which costs one readdir instead of a
+    // full body scan on every launch.
+    const fileIds = await listNoteFileIds(base);
+    const fileIdSet = new Set(fileIds);
     const coverage = (candidate: NoteIndexPayload | null) =>
-      candidate?.notes.filter((note) => fileIds.has(note.id)).length ?? -1;
+      candidate?.notes.filter((note) => fileIdSet.has(note.id)).length ?? -1;
     // Prefer the primary index unless the backup describes more content files.
     // This also restores category definitions and each note's categoryId link.
     const selected = coverage(backup) > coverage(primary) ? backup : primary;
-    if (selected) {
-      const knownIds = new Set(selected.notes.map((note) => note.id));
-      return {
-        notes: [...selected.notes, ...recovered.filter((note) => !knownIds.has(note.id))],
-        categories: selected.categories,
-      };
+    if (!selected) {
+      return { notes: await recoverNoteListFromFiles(base), categories: [] };
     }
+
+    const knownIds = new Set(selected.notes.map((note) => note.id));
+    // Only the files the index does not describe need their body read.
+    const missing = new Set(fileIds.filter((id) => !knownIds.has(id)));
+    const recovered = missing.size > 0
+      ? await recoverNoteListFromFiles(base, missing)
+      : [];
+    return { notes: [...selected.notes, ...recovered], categories: selected.categories };
   } catch (e) {
     console.error("Failed to load note list:", e);
   }
   return { notes: await recoverNoteListFromFiles(base), categories: [] };
 }
 
-export async function saveNoteIndex(
-  notes: {
-    id: string;
-    title: string;
-    tags: string[];
-    categoryId?: string | null;
-    pinned?: boolean;
-    order: number;
-    createdAt: string;
-    updatedAt: string;
-  }[],
+interface NoteIndexEntry {
+  id: string;
+  title: string;
+  tags: string[];
+  categoryId?: string | null;
+  pinned?: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Every write goes through one promise chain.
+ *
+ * Two overlapping saves used to share the fixed `index.json.tmp`: the first
+ * `rename` moved the file away and the second one then failed with "source does
+ * not exist", which the catch below swallowed — leaving no index at all until the
+ * next save. Serializing is cheaper than making the writer re-entrant.
+ */
+let noteIndexWriteChain: Promise<void> = Promise.resolve();
+
+export function saveNoteIndex(
+  notes: NoteIndexEntry[],
   categories: NoteCategory[] = [],
+): Promise<void> {
+  const job = noteIndexWriteChain.then(() => writeNoteIndex(notes, categories));
+  // Keep the chain alive after a failure, otherwise one rejected write blocks
+  // every later save for the rest of the session.
+  noteIndexWriteChain = job.catch(() => undefined);
+  return job;
+}
+
+async function writeNoteIndex(
+  notes: NoteIndexEntry[],
+  categories: NoteCategory[],
 ): Promise<void> {
   try {
     const base = await ensureNotesDir();
     const indexPath = await join(base, NOTE_INDEX_FILE);
     const backupPath = await join(base, NOTE_INDEX_BACKUP_FILE);
-    const tempPath = await join(base, `${NOTE_INDEX_FILE}.tmp`);
+    // Unique per write: even if a future caller bypasses the chain, two writers
+    // can never collide on the same temp file.
+    const tempPath = await join(
+      base,
+      `${NOTE_INDEX_FILE}.${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}.tmp`,
+    );
     const [primary, backup] = await Promise.all([
       readNoteIndexFile(indexPath),
       readNoteIndexFile(backupPath),
@@ -689,15 +995,29 @@ export async function saveNoteIndex(
       await writeTextFile(backupPath, await readTextFile(indexPath));
     }
     await writeTextFile(tempPath, JSON.stringify({ notes, categories }, null, 2));
-    if (await exists(indexPath)) await remove(indexPath);
-    await rename(tempPath, indexPath);
+    try {
+      // On Windows this is MoveFileEx(MOVEFILE_REPLACE_EXISTING), so the target
+      // never disappears even for a moment.
+      await rename(tempPath, indexPath);
+    } catch {
+      // Filesystems that refuse to replace an existing target: fall back to the
+      // old remove-then-rename. Only reachable in that case, not on every save.
+      if (await exists(indexPath)) await remove(indexPath);
+      await rename(tempPath, indexPath);
+    }
     markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save note index:", e);
+    throw e;
   }
 }
 
 export async function loadNoteContent(id: string): Promise<string> {
+  // A single corrupt id must never break boot or a window load.
+  if (!isSafeNoteId(id)) {
+    console.warn("Refusing to load a note with an invalid id:", id);
+    return "";
+  }
   try {
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
@@ -711,6 +1031,7 @@ export async function loadNoteContent(id: string): Promise<string> {
 }
 
 export async function saveNoteContent(id: string, content: string): Promise<void> {
+  assertSafeNoteId(id);
   try {
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
@@ -949,6 +1270,7 @@ export async function cleanupUnusedImageAttachments(): Promise<void> {
 }
 
 export async function deleteNoteFile(id: string): Promise<void> {
+  assertSafeNoteId(id);
   try {
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
@@ -1025,7 +1347,9 @@ async function readTrashIndex(notesDir: string): Promise<TrashNoteEntry[]> {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .map(normalizeTrashEntry)
-      .filter((entry): entry is TrashNoteEntry => entry !== null);
+      // The manifest is a plain file: an entry whose id cannot be a file name
+      // is unusable, and every caller turns one into a path.
+      .filter((entry): entry is TrashNoteEntry => entry !== null && isSafeNoteId(entry.id));
   } catch (error) {
     console.warn("Failed to read note trash index:", error);
     return [];
@@ -1078,6 +1402,7 @@ export async function moveNoteToTrash(
   note: Note,
   categoryName?: string | null,
 ): Promise<boolean> {
+  assertSafeNoteId(note.id);
   try {
     if (getTrashRetentionDays() === TRASH_RETENTION_DISABLED) {
       await deleteNoteFile(note.id);
@@ -1135,6 +1460,7 @@ export async function moveNoteToTrash(
 }
 
 export async function restoreTrashNote(id: string): Promise<RestoredTrashNote | null> {
+  assertSafeNoteId(id);
   try {
     const { notesDir: trashNotesDir, imagesDir: trashImagesDir } = await ensureNoteTrashDirectories();
     const entries = await readTrashIndex(trashNotesDir);
@@ -1192,6 +1518,7 @@ export async function restoreTrashNote(id: string): Promise<RestoredTrashNote | 
 }
 
 export async function purgeTrashNote(id: string): Promise<void> {
+  assertSafeNoteId(id);
   try {
     const { notesDir: trashNotesDir, imagesDir: trashImagesDir } = await ensureNoteTrashDirectories();
     const entries = await readTrashIndex(trashNotesDir);

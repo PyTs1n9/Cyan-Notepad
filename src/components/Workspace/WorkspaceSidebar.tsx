@@ -355,7 +355,7 @@ const WorkspaceSidebar: React.FC = () => {
     {
       value: "all",
       label: t(lang, "all"),
-      activeClassName: "bg-accent text-white",
+      activeClassName: "bg-accent text-on-accent",
       inactiveClassName: "text-text-muted hover:bg-bg-hover hover:text-text-primary",
     },
     {
@@ -373,7 +373,7 @@ const WorkspaceSidebar: React.FC = () => {
     {
       value: "published",
       label: t(lang, "cloudDocumentPublished"),
-      activeClassName: "bg-success text-white",
+      activeClassName: "bg-success text-on-success",
       inactiveClassName: "text-success hover:bg-success/10",
     },
   ];
@@ -506,7 +506,7 @@ const WorkspaceSidebar: React.FC = () => {
                   ? document.publicationStatus === "scheduled"
                     ? "bg-warning text-white"
                     : document.publicationStatus === "published"
-                      ? "bg-success text-white"
+                      ? "bg-success text-on-success"
                       : "bg-text-muted text-bg-primary"
                   : document.publicationStatus === "scheduled"
                     ? "bg-transparent text-warning hover:bg-warning/10"

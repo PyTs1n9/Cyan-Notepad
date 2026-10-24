@@ -14,10 +14,16 @@ interface SidebarResizeHandleProps {
 /**
  * Vertical sash between a sidebar and the main pane.
  *
- * Skinless by design (VS Code): the grab strip itself paints nothing, so the
- * two panels keep their own backgrounds and only a hairline marks the boundary.
- * The accent bar is revealed on hover and stays lit while dragging. Nothing
- * animates its width - the 3px bar only fades in, so hovering never reflows.
+ * One element, three states. Nothing is painted at rest - the gutter's job when
+ * nobody is reaching for it is to be empty space between floating cards. Hover
+ * fades in a 2px accent divider that fades out at both ends (a solid bar would
+ * cut the window in two; a crease belongs to the gap). Dragging adds width and
+ * the glow, which is the only depth cue left once `.sidebar-resizing` drops the
+ * cards' shadows for redraw cost.
+ *
+ * The drag state is an attribute rather than a class because `:hover` stops
+ * matching the moment the pointer leaves a 6px strip mid-drag; `data-dragging`
+ * keeps the feedback alive for the whole gesture.
  */
 export default function SidebarResizeHandle({ onPointerDown, variant = "inline" }: SidebarResizeHandleProps) {
   const [dragging, setDragging] = useState(false);
@@ -47,25 +53,15 @@ export default function SidebarResizeHandle({ onPointerDown, variant = "inline" 
     <div
       role="separator"
       aria-orientation="vertical"
+      data-dragging={dragging || undefined}
       onPointerDown={handlePointerDown}
-      className={`group relative h-full flex-shrink-0 touch-none cursor-col-resize bg-transparent ${
+      className={`seam relative h-full flex-shrink-0 touch-none cursor-col-resize ${
         variant === "gutter" ? "w-[var(--shell-gutter)]" : "w-[5px]"
       }`}
     >
-      {/* The boundary itself: one hairline, the only thing visible at rest. */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border"
-      />
-      {/* Grab affordance: opaque only while hovered or dragged. */}
-      <span
-        aria-hidden="true"
-        className={`sidebar-resize-guide pointer-events-none absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 rounded-full transition-opacity duration-150 ease-out motion-reduce:transition-none ${
-          dragging
-            ? "sidebar-resize-guide--active bg-accent opacity-100"
-            : "bg-accent/60 opacity-0 group-hover:opacity-100"
-        }`}
-      />
+      {/* The divider is the affordance: rest and hover differ only in intensity,
+          so there is nothing else to paint here. */}
+      <span aria-hidden="true" className="seam-line" />
     </div>
   );
 }

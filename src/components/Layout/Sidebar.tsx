@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  FileUp,
   FolderPlus,
   PanelLeftOpen,
   Plus,
@@ -18,6 +19,10 @@ interface SidebarProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
   onNewNote: (categoryId?: string | null) => void;
+  /** Lives here now that the title-bar portal is gone: importing creates notes. */
+  onImportTextNotes: () => void;
+  /** Exports one note by id; the tree row is the third entry point (tabs, toolbar). */
+  onExportNote: (noteId: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onOpenSettings?: () => void;
@@ -35,6 +40,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   onViewChange,
   onNewNote,
+  onImportTextNotes,
+  onExportNote,
   collapsed,
   onToggleCollapse,
   onOpenSettings,
@@ -132,6 +139,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <FolderPlus size={14} />
             </button>
+            <button
+              onClick={onImportTextNotes}
+              className="flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              title={t(lang, "importNote")}
+              aria-label={t(lang, "importNote")}
+            >
+              <FileUp size={14} />
+            </button>
           </div>
         </div>
       )}
@@ -186,6 +201,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onViewChange("note");
           }}
           onRequestNewCategory={handleCreateCategory}
+          onExportNote={(note) => onExportNote(note.id)}
           autoRenameCategoryId={pendingRenameCategoryId}
           onAutoRenameHandled={() => setPendingRenameCategoryId(null)}
         />
@@ -201,7 +217,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={() => setFilterTag(null)}
               className={`px-2 py-0.5 rounded-full text-xs cursor-pointer
-                ${!filterTag ? "bg-accent text-white" : "bg-bg-hover text-text-secondary hover:bg-bg-active"}`}
+                ${!filterTag ? "bg-accent text-on-accent" : "bg-bg-hover text-text-secondary hover:bg-bg-active"}`}
             >
               {t(lang, "all")}
             </button>
@@ -210,7 +226,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 key={tag}
                 onClick={() => setFilterTag(tag === filterTag ? null : tag)}
                 className={`px-2 py-0.5 rounded-full text-xs cursor-pointer
-                  ${tag === filterTag ? "bg-accent text-white" : "bg-bg-hover text-text-secondary hover:bg-bg-active"}`}
+                  ${tag === filterTag ? "bg-accent text-on-accent" : "bg-bg-hover text-text-secondary hover:bg-bg-active"}`}
               >
                 #{tag}
               </button>
@@ -275,7 +291,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                 onClick={confirmDeleteNote}
-                className="h-8 px-3 rounded-lg bg-danger text-white text-sm hover:bg-danger/90 transition-colors cursor-pointer"
+                className="h-8 px-3 rounded-lg bg-danger text-on-danger text-sm hover:bg-danger/90 transition-colors cursor-pointer"
               >
                 {t(lang, "confirmYes")}
               </button>

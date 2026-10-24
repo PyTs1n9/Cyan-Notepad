@@ -1,8 +1,8 @@
 /**
  * Generic OpenAI-compatible chat adapter (`POST {baseUrl}/chat/completions`).
  * One implementation covers DeepSeek, Kimi, GLM, 通义, SiliconFlow, Ollama…
- * Create a preset by calling `createOpenAiCompatProvider` with the vendor's
- * base URL and model id — see `deepseek.ts`.
+ * The app no longer ships vendor presets: every instance of this adapter is
+ * built from a user-owned endpoint (see `endpoints.ts` / `chat/index.ts`).
  */
 import { AiError } from "../errors";
 import {
@@ -17,15 +17,23 @@ import type {
   ChatRequest,
   ChatTool,
   ChatToolCall,
+  ProviderModel,
+  ThinkingLevel,
 } from "./types";
+import { resolveModelTarget } from "../thinking";
+import { chatCompletionsUrl } from "./endpoints";
 
 export interface OpenAiCompatConfig {
   id: string;
   label: string;
   baseUrl: string;
-  model: string;
-  supportsReasoning?: boolean;
-  supportsTools?: boolean;
+  /**
+   * Models the user enabled for this endpoint. Order matters: the first entry
+   * is the provider's default target. An empty list is allowed — such a
+   * provider simply never appears in the picker.
+   */
+  models: ProviderModel[];
+  supportsTools: boolean;
 }
 
 interface SseDelta {
@@ -57,16 +65,22 @@ function toWireMessage(message: ChatMessage): Record<string, unknown> {
       content: message.content,
     };
   }
-  if (message.role === "assistant" && message.toolCalls?.length) {
-    return {
+  if (message.role === "assistant") {
+    const wire: Record<string, unknown> = {
       role: "assistant",
       content: message.content,
-      tool_calls: message.toolCalls.map((call) => ({
+    };
+    if (message.toolCalls?.length) {
+      wire.tool_calls = message.toolCalls.map((call) => ({
         id: call.id,
         type: "function",
         function: { name: call.name, arguments: call.arguments },
-      })),
-    };
+      }));
+    }
+    // Required by DeepSeek on every later request once `tools` is in play;
+    // ignored otherwise, so replaying it unconditionally is safe.
+    if (message.reasoning) wire.reasoning_content = message.reasoning;
+    return wire;
   }
   return { role: message.role, content: message.content };
 }
@@ -140,15 +154,24 @@ function mergeToolCallFragments(
 const EMPTY_COMPLETION_DETAIL =
   "empty completion — 输出可能被 max_tokens 或模型思考过程耗尽，请提高 max_tokens 后重试";
 
+/**
+ * Order used when the caller names no model: the first enabled model of the
+ * endpoint is the default. Kept as a named constant so the fallback is obvious
+ * at the one place it happens.
+ */
 export function createOpenAiCompatProvider(
   config: OpenAiCompatConfig,
 ): ChatProvider {
-  const { id, label, baseUrl, model, supportsReasoning, supportsTools } = config;
-  const endpoint = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const { id, label, baseUrl, models, supportsTools } = config;
+  const endpoint = chatCompletionsUrl(baseUrl);
+  const defaultModel = models[0]?.id ?? "";
+  const resolve = (level: ThinkingLevel, model?: string) =>
+    resolveModelTarget(models, defaultModel, level, model);
 
   async function stream(request: ChatRequest): Promise<string> {
     const {
       apiKey,
+      model: requestedModel,
       messages,
       temperature = 0.3,
       maxTokens,
@@ -158,10 +181,17 @@ export function createOpenAiCompatProvider(
       tools,
       onToolCalls,
       onFinish,
+      thinking,
+      reasoningEffort,
+      responseFormat,
     } = request;
     if (!apiKey) throw new AiError("missing-key");
 
     const wireTools = tools?.length ? toWireTools(tools) : undefined;
+    // The caller (resolveTarget) already decided whether this model accepts
+    // reasoning fields: absent means "send nothing", which is different from
+    // "disabled" on servers that reject unknown top-level fields.
+    const wireThinking = thinking;
     let response: Response;
     try {
       response = await httpFetch(endpoint, {
@@ -171,12 +201,15 @@ export function createOpenAiCompatProvider(
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model,
+          model: requestedModel ?? defaultModel,
           messages: messages.map(toWireMessage),
           stream: Boolean(onDelta || onReasoning),
           ...(wireTools ? { tools: wireTools } : {}),
           ...(temperature !== undefined ? { temperature } : {}),
           ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          ...(wireThinking ? { thinking: { type: wireThinking } } : {}),
+          ...(wireThinking === "enabled" && reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+          ...(responseFormat === "json" ? { response_format: { type: "json_object" } } : {}),
         }),
         signal,
       });
@@ -274,9 +307,14 @@ export function createOpenAiCompatProvider(
    * `stream`: a tiny max_tokens can be consumed entirely by reasoning tokens,
    * leaving an empty content that would be misreported as a bad response.
    * HTTP 200 alone means the key authenticated, which is all we need.
+   *
+   * The settings page no longer calls this: "模型搜索" (`GET /models`) already
+   * proves address + key, and it produces the list it needs. Kept because the
+   * adapter contract promises it and custom adapters may still use it.
    */
   async function testKey(apiKey: string, signal?: AbortSignal): Promise<void> {
     if (!apiKey) throw new AiError("missing-key");
+    if (!defaultModel) throw new AiError("bad-response", "no model enabled");
 
     let response: Response;
     try {
@@ -287,7 +325,7 @@ export function createOpenAiCompatProvider(
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model,
+          model: defaultModel,
           messages: [{ role: "user", content: "ping" }],
           max_tokens: 4,
           temperature: 0,
@@ -308,9 +346,10 @@ export function createOpenAiCompatProvider(
     id,
     label,
     kind: "openai-compat",
-    model,
-    supportsReasoning: supportsReasoning ?? false,
-    supportsTools: supportsTools ?? false,
+    model: defaultModel,
+    models,
+    supportsTools,
+    resolveTarget: resolve,
     stream,
     testKey,
   };

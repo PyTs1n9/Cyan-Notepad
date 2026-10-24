@@ -1,23 +1,28 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { AlignLeft, Trash2, Circle, Check, CheckCircle2, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, Pin, PinOff, ListPlus } from "lucide-react";
+import { AlignLeft, Trash2, Circle, Check, CheckCircle2, Flag, GripVertical, CalendarDays, X, ChevronLeft, ChevronRight, Pin, PinOff, ListPlus } from "lucide-react";
 import { useTodoStore } from "@/stores/todoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
-import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import { subscribeTodoIntent, type TodoIntent } from "@/utils/todoIntent";
 import TodoStrip from "@/components/Todo/TodoStrip";
 import TodoDescriptionCard from "@/components/Todo/TodoDescriptionCard";
+import EmptyState from "@/components/Layout/EmptyState";
+import { dispatchPortalAction } from "@/utils/portalActions";
 import type { Todo } from "@/types";
 
 type Priority = "low" | "medium" | "high";
 type CalendarView = "day" | "month" | "year";
 type CalendarMotion = "next" | "prev" | "zoomIn" | "zoomOut";
 
-const priorityColors: Record<Priority, string> = {
-  low: "bg-blue-100 text-blue-700",
-  medium: "bg-yellow-100 text-yellow-700",
-  high: "bg-red-100 text-red-700",
+/** Priority is one flag, tinted by token. A text pill ("low/medium/high") used to
+ *  sit here and cost ~44px of every row's trailing space for a fact the colour
+ *  already carries; token tints also survive the dark theme, which the old
+ *  `bg-blue-100` blocks did not. */
+const priorityTone: Record<Priority, string> = {
+  low: "text-text-muted",
+  medium: "text-warning",
+  high: "text-danger",
 };
 
 const priorityCycle: Record<Priority, Priority> = {
@@ -93,7 +98,8 @@ const getYearRange = (date: Date) => {
 };
 
 const TodoView: React.FC = () => {
-  const { todos, activeListId, filter, priorityFilter, addSubtask, toggleExpanded, toggleTodo, deleteTodo, updateTodo, togglePinned, setFilter, setPriorityFilter, reorderTodos } = useTodoStore();
+  // Filters are owned by TodoStrip now; this view only reads them.
+  const { todos, activeListId, filter, priorityFilter, addSubtask, toggleExpanded, toggleTodo, deleteTodo, updateTodo, togglePinned, reorderTodos } = useTodoStore();
   const lang = useSettingsStore((s) => s.lang);
   const listTodos = todos.filter((todo) => todo.listId === activeListId);
   const topLevelTodos = listTodos.filter((todo) => !todo.parentId);
@@ -133,22 +139,6 @@ const TodoView: React.FC = () => {
   const dragTodoIdRef = useRef<string | null>(null);
   const dragOverTodoIdRef = useRef<string | null>(null);
   const dragOverPositionRef = useRef<"before" | "after">("before");
-
-  useEffect(() => {
-    const handlePortalAction = (event: Event) => {
-      const action = (event as CustomEvent<PortalAction>).detail;
-      if (action === "filter-todos-all") {
-        setFilter("all");
-        setPriorityFilter("all");
-      } else if (action === "filter-todos-active") {
-        setFilter("active");
-      } else if (action === "filter-todos-completed") {
-        setFilter("completed");
-      }
-    };
-    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, [setFilter, setPriorityFilter]);
 
   const confirmDeleteTodo = () => {
     if (!deleteConfirmTodo) return;
@@ -465,11 +455,13 @@ const TodoView: React.FC = () => {
       <TodoStrip />
 
       {/* Todo List */}
-      {/* Flush with the shell card — the rows carry their own chips, so a second
-          frame here only added a border inside a border. */}
-      <div className="relative flex-1 min-h-0 overflow-hidden">
-        <div className="h-full overflow-y-auto px-2 pb-3 pt-1.5">
-        <div className="space-y-0.5" ref={listRef}>
+      {/* The list sits on its own recessed sheet inside the card: at 8px of row
+          padding the rows need an edge to stop against, otherwise they read as
+          loose chips floating on the frosted card. The sheet is the scroll
+          container too, so its rounded corners clip the rows for free. */}
+      <div className="min-h-0 flex-1 px-2.5 pb-2.5 pt-2">
+        <div className="h-full overflow-y-auto rounded-xl border border-border/45 bg-bg-secondary/20 px-1.5 py-1.5">
+        <div ref={listRef}>
           {filteredTodos.map((todo, index) => {
             const isDragging = dragIndex === index;
             const isDragOver = dragOverIndex === index && dragIndex !== index;
@@ -480,12 +472,11 @@ const TodoView: React.FC = () => {
             const doneSubtasks = subtasks.filter((subtask) => subtask.completed).length;
             const isExpanded = hasSubtasks && Boolean(todo.expanded);
             return (
-            <div key={todo.id} className="todo-task-group">
+            <div key={todo.id} className="todo-task-group border-b border-border/55 last:border-b-0">
             <div
               data-todo-row-id={todo.id}
-              className={`todo-task-row group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5
-                ${todo.completed ? "opacity-60" : "hover:bg-bg-hover"}
-                ${isDragging ? "opacity-30" : ""}
+              className={`todo-task-row group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2
+                ${isDragging ? "opacity-30" : "hover:bg-bg-hover"}
                 ${isDragOver ? "bg-accent-light/35" : ""}`}
             >
               {isDragOver && dragOverPosition && (
@@ -494,32 +485,39 @@ const TodoView: React.FC = () => {
                   className={`drag-insertion-line drag-insertion-line--${dragOverPosition}`}
                 />
               )}
-              {!todo.pinned && (
-                <GripVertical
-                  size={14}
-                  className="flex-shrink-0 cursor-grab select-none text-text-muted opacity-30 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
-                  onMouseDown={(e) => handleDragStart(e, index)}
-                />
-              )}
-              {todo.pinned && <Pin size={14} className="flex-shrink-0 text-accent" />}
-              {/* 固定宽度的展开位，保证有无子待办时勾选框都对齐 */}
-              <div className="flex w-4 flex-shrink-0 items-center justify-center">
-                {hasSubtasks && (
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(todo.id)}
-                    className="flex h-4 w-4 cursor-pointer items-center justify-center rounded text-text-muted
-                      transition-colors hover:bg-bg-hover hover:text-text-primary"
-                    title={isExpanded ? t(lang, "collapseSubtasks") : t(lang, "expandSubtasks")}
-                    aria-expanded={isExpanded}
-                    aria-label={isExpanded ? t(lang, "collapseSubtasks") : t(lang, "expandSubtasks")}
-                  >
-                    <ChevronRight
-                      size={13}
-                      className={`transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
-                    />
-                  </button>
+              {/* 把手与展开位合成一个「行前导」簇：簇内不留间距，簇右边缘再内收
+                  6px，把把手到勾选框的间距从 40.5px 收到 24.5px。簇外的行间距
+                  gap-2.5 保持不变，右侧按钮组因此不受影响。
+                  改这两个值时必须同步下面描述容器 ml-[58px] 与子任务竖线 ml-[58px]
+                  的算式：10 + 14 + 0 + 16 - 6 = 34（簇 margin box 右缘）。 */}
+              <div className="flex flex-shrink-0 items-center gap-0 -mr-1.5">
+                {!todo.pinned && (
+                  <GripVertical
+                    size={14}
+                    className="flex-shrink-0 cursor-grab select-none text-text-muted opacity-30 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+                    onMouseDown={(e) => handleDragStart(e, index)}
+                  />
                 )}
+                {todo.pinned && <Pin size={14} className="flex-shrink-0 text-accent" />}
+                {/* 固定宽度的展开位，保证有无子待办时勾选框都对齐 */}
+                <div className="flex w-4 flex-shrink-0 items-center justify-center">
+                  {hasSubtasks && (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(todo.id)}
+                      className="flex h-4 w-4 cursor-pointer items-center justify-center rounded text-text-muted
+                        transition-colors hover:bg-bg-hover hover:text-text-primary"
+                      title={isExpanded ? t(lang, "collapseSubtasks") : t(lang, "expandSubtasks")}
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? t(lang, "collapseSubtasks") : t(lang, "expandSubtasks")}
+                    >
+                      <ChevronRight
+                        size={13}
+                        className={`transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
+                      />
+                    </button>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => toggleTodo(todo.id)}
@@ -550,82 +548,70 @@ const TodoView: React.FC = () => {
               ) : (
                 <span
                   onClick={() => startEditing(todo.id, todo.title)}
-                  className={`flex-1 text-sm cursor-text px-1 py-0.5 rounded hover:bg-bg-hover transition-colors
-                    ${todo.completed ? "line-through text-text-muted" : "text-text-primary"}`}
+                  className={`min-w-0 flex-1 cursor-text truncate rounded px-1 py-0.5 text-sm transition-colors hover:bg-bg-hover
+                    ${todo.completed ? "text-text-secondary line-through" : "text-text-primary"}`}
                   title={todo.title}
                 >
                   {todo.title}
                 </span>
               )}
 
-              {hasSubtasks && (
-                <span
-                  className="flex-shrink-0 rounded-full bg-bg-secondary px-1.5 py-0.5 text-[11px] leading-none
-                    tabular-nums text-text-muted"
-                  title={`${doneSubtasks}/${subtasks.length} ${t(lang, "subtask")}`}
-                >
-                  {doneSubtasks}/{subtasks.length}
-                </span>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setDescriptionEditorId(todo.id)}
-                className={`h-6 w-6 rounded-full flex items-center justify-center transition-all cursor-pointer
-                  ${Boolean(todo.description?.trim())
-                    ? "text-accent hover:bg-accent-light"
-                    : "text-text-muted opacity-0 group-hover:opacity-100 hover:bg-bg-hover hover:text-accent"}`}
-                title={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
-                aria-label={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
-              >
-                <AlignLeft size={12} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAddSubtask(todo.id)}
-                className="h-6 w-6 rounded-full flex items-center justify-center text-text-muted
-                  opacity-0 group-hover:opacity-100 transition-all cursor-pointer
-                  hover:bg-bg-hover hover:text-accent"
-                title={t(lang, "addSubtask")}
-                aria-label={t(lang, "addSubtask")}
-              >
-                <ListPlus size={12} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => togglePinned(todo.id)}
-                className={`h-6 w-6 rounded-full flex items-center justify-center transition-all cursor-pointer
-                  ${todo.pinned
-                    ? "text-accent bg-accent-light"
-                    : "text-text-muted opacity-0 group-hover:opacity-100 hover:bg-bg-hover hover:text-accent"}`}
-                title={todo.pinned ? t(lang, "unpinTodo") : t(lang, "pinTodo")}
-                aria-label={todo.pinned ? t(lang, "unpinTodo") : t(lang, "pinTodo")}
-              >
-                {todo.pinned ? <PinOff size={12} /> : <Pin size={12} />}
-              </button>
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={(e) => toggleCalendar(todo.id, todo.dueDate, e.currentTarget)}
-                  className={`h-6 min-w-[74px] px-2 rounded-full border text-xs flex items-center justify-center gap-1
-                    cursor-pointer transition-colors
-                    ${todo.dueDate
-                      ? isOverdue
-                        ? "border-danger/40 bg-danger/10 text-danger"
-                        : "border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover"
-                      : "border-border bg-bg-primary text-text-muted hover:bg-bg-secondary"}`}
-                  title={todo.dueDate ? t(lang, "dueDate") : t(lang, "noDueDate")}
-                  aria-expanded={openCalendarTodoId === todo.id}
-                  aria-label={t(lang, "dueDate")}
-                >
-                  <CalendarDays size={12} className="flex-shrink-0" />
-                  <span className="leading-none">
-                    {todo.dueDate ? formatDateInputValue(todo.dueDate, lang) : t(lang, "noDueDate")}
+              {/* Subtask progress. It used to be a pill wedged between the title
+                  and the date, which meant it floated wherever the title happened
+                  to end and moved from row to row. A fixed 34px slot, right
+                  aligned against the date column, puts every counter in the same
+                  place and lets the number itself be plain - a pill out there in
+                  the middle of the row read as a button nobody could press. */}
+              <span className="flex w-[34px] flex-shrink-0 justify-end">
+                {hasSubtasks && (
+                  <span
+                    className="text-[11px] leading-none tabular-nums text-text-secondary"
+                    title={`${doneSubtasks}/${subtasks.length} ${t(lang, "subtask")}`}
+                    aria-label={`${doneSubtasks}/${subtasks.length} ${t(lang, "subtask")}`}
+                  >
+                    {doneSubtasks}/{subtasks.length}
                   </span>
-                </button>
+                )}
+              </span>
+
+              {/* Fixed-width date slot, sitting to the left of the icon cluster.
+                  The slot is always 96px - wide enough for the longest string the
+                  formatter can produce ("2025/10/28") - whether or not a date
+                  exists: with a shrink-to-fit chip, every row that had a
+                  deadline pushed the actions sideways and the right edge went
+                  ragged. Left-aligned, not right: the formatter drops the year
+                  for dates in the current year, so right-aligning would slide
+                  "10/28" and "2025/10/28" to different starting points inside the
+                  same column. */}
+              <div className="flex w-[96px] flex-shrink-0 items-center justify-start gap-1">
+                {todo.dueDate ? (
+                  <button
+                    type="button"
+                    onClick={(e) => toggleCalendar(todo.id, todo.dueDate, e.currentTarget)}
+                    className={`flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-xs tabular-nums transition-colors
+                      ${isOverdue ? "text-danger hover:bg-danger/10" : "text-text-secondary hover:bg-bg-hover"}`}
+                    title={t(lang, "dueDate")}
+                    aria-expanded={openCalendarTodoId === todo.id}
+                    aria-label={t(lang, "dueDate")}
+                  >
+                    <CalendarDays size={12} className="flex-shrink-0" />
+                    <span className="whitespace-nowrap leading-none">
+                      {formatDateInputValue(todo.dueDate, lang)}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => toggleCalendar(todo.id, todo.dueDate, e.currentTarget)}
+                    className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-muted
+                      transition-all hover:bg-bg-hover hover:text-accent"
+                    title={t(lang, "noDueDate")}
+                    aria-expanded={openCalendarTodoId === todo.id}
+                    aria-label={t(lang, "dueDate")}
+                  >
+                    <CalendarDays size={12} />
+                  </button>
+                )}
                 {openCalendarTodoId === todo.id && createPortal(
                   <div
                     ref={calendarRef}
@@ -696,7 +682,7 @@ const TodoView: React.FC = () => {
                                 }}
                                 className={`h-7 rounded-md text-xs transition-colors cursor-pointer
                                   ${isSelected
-                                    ? "bg-accent text-white"
+                                    ? "bg-accent text-on-accent"
                                     : isToday
                                       ? "bg-accent-light text-accent"
                                       : day.isCurrentMonth
@@ -728,7 +714,7 @@ const TodoView: React.FC = () => {
                               }}
                               className={`h-9 rounded-md text-xs transition-colors cursor-pointer
                                 ${isSelectedMonth
-                                  ? "bg-accent text-white"
+                                  ? "bg-accent text-on-accent"
                                   : isCurrentMonth
                                     ? "bg-accent-light text-accent"
                                     : "text-text-primary hover:bg-bg-hover"}`}
@@ -755,7 +741,7 @@ const TodoView: React.FC = () => {
                               }}
                               className={`h-9 rounded-md text-xs transition-colors cursor-pointer
                                 ${isSelectedYear
-                                  ? "bg-accent text-white"
+                                  ? "bg-accent text-on-accent"
                                   : isCurrentYear
                                     ? "bg-accent-light text-accent"
                                     : "text-text-primary hover:bg-bg-hover"}`}
@@ -767,32 +753,84 @@ const TodoView: React.FC = () => {
                       </div>
                     )}
                     </div>
+                    {/* Clearing moved in here when the row-level × left: the
+                        date cell is a fixed 84px slot, and a second button
+                        inside it would have widened every row again. */}
+                    {todo.dueDate && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateTodo(todo.id, { dueDate: undefined });
+                          setOpenCalendarTodoId(null);
+                        }}
+                        className="mt-2 flex w-full items-center justify-center gap-1 rounded-md border border-border/60 py-1
+                          text-[11px] text-text-muted transition-colors hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+                      >
+                        <X size={11} />
+                        {t(lang, "clearDueDate")}
+                      </button>
+                    )}
                   </div>,
                   document.body,
                 )}
-                {todo.dueDate && (
-                  <button
-                    onClick={() => {
-                      updateTodo(todo.id, { dueDate: undefined });
-                      if (openCalendarTodoId === todo.id) setOpenCalendarTodoId(null);
-                    }}
-                    className="h-6 w-6 rounded-full flex items-center justify-center text-text-muted
-                      hover:bg-bg-hover hover:text-danger transition-colors cursor-pointer"
-                    title={t(lang, "clearDueDate")}
-                    aria-label={t(lang, "clearDueDate")}
-                  >
-                    <X size={12} />
-                  </button>
-                )}
               </div>
 
-              {/* 点击优先级标签直接循环切换 */}
+              {/* The icon cluster follows the date slot, so its left edge is a
+                  fixed distance from the row's end on every row. */}
+              <div className="flex flex-shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setDescriptionEditorId(todo.id)}
+                  className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full transition-all
+                    ${Boolean(todo.description?.trim())
+                      ? "text-accent hover:bg-accent-light"
+                      : "text-text-muted hover:bg-bg-hover hover:text-accent"}`}
+                  title={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
+                  aria-label={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
+                >
+                  <AlignLeft size={12} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleAddSubtask(todo.id)}
+                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-text-muted
+                    transition-all hover:bg-bg-hover hover:text-accent"
+                  title={t(lang, "addSubtask")}
+                  aria-label={t(lang, "addSubtask")}
+                >
+                  <ListPlus size={12} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => togglePinned(todo.id)}
+                  className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full transition-all
+                    ${todo.pinned
+                      ? "text-accent bg-accent-light"
+                      : "text-text-muted hover:bg-bg-hover hover:text-accent"}`}
+                  title={todo.pinned ? t(lang, "unpinTodo") : t(lang, "pinTodo")}
+                  aria-label={todo.pinned ? t(lang, "unpinTodo") : t(lang, "pinTodo")}
+                >
+                  {todo.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                </button>
+              </div>
+
+              {/* 点击优先级旗直接循环切换。颜色走 token（低=中性、中=warning、高=danger），
+                  在深色主题下不会再出现 `bg-*-100` 那种亮块。 */}
               <button
+                type="button"
                 onClick={() => cyclePriority(todo.id, todo.priority)}
-                className={`px-2 py-0.5 rounded-full text-xs cursor-pointer transition-colors hover:opacity-80
-                  ${priorityColors[todo.priority]}`}
+                className={`flex h-6 w-6 flex-shrink-0 cursor-pointer items-center justify-center rounded-md
+                  transition-colors hover:bg-bg-hover ${priorityTone[todo.priority]}`}
+                title={t(lang, todo.priority === "low" ? "low" : todo.priority === "medium" ? "medium" : "high")}
+                aria-label={t(lang, todo.priority === "low" ? "low" : todo.priority === "medium" ? "medium" : "high")}
               >
-                {t(lang, todo.priority === "low" ? "low" : todo.priority === "medium" ? "medium" : "high")}
+                <Flag
+                  size={12}
+                  className={todo.priority === "low" ? "opacity-45" : ""}
+                  fill={todo.priority === "high" ? "currentColor" : "none"}
+                />
               </button>
 
               <button
@@ -801,7 +839,7 @@ const TodoView: React.FC = () => {
                   setDeleteConfirmTodo(todo);
                 }}
                 disabled={todo.pinned}
-                className={`opacity-0 group-hover:opacity-100 transition-all
+                className={`transition-all
                   ${todo.pinned
                     ? "text-text-muted/35 cursor-not-allowed"
                     : "text-text-muted hover:text-danger cursor-pointer"}`}
@@ -812,10 +850,10 @@ const TodoView: React.FC = () => {
               </button>
             </div>
 
-            {/* The body of the task, indented to the title column (px-2.5 10 +
-                grip 14 + gap 10 + slot 16 + gap 10 + toggle 28 + gap 10 = 98) so
-                it reads as this task's own text, not as a sibling row. */}
-            <div className="ml-[98px] mr-2 pb-0.5">
+            {/* The body of the task hangs off the same rail as the subtasks
+                (58px = the toggle's centre), so description and children read as
+                two faces of one task instead of a card parked under a row. */}
+            <div className="ml-[58px] mr-2 pb-0.5">
               <TodoDescriptionCard
                 description={todo.description}
                 completed={todo.completed}
@@ -826,15 +864,15 @@ const TodoView: React.FC = () => {
             </div>
 
             {isExpanded && (
-              // The guide line sits at the parent circle's centre (px-2.5 + grip 14
-              // + gap 10 + expand slot 16 + gap 10 + half of the 28px toggle = 74),
-              // so the branch visually hangs off the box it belongs to.
-              <div className="todo-subtask-list ml-[74px] mt-0.5 mb-1 space-y-0.5 border-l border-border/60 pl-3">
+              // The guide line sits at the parent circle's centre (leading cluster
+              // right edge 34 + gap 10 + half of the 28px toggle = 58), so the
+              // branch visually hangs off the box it belongs to.
+              <div className="todo-subtask-list ml-[58px] mt-0.5 mb-1 space-y-0.5 border-l border-border/60 pl-3">
                 {subtasks.map((subtask) => (
                   <div
                     key={subtask.id}
                     data-subtask-row-id={subtask.id}
-                    className="group/sub flex items-center gap-2 rounded-lg py-1 pr-2 transition-colors hover:bg-bg-hover/60"
+                    className="group/sub flex items-center gap-2 rounded-lg py-1.5 pr-2 transition-colors hover:bg-bg-hover/60"
                   >
                     {/* Subtasks are a different rank of the same thing: the round
                         toggle belongs to the parent item, a square one to a child. */}
@@ -848,7 +886,7 @@ const TodoView: React.FC = () => {
                       <span
                         className={`flex h-3 w-3 items-center justify-center rounded-[3px] border transition-colors ${
                           subtask.completed
-                            ? "border-success bg-success text-white"
+                            ? "border-success bg-success text-on-success"
                             : "border-text-muted/70 bg-transparent"
                         }`}
                       >
@@ -875,7 +913,7 @@ const TodoView: React.FC = () => {
                       <span
                         onClick={() => startEditing(subtask.id, subtask.title)}
                         className={`flex-1 cursor-text rounded px-1 py-0.5 text-[13px] transition-colors hover:bg-bg-hover
-                          ${subtask.completed ? "text-text-muted line-through" : "text-text-secondary"}`}
+                          text-text-secondary ${subtask.completed ? "line-through" : ""}`}
                         title={subtask.title}
                       >
                         {subtask.title || t(lang, "subtask")}
@@ -886,7 +924,7 @@ const TodoView: React.FC = () => {
                       type="button"
                       onClick={() => deleteTodo(subtask.id)}
                       className="h-6 w-6 flex-shrink-0 flex items-center justify-center rounded-full text-text-muted
-                        opacity-0 transition-all group-hover/sub:opacity-100 hover:bg-bg-hover hover:text-danger cursor-pointer"
+                        transition-all hover:bg-bg-hover hover:text-danger cursor-pointer"
                       title={t(lang, "deleteSubtask")}
                       aria-label={t(lang, "deleteSubtask")}
                     >
@@ -901,15 +939,33 @@ const TodoView: React.FC = () => {
           })}
         </div>
         {filteredTodos.length === 0 && (
-          <div className="flex min-h-full flex-col items-center justify-center py-16 text-text-muted">
-            <CheckCircle2 size={48} className="mb-3 opacity-30" />
-            <p className="text-sm">
-              {filter === "completed"
-                ? t(lang, "noCompleted")
-                : filter === "active"
-                  ? t(lang, "allDone")
-                  : t(lang, "noTodos")}
-            </p>
+          // A blank sheet is still a sheet: the rule that separates two tasks
+          // keeps going below the prompt, so an empty list reads as an empty
+          // notebook page rather than a hole in the card. The fill is a gradient
+          // so it always reaches the bottom edge, whatever the panel height.
+          <div className="flex min-h-full flex-col">
+            <EmptyState
+              icon={<CheckCircle2 size={18} />}
+              title={
+                topLevelTodos.length === 0
+                  ? t(lang, "noTodos")
+                  : filter === "completed"
+                    ? t(lang, "noCompleted")
+                    : filter === "active"
+                      ? t(lang, "allDone")
+                      : t(lang, "noTodos")
+              }
+              description={topLevelTodos.length === 0 ? t(lang, "noTodosHint") : undefined}
+              action={
+                topLevelTodos.length === 0
+                  ? { label: t(lang, "newTodo"), onClick: () => dispatchPortalAction("new-todo") }
+                  : undefined
+              }
+            />
+            {/* 96px, not 160: the fill only has to reach the bottom of a normal
+                card. A taller floor pushed the prompt into a scrollbar on short
+                windows, which is the one thing an empty state must never do. */}
+            <div aria-hidden="true" className="todo-rule-fill min-h-[96px] flex-1" />
           </div>
         )}
         </div>
@@ -955,7 +1011,7 @@ const TodoView: React.FC = () => {
               </button>
               <button
                 onClick={confirmDeleteTodo}
-                className="h-8 px-3 rounded-lg bg-danger text-white text-sm hover:bg-danger/90 transition-colors cursor-pointer"
+                className="h-8 px-3 rounded-lg bg-danger text-on-danger text-sm hover:bg-danger/90 transition-colors cursor-pointer"
               >
                 {t(lang, "confirmYes")}
               </button>

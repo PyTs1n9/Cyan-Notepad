@@ -6,6 +6,7 @@ import {
   useSettingsStore,
 } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
+import EmptyState from "@/components/Layout/EmptyState";
 import {
   emptyNoteTrash,
   listTrashNotes,
@@ -200,7 +201,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
                 onClose();
                 onOpenSettings();
               }}
-              className="mt-1 h-8 rounded-lg bg-accent px-3 text-sm text-white transition-colors hover:bg-accent-hover cursor-pointer"
+              className="mt-1 h-8 rounded-lg bg-accent px-3 text-sm text-on-accent transition-colors hover:bg-accent-hover cursor-pointer"
             >
               {t(lang, "trashOpenSettings")}
             </button>
@@ -224,15 +225,11 @@ const TrashModal: React.FC<TrashModalProps> = ({
               {loading && entries.length === 0 ? (
                 <p className="px-3 py-6 text-center text-xs text-text-muted">{t(lang, "trashLoading")}</p>
               ) : entries.length === 0 ? (
-                <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-bg-secondary text-text-muted">
-                    <Trash2 size={18} />
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-text-primary">{t(lang, "trashEmpty")}</div>
-                  <p className="max-w-[320px] text-xs leading-relaxed text-text-muted">
-                    {t(lang, "trashEmptyHint")}
-                  </p>
-                </div>
+                <EmptyState
+                  icon={<Trash2 size={17} />}
+                  title={t(lang, "trashEmpty")}
+                  description={t(lang, "trashEmptyHint")}
+                />
               ) : (
                 <div className="space-y-1.5">
                   {entries.map((entry) => (
@@ -299,7 +296,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
                   <button
                     type="button"
                     onClick={() => void handleConfirmedAction()}
-                    className="h-8 rounded-lg bg-danger px-3 text-sm text-white transition-colors hover:bg-danger/90 cursor-pointer"
+                    className="h-8 rounded-lg bg-danger px-3 text-sm text-on-danger transition-colors hover:bg-danger/90 cursor-pointer"
                   >
                     {t(lang, "confirmYes")}
                   </button>

@@ -3,7 +3,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { Pin, PinOff, X } from "lucide-react";
 import {
-  cleanupUnusedImageAttachments,
   loadNoteContent,
   loadNoteList,
   loadSettings,
@@ -15,7 +14,8 @@ import {
   MAX_STICKY_OPACITY,
   normalizeStickyOpacity,
 } from "@/stores/settingsStore";
-import type { ThemeType, CustomColors } from "@/stores/settingsStore";
+import type { ThemeType, CustomColors, LangType } from "@/stores/settingsStore";
+import { t } from "@/utils/i18n";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderStoredNoteContent, stripMarkdownSyntaxHighlighting } from "@/utils/markdown";
 
@@ -33,6 +33,9 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(true);
   const [fontSize, setFontSize] = useState<number>(DEFAULT_FONT);
   const [stickyOpacity, setStickyOpacity] = useState(DEFAULT_STICKY_OPACITY);
+  // The empty-note hint is painted by CSS `::before`, but the text lives in the
+  // i18n table like every other string, so this window has to know the language.
+  const [lang, setLang] = useState<LangType>("zh");
   const editorRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
@@ -59,6 +62,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
         const customColors = (settings.customColors as CustomColors | null) || null;
         applyTheme(theme, customColors);
         setStickyOpacity(normalizeStickyOpacity(settings.stickyOpacity));
+        setLang((settings.lang as LangType) === "en" ? "en" : "zh");
       } catch (e) {
         console.error("Failed to load theme for sticky:", e);
       }
@@ -138,7 +142,6 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
     const savePromise = (async () => {
       try {
         await saveNoteContent(noteId, content);
-        await cleanupUnusedImageAttachments();
         // Notify main editor only when the sticky note was actually edited.
         selfSaveRef.current = true;
         await emit("sticky:note-saved", { noteId, content });
@@ -317,6 +320,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           onWheel={handleWheel}
           style={{ fontSize: `${fontSize}px` }}
           spellCheck={false}
+          data-placeholder={t(lang, "stickyEmptyHint")}
         />
       </div>
     </div>

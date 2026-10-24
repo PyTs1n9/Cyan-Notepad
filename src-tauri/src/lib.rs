@@ -8,9 +8,21 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 mod credentials;
 mod pdf_export;
+mod storage;
+mod window_bg;
 
 // Global flag: whether we are truly quitting the app
 static QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// Stable tray id. A fixed id is what makes it possible to rebuild the tray
+/// menu later (`set_tray_language`), instead of being stuck with the labels
+/// that were baked in at setup time.
+const TRAY_ID: &str = "qing-main-tray";
+
+/// Fallback language before the frontend reports the persisted setting.
+/// Chinese is the product's primary language, and the frontend corrects this
+/// within the first frame after settings load.
+const DEFAULT_LANG: &str = "zh";
 
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -20,10 +32,46 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Tray menu labels for the two supported UI languages.
+///
+/// Kept in sync with `showWindow` / `quitApp` in `src/utils/i18n.ts` so the
+/// tray reads the same as the in-app wording.
+fn tray_labels(lang: &str) -> (&'static str, &'static str) {
+    if lang == "en" {
+        ("Show Window", "Quit Application")
+    } else {
+        ("显示窗口", "退出软件")
+    }
+}
+
+/// Builds the tray menu for a language. Shared by setup and by
+/// `set_tray_language` so the two paths can never drift apart.
+fn build_tray_menu(app: &tauri::AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let (show_label, quit_label) = tray_labels(lang);
+    let show_item = MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
+    Menu::with_items(app, &[&show_item, &quit_item])
+}
+
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     QUITTING.store(true, Ordering::Relaxed);
     app.exit(0);
+}
+
+/// Rebuilds the tray menu in `lang` ("zh" or "en").
+///
+/// The frontend calls this once on startup and again on every language change,
+/// so the tray never shows stale wording. Menu item ids stay identical, which
+/// keeps the existing `on_menu_event` handler valid.
+#[tauri::command]
+fn set_tray_language(app: tauri::AppHandle, lang: String) -> Result<(), String> {
+    let tray = app
+        .tray_by_id(TRAY_ID)
+        .ok_or_else(|| format!("tray icon `{TRAY_ID}` not found"))?;
+    let menu = build_tray_menu(&app, &lang).map_err(|error| error.to_string())?;
+    tray.set_menu(Some(menu)).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -46,23 +94,37 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             quit_app,
+            set_tray_language,
             credentials::encrypt_login_credentials,
             credentials::decrypt_login_credentials,
             credentials::encrypt_secret,
             credentials::decrypt_secret,
             pdf_export::export_pdf,
+            storage::storage_get_root,
+            storage::storage_set_root,
+            storage::storage_clear_root,
+            storage::storage_probe,
+            storage::storage_migrate,
+            storage::open_data_path,
+            window_bg::set_window_background,
         ])
         .setup(|app| {
             #[cfg(desktop)]
             app.deep_link().register("qing-notepad")?;
 
-            // Create tray menu
-            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            // Paint the surface in last session's colour before the first frame.
+            window_bg::apply_persisted(app.handle());
+
+            // `fs:scope` is deliberately narrow, so the directory the app will
+            // read from has to be allowed explicitly before the first frame.
+            storage::register_startup_roots(app.handle());
+
+            // Create tray menu in the fallback language; the frontend replaces
+            // it as soon as it knows the persisted `lang`.
+            let menu = build_tray_menu(app.handle(), DEFAULT_LANG)?;
 
             // Create tray icon
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Qing Notepad")
                 .menu(&menu)
@@ -104,3 +166,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

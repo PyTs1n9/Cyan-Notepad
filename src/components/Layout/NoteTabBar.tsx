@@ -14,6 +14,14 @@ interface TabContextMenuState {
   y: number;
 }
 
+interface NoteTabBarProps {
+  /**
+   * Export a specific note. The tab menu passes the right-clicked tab's id, so
+   * exporting never silently falls back to whichever tab happens to be active.
+   */
+  onExportNote?: (noteId: string) => void;
+}
+
 const TAB_MIN_WIDTH = 96;
 const TAB_MAX_WIDTH = 208;
 
@@ -53,7 +61,7 @@ const readTranslateX = (element: HTMLElement) => {
  * spring into the vacated slot. The strip therefore never shows an empty gap —
  * the dragged tab always occupies the slot it would land in.
  */
-const NoteTabBar = () => {
+const NoteTabBar = ({ onExportNote }: NoteTabBarProps) => {
   const lang = useSettingsStore((s) => s.lang);
   const notes = useNoteStore((s) => s.notes);
   const activeNoteId = useNoteStore((s) => s.activeNoteId);
@@ -240,7 +248,7 @@ const NoteTabBar = () => {
     event.stopPropagation();
     // Keep the menu inside the viewport when the tab strip is scrolled far right.
     const menuWidth = 176;
-    const menuHeight = 208;
+    const menuHeight = 252;
     setMenu({
       noteId,
       x: Math.min(event.clientX, window.innerWidth - menuWidth - 8),
@@ -752,6 +760,22 @@ const NoteTabBar = () => {
           data-shortcut-blocker="note-tab-menu"
           onMouseDown={(event) => event.stopPropagation()}
         >
+          {onExportNote && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className={menuItemClass}
+                onClick={() => {
+                  onExportNote(menuTab.id);
+                  setMenu(null);
+                }}
+              >
+                {t(lang, "exportFile")}
+              </button>
+              <div className="my-1 h-px bg-border" aria-hidden="true" />
+            </>
+          )}
           <button
             type="button"
             role="menuitem"

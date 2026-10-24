@@ -15,10 +15,33 @@ export const ACTIVITY_BAR_WIDTH = 48;
 /** Below this viewport width the shell tightens its margin and gutter. */
 export const SHELL_BREAKPOINT = 720;
 
-export const SHELL_PAD_WIDE = 10;
+/**
+ * Window margin and card-to-card gap.
+ *
+ * Both breakpoints carry the same numbers today: the shell settled on one tight
+ * 6px rhythm, which is also the narrow-screen value, so the breakpoint currently
+ * no longer changes the spacing. The pair of constants is kept so a narrower
+ * window can be tightened again without re-plumbing `getShellMetrics`.
+ *
+ * These two stay separate numbers even while equal: `pad` is the window edge
+ * margin applied by App.tsx, `gutter` is the physical width of the sash element
+ * between cards, and the drag math reads gutter / 2.
+ */
+export const SHELL_PAD_WIDE = 6;
 export const SHELL_PAD_NARROW = 6;
-export const SHELL_GUTTER_WIDE = 10;
+export const SHELL_GUTTER_WIDE = 6;
 export const SHELL_GUTTER_NARROW = 6;
+/**
+ * Vertical space between the title bar and the card row.
+ *
+ * Deliberately *not* the gutter: the sash between two cards is a drag handle,
+ * so gutter and top gap must stay independent — a change here cannot move the
+ * side gutters or the sash widths. The values currently mirror `SHELL_PAD_*`
+ * so the cards float with the same margin on all four sides; keep them in
+ * sync if the pad ever changes.
+ */
+export const SHELL_TOP_GAP_WIDE = 6;
+export const SHELL_TOP_GAP_NARROW = 6;
 export const BOX_RADIUS = 10;
 
 export interface ShellMetrics {
@@ -26,6 +49,8 @@ export interface ShellMetrics {
   pad: number;
   /** Gap between two cards, carried by the sash element itself. */
   gutter: number;
+  /** Vertical space above the card row, i.e. below the title bar. */
+  topGap: number;
 }
 
 export function getShellMetrics(viewportWidth: number): ShellMetrics {
@@ -33,6 +58,7 @@ export function getShellMetrics(viewportWidth: number): ShellMetrics {
   return {
     pad: narrow ? SHELL_PAD_NARROW : SHELL_PAD_WIDE,
     gutter: narrow ? SHELL_GUTTER_NARROW : SHELL_GUTTER_WIDE,
+    topGap: narrow ? SHELL_TOP_GAP_NARROW : SHELL_TOP_GAP_WIDE,
   };
 }
 

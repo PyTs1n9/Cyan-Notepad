@@ -1,5 +1,6 @@
 import React from "react";
 import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, Users } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import type { ViewType } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore } from "@/stores/aiStore";
@@ -26,6 +27,10 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   const setAlwaysOnTop = useSettingsStore((s) => s.setAlwaysOnTop);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
   const setAiSidebarOpen = useAiStore((s) => s.setSidebarOpen);
+  // `motion` already ships with the app; this only asks it to stop animating,
+  // it does not swap the indicator for a static one - the capsule must still be
+  // painted on the first frame.
+  const reduceMotion = useReducedMotion();
 
   const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
@@ -33,6 +38,18 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
     { view: "workspace", label: t(lang, "workspace"), icon: <Users size={22} strokeWidth={1.7} /> },
     { view: "canvas", label: t(lang, "canvas"), icon: <Images size={22} strokeWidth={1.7} /> },
   ];
+
+  // One element shared through `layoutId`: it travels between items instead of
+  // blinking out at the old one and in at the new one. Only the current page has
+  // it, which is also why the old 2px rail could go - a block *and* a rail was
+  // the same fact stated twice.
+  const indicator = (layoutId: string) => (
+    <motion.span
+      layoutId={layoutId}
+      className="activity-capsule absolute inset-0 rounded-lg"
+      transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 34, mass: 0.7 }}
+    />
+  );
 
   return (
     // No divider and no background of its own: the rail and the explorer beside
@@ -53,12 +70,14 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
               title={label}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              className={`relative flex h-11 w-11 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-default disabled:opacity-60 ${
-                active ? "bg-bg-active text-text-primary" : ""
+              // Same height as the four buttons below: at h-11 the icon baseline
+              // of the two groups sat 1px apart, which read as a misalignment.
+              className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-default disabled:opacity-60 ${
+                active ? "text-text-primary" : "text-text-muted"
               }`}
             >
-              {active && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent" />}
-              <span className="inline-flex">{icon}</span>
+              {active && indicator("activity-indicator")}
+              <span className="relative inline-flex">{icon}</span>
             </button>
           );
         })}
@@ -72,11 +91,13 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           aria-label={t(lang, "aiAssistant")}
           aria-pressed={aiSidebarOpen}
           className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
-            aiSidebarOpen ? "bg-bg-active text-accent" : "text-text-muted"
+            aiSidebarOpen ? "text-accent" : "text-text-muted"
           }`}
         >
-          {aiSidebarOpen && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent" />}
-          <Sparkles size={20} strokeWidth={1.7} />
+          {/* A toggle is not a page: it gets the same capsule but never joins the
+              sliding indicator, otherwise the two would fight over one element. */}
+          {aiSidebarOpen && <span className="activity-capsule absolute inset-0 rounded-lg" />}
+          <Sparkles size={20} strokeWidth={1.7} className="relative" />
         </button>
         <button
           type="button"
@@ -103,11 +124,11 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           aria-label={t(lang, alwaysOnTop ? "disableAlwaysOnTop" : "enableAlwaysOnTop")}
           aria-pressed={alwaysOnTop}
           className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
-            alwaysOnTop ? "bg-bg-active text-accent" : "text-text-muted"
+            alwaysOnTop ? "text-accent" : "text-text-muted"
           }`}
         >
-          {alwaysOnTop && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-accent" />}
-          <Pin size={20} strokeWidth={1.7} />
+          {alwaysOnTop && <span className="activity-capsule absolute inset-0 rounded-lg" />}
+          <Pin size={20} strokeWidth={1.7} className="relative" />
         </button>
       </div>
     </aside>

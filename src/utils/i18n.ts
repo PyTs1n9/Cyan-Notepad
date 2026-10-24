@@ -1,6 +1,6 @@
 import type { LangType } from "@/stores/settingsStore";
 
-type TranslationKeys = {
+export type TranslationKeys = {
   todo: string;
   notepad: string;
   imageHost: string;
@@ -101,7 +101,6 @@ type TranslationKeys = {
   allNotes: string;
   uncategorizedNotes: string;
   newCategory: string;
-  categoryNamePrompt: string;
   renameCategory: string;
   deleteCategory: string;
   newSubfolder: string;
@@ -326,6 +325,9 @@ type TranslationKeys = {
   noCompleted: string;
   allDone: string;
   noTodos: string;
+  noTodosHint: string;
+  searchNoResults: string;
+  searchNoResultsHint: string;
   pinTodo: string;
   unpinTodo: string;
   subtask: string;
@@ -341,7 +343,6 @@ type TranslationKeys = {
   addTodoDescription: string;
   editTodoDescription: string;
   todoDescriptionPlaceholder: string;
-  descriptionSaveHint: string;
   low: string;
   medium: string;
   high: string;
@@ -361,6 +362,26 @@ type TranslationKeys = {
   settingsTitle: string;
   settingsBasic: string;
   settingsTheme: string;
+  settingsStorage: string;
+  storageCurrent: string;
+  storageBadgeDefault: string;
+  storageBadgeCustom: string;
+  storageUsage: string;
+  storageChangeDir: string;
+  storageRestoreDefault: string;
+  storageUnavailable: string;
+  storageMigrateTitle: string;
+  storageMigrateBody: string;
+  storageMigrating: string;
+  storageMigratingStart: string;
+  storageMigrateDone: string;
+  storageMigrateFailed: string;
+  storageRestoreMigrateBody: string;
+  storageAdoptBody: string;
+  storageNotALibrary: string;
+  storageReloading: string;
+  dialogConfirm: string;
+  dialogCancel: string;
   themeColor: string;
   darkTheme: string;
   blueTheme: string;
@@ -455,9 +476,8 @@ type TranslationKeys = {
   undo: string;
   redo: string;
   insertTable: string;
-  tools: string;
-  portal: string;
-  help: string;
+  insertImage: string;
+  insertImageFailed: string;
   about: string;
   aboutTitle: string;
   version: string;
@@ -521,6 +541,7 @@ type TranslationKeys = {
   pinSticky: string;
   unpinSticky: string;
   stickyNote: string;
+  stickyEmptyHint: string;
   pinNote: string;
   unpinNote: string;
   tileNoNote: string;
@@ -549,7 +570,6 @@ type TranslationKeys = {
   aiKeyCleared: string;
   aiKeyMissing: string;
   aiVerifySuccess: string;
-  aiVerifySuccessSearch: string;
   aiPrivacyNoticeTitle: string;
   aiPrivacyNoticeBody: string;
   aiPrivacyAgree: string;
@@ -561,16 +581,13 @@ type TranslationKeys = {
   aiErrorBadResponse: string;
   aiErrorMissingKey: string;
   aiErrorAborted: string;
-  aiSearchFailed: string;
   aiSidebarHint: string;
   aiInputPlaceholder: string;
   aiSend: string;
   aiStop: string;
   aiClearChat: string;
-  aiSources: string;
   aiThinking: string;
   aiPhaseRetrieving: string;
-  aiPhaseSearching: string;
   aiPhaseWriting: string;
   aiTruncated: string;
   aiViewDiff: string;
@@ -581,10 +598,58 @@ type TranslationKeys = {
   aiNoKeyHint: string;
   aiModelLabel: string;
   aiModelLocal: string;
+  aiModelLocalSub: string;
+  aiModelSection: string;
+  aiModelAdd: string;
+  aiModelNoEndpoint: string;
+  aiThinkingTitle: string;
+  aiThinkingOff: string;
+  aiThinkingLow: string;
+  aiThinkingHigh: string;
+  aiThinkingEffectOff: string;
+  aiThinkingEffectLow: string;
+  aiThinkingEffectHigh: string;
+  aiEndpointTitle: string;
+  aiEndpointHint: string;
+  aiEndpointEmpty: string;
+  aiEndpointUntitled: string;
+  aiEndpointNoUrl: string;
+  aiEndpointModelCount: string;
+  aiEndpointName: string;
+  aiEndpointNamePlaceholder: string;
+  aiEndpointBaseUrl: string;
+  aiEndpointKey: string;
+  aiEndpointKeySet: string;
+  aiEndpointKeyPlaceholder: string;
+  aiEndpointModels: string;
+  aiEndpointSearch: string;
+  aiEndpointSearching: string;
+  aiEndpointNoModels: string;
+  aiEndpointThinkingHint: string;
+  aiEndpointModelsHint: string;
+  aiEndpointDelete: string;
+  aiEndpointDeleteConfirm: string;
+  aiEndpointCancel: string;
+  aiEndpointAdd: string;
+  aiEndpointCustom: string;
+  aiActPolish: string;
+  aiActRewrite: string;
+  aiActContinue: string;
+  aiActSummarize: string;
+  aiActTranslate: string;
+  aiActChecklist: string;
+  aiActCardHint: string;
+  aiCardTitle: string;
+  aiCardCopy: string;
+  aiCardCopied: string;
+  aiCardPoints: string;
+  aiCardTags: string;
+  aiSmallTalkGreeting: string;
+  aiSmallTalkIdentity: string;
+  panelCrashTitle: string;
+  panelCrashBody: string;
+  panelCrashRetry: string;
   aiPolishModelLabel: string;
-  aiSearchTitle: string;
-  aiSearchToggleLabel: string;
-  aiSearchToggleHint: string;
   aiAnswerSteps: string;
   aiAnswerHowto: string;
   aiAnswerWhere: string;
@@ -651,6 +716,28 @@ type TranslationKeys = {
   aiEditApplied: string;
   aiUndoEdit: string;
   aiEditUndone: string;
+  // Help entry: the only dropdown left in the title bar.
+  helpMenu: string;
+  helpManual: string;
+  helpFaq: string;
+  helpShortcuts: string;
+  helpReportIssue: string;
+  helpShortcutsNote: string;
+  shortcutGroupGlobal: string;
+  shortcutGroupNote: string;
+  shortcutGroupTabs: string;
+  shortcutGroupCanvas: string;
+  shortcutSaveNote: string;
+  shortcutCloseTab: string;
+  shortcutInsertTable: string;
+  shortcutUndoRedo: string;
+  retry: string;
+  quitConfirmTitle: string;
+  quitConfirmMessage: string;
+  updateCheckErrorDetail: string;
+  importFailed: string;
+  loading: string;
+  authSignedOut: string;
 };
 
 const zh: TranslationKeys = {
@@ -754,7 +841,6 @@ const zh: TranslationKeys = {
   allNotes: "全部笔记",
   uncategorizedNotes: "未分类笔记",
   newCategory: "新建分类",
-  categoryNamePrompt: "输入分类名称:",
   renameCategory: "重命名分类",
   deleteCategory: "删除分类",
   newSubfolder: "新建子文件夹",
@@ -979,6 +1065,9 @@ const zh: TranslationKeys = {
   noCompleted: "还没有已完成的任务",
   allDone: "所有任务都已完成！",
   noTodos: "暂无待办事项，添加一个吧",
+  noTodosHint: "在顶部输入框写下第一件事，按回车即可。",
+  searchNoResults: "没有匹配的笔记",
+  searchNoResultsHint: "换个关键词试试，或清空搜索框查看全部笔记。",
   pinTodo: "置顶待办",
   unpinTodo: "取消置顶",
   subtask: "子待办",
@@ -994,7 +1083,6 @@ const zh: TranslationKeys = {
   addTodoDescription: "添加描述",
   editTodoDescription: "编辑描述",
   todoDescriptionPlaceholder: "写下细节、链接或验收标准…",
-  descriptionSaveHint: "Ctrl+Enter 保存 · Esc 取消",
   low: "低",
   medium: "中",
   high: "高",
@@ -1014,6 +1102,26 @@ const zh: TranslationKeys = {
   settingsTitle: "设置",
   settingsBasic: "基础",
   settingsTheme: "主题",
+  settingsStorage: "存储",
+  storageCurrent: "数据目录",
+  storageBadgeDefault: "默认（安装目录）",
+  storageBadgeCustom: "自定义",
+  storageUsage: "共 {files} 个文件 · {size}",
+  storageChangeDir: "更改目录",
+  storageRestoreDefault: "恢复默认目录",
+  storageUnavailable: "数据目录不可用（磁盘未连接或被移动？）：{path}",
+  storageMigrateTitle: "迁移数据目录",
+  storageMigrateBody: "把当前全部笔记、图片与 AI 数据迁移到：\n{path}\n\n目标目录必须为空；迁移完成后应用会重启。",
+  storageMigrating: "正在迁移… {files} / {total} 个文件",
+  storageMigratingStart: "正在统计并准备迁移…",
+  storageMigrateDone: "已迁移 {files} 个文件（{size}），即将重启",
+  storageMigrateFailed: "迁移失败：{message}",
+  storageRestoreMigrateBody: "将把当前数据目录里的全部内容搬回默认目录：\n{path}\n\n默认目录里自动生成的配置文件会被新版覆盖，其他文件不受影响。完成后应用会重启。",
+  storageAdoptBody: "目标目录里已经有一份数据（{files} 个文件），看起来是真的数据目录。\n直接切换过去不会移动或删除任何文件，当前目录的内容会留在原处。",
+  storageNotALibrary: "目标目录不是空的，也不像一份 Qing Notepad 数据（没有 notes/ 或 settings.json）。请选一个空目录，或选已有的数据目录。",
+  storageReloading: "正在重启…",
+  dialogConfirm: "确定",
+  dialogCancel: "取消",
   themeColor: "主题颜色",
   darkTheme: "深色",
   blueTheme: "蓝调",
@@ -1034,7 +1142,7 @@ const zh: TranslationKeys = {
   glassBaseGroup: "基础（始终生效）",
   glassBgGroup: "仅背景图片时",
   glassBlur: "模糊强度",
-  glassTint: "底色不透明度",
+  glassTint: "侧栏底色不透明度",
   glassSaturate: "饱和度",
   savePreset: "保存预设",
   selectPreset: "选择预设",
@@ -1108,9 +1216,8 @@ const zh: TranslationKeys = {
   undo: "撤销",
   redo: "前进",
   insertTable: "插入表格（Ctrl+Alt+T）",
-  tools: "工具",
-  portal: "传送门",
-  help: "帮助",
+  insertImage: "插入图片",
+  insertImageFailed: "图片插入失败：{message}",
   about: "关于",
   aboutTitle: "关于 Qing Notepad",
   version: "版本",
@@ -1174,6 +1281,7 @@ const zh: TranslationKeys = {
   pinSticky: "钉住磁贴",
   unpinSticky: "取消钉住",
   stickyNote: "磁贴笔记",
+  stickyEmptyHint: "双击此处开始编辑…",
   pinNote: "置顶笔记",
   unpinNote: "取消置顶",
   tileNoNote: "没有选中的笔记",
@@ -1202,29 +1310,25 @@ const zh: TranslationKeys = {
   aiKeyCleared: "API Key 已清除",
   aiKeyMissing: "尚未配置 API Key",
   aiVerifySuccess: "连接正常",
-  aiVerifySuccessSearch: "连接正常，联网搜索同样可用",
   aiPrivacyNoticeTitle: "隐私说明",
   aiPrivacyNoticeBody:
-    "使用 AI 功能时，你选中的段落、检索到的笔记片段与提问会发送至 DeepSeek（深度求索）以生成回复；开启联网搜索后，提问还会发送至 DeepSeek 搜索服务。知识库检索在你本机完成。API Key 经系统加密后仅存于本机。",
+    "使用 AI 功能时，你选中的段落、检索到的笔记片段与提问会发送至你在「AI 接口」里配置的服务地址，由该服务生成回复。知识库检索在你本机完成，API Key 经系统加密后仅存于本机。",
   aiPrivacyAgree: "我知道了",
   aiErrorUnauthorized: "API Key 无效，请检查后重试",
   aiErrorBalance: "账户余额不足",
   aiErrorRateLimit: "请求过于频繁，请稍后再试",
   aiErrorNetwork: "网络连接失败，请检查网络后重试",
-  aiErrorServer: "DeepSeek 服务暂时不可用",
+  aiErrorServer: "服务暂时不可用",
   aiErrorBadResponse: "返回内容异常，请重试",
   aiErrorMissingKey: "请先配置 API Key",
   aiErrorAborted: "已停止生成",
-  aiSearchFailed: "本次联网搜索未成功，回答仅基于本地知识库。",
   aiSidebarHint: "我是小青，问我任何关于青记使用的问题，答案来自内置功能手册。",
   aiInputPlaceholder: "例如：怎么把笔记导出为 PDF？",
   aiSend: "发送",
   aiStop: "停止",
   aiClearChat: "清空对话",
-  aiSources: "参考来源",
   aiThinking: "正在思考…",
   aiPhaseRetrieving: "正在检索本地知识库…",
-  aiPhaseSearching: "正在联网搜索…",
   aiPhaseWriting: "正在处理笔记…",
   aiTruncated: "回答达到长度上限，内容可能被截断。",
   aiViewDiff: "查看改动",
@@ -1232,13 +1336,64 @@ const zh: TranslationKeys = {
   aiDiffUnavailable: "原始版本已不可用。",
   aiReasoning: "思考过程",
   aiNoResult: "手册里没有找到相关内容，换个说法试试。",
-  aiNoKeyHint: "未配置 API Key，当前由小青离线检索、流式作答。在「设置 → AI 设置」中配置 DeepSeek Key 后可获得生成式完整回答。",
+  aiNoKeyHint: "未配置 API Key，当前由小青离线检索、流式作答。在「设置 → AI 设置」里添加接口后可获得生成式完整回答。",
   aiModelLabel: "对话模型",
   aiModelLocal: "小青",
+  aiModelLocalSub: "本地检索，不联网",
+  aiModelSection: "模型",
+  aiModelAdd: "管理接口与模型",
+  aiModelNoEndpoint: "还没有可用模型。到「设置 → AI 设置」添加接口，勾选要用的模型。",
+  aiThinkingTitle: "思考强度",
+  aiThinkingOff: "关闭",
+  aiThinkingLow: "低",
+  aiThinkingHigh: "高",
+  aiThinkingEffectOff: "不发送思考参数",
+  aiThinkingEffectLow: "低强度推理",
+  aiThinkingEffectHigh: "高强度推理",
+  aiEndpointTitle: "API 接口",
+  aiEndpointHint: "自己填地址与 Key，配什么就用什么",
+  aiEndpointEmpty:
+    "还没有配置任何接口。点下方按钮添加，或从常见服务里选一个填好地址再补 Key。",
+  aiEndpointUntitled: "未命名接口",
+  aiEndpointNoUrl: "尚未填写地址",
+  aiEndpointModelCount: "{on}/{total} 个模型",
+  aiEndpointName: "名称",
+  aiEndpointNamePlaceholder: "例如 Kimi",
+  aiEndpointBaseUrl: "接口地址（Base URL）",
+  aiEndpointKey: "API Key",
+  aiEndpointKeySet: "已保存，输入新值可覆盖",
+  aiEndpointKeyPlaceholder: "sk-...",
+  aiEndpointModels: "模型",
+  aiEndpointSearch: "搜索模型",
+  aiEndpointSearching: "正在搜索…",
+  aiEndpointNoModels: "还没有模型。填好地址与 Key 后点「搜索模型」。",
+  aiEndpointThinkingHint: "该模型是否支持深度思考（不支持时不发送思考参数）",
+  aiEndpointModelsHint: "勾选的模型才会出现在聊天栏的模型列表里。",
+  aiEndpointDelete: "删除接口",
+  aiEndpointDeleteConfirm: "确认删除",
+  aiEndpointCancel: "取消",
+  aiEndpointAdd: "添加接口",
+  aiEndpointCustom: "自定义",
+  aiActPolish: "润色",
+  aiActRewrite: "改写",
+  aiActContinue: "续写",
+  aiActSummarize: "摘要",
+  aiActTranslate: "翻译",
+  aiActChecklist: "转待办",
+  aiActCardHint: "结果只读，不会覆盖原文",
+  aiCardTitle: "结果",
+  aiCardCopy: "复制",
+  aiCardCopied: "已复制",
+  aiCardPoints: "要点",
+  aiCardTags: "标签",
+  aiSmallTalkGreeting:
+    "你好，我是小青，本地离线知识检索模型，暂不具备智能对话能力喔~ 不过「青记」怎么用，你尽管问我。",
+  aiSmallTalkIdentity:
+    "我是小青，青记内置的本地离线知识检索模型。我不能闲聊，也不会生成式作答，但可以在离线状态下检索内置手册、你的笔记、待办和画布内容，回答青记的用法问题。",
+  panelCrashTitle: "这块内容出错了",
+  panelCrashBody: "界面渲染时出现异常，其他区域不受影响。可以重试，或重启应用。",
+  panelCrashRetry: "重试",
   aiPolishModelLabel: "润色模型",
-  aiSearchTitle: "实时网页搜索（DeepSeek）",
-  aiSearchToggleLabel: "联网搜索",
-  aiSearchToggleHint: "复用同一把 DeepSeek Key，按成功请求次数计费（约 5 元 / 1000 次）。开启后，DeepSeek 模式回答问题时实时搜索网页，并在回答中标注来源。",
   aiAnswerSteps: "操作步骤",
   aiAnswerHowto: "这样做",
   aiAnswerWhere: "在哪找",
@@ -1305,6 +1460,27 @@ const zh: TranslationKeys = {
   aiEditApplied: "已修改笔记",
   aiUndoEdit: "撤销此次修改",
   aiEditUndone: "已撤销",
+  helpMenu: "帮助",
+  helpManual: "功能手册",
+  helpFaq: "常见问题",
+  helpShortcuts: "快捷键一览",
+  helpReportIssue: "报告问题",
+  helpShortcutsNote: "以下为固定快捷键，暂不支持自定义（显示/隐藏窗口除外）。",
+  shortcutGroupGlobal: "全局",
+  shortcutGroupNote: "笔记编辑",
+  shortcutGroupTabs: "标签页",
+  shortcutGroupCanvas: "画布",
+  shortcutSaveNote: "保存当前笔记",
+  shortcutCloseTab: "关闭当前标签页",
+  shortcutInsertTable: "插入表格",
+  shortcutUndoRedo: "撤销 / 重做",
+  retry: "重试",
+  quitConfirmTitle: "退出青记？",
+  quitConfirmMessage: "退出后将关闭所有便签与磁贴窗口，未保存的修改会先写入本地。",
+  updateCheckErrorDetail: "失败原因：{detail}",
+  importFailed: "导入失败：{message}",
+  loading: "正在加载…",
+  authSignedOut: "未登录",
 };
 
 const en: TranslationKeys = {
@@ -1408,7 +1584,6 @@ const en: TranslationKeys = {
   allNotes: "All Notes",
   uncategorizedNotes: "Uncategorized",
   newCategory: "New Category",
-  categoryNamePrompt: "Enter category name:",
   renameCategory: "Rename Category",
   deleteCategory: "Delete Category",
   newSubfolder: "New subfolder",
@@ -1633,6 +1808,9 @@ const en: TranslationKeys = {
   noCompleted: "No completed tasks yet",
   allDone: "All tasks are done!",
   noTodos: "No todos yet, add one",
+  noTodosHint: "Type the first one in the bar above and press Enter.",
+  searchNoResults: "No matching notes",
+  searchNoResultsHint: "Try another keyword, or clear the search box to see everything.",
   pinTodo: "Pin Todo",
   unpinTodo: "Unpin Todo",
   subtask: "Subtask",
@@ -1648,7 +1826,6 @@ const en: TranslationKeys = {
   addTodoDescription: "Add a description",
   editTodoDescription: "Edit description",
   todoDescriptionPlaceholder: "Details, links, or acceptance criteria…",
-  descriptionSaveHint: "Ctrl+Enter to save · Esc to cancel",
   low: "Low",
   medium: "Med",
   high: "High",
@@ -1668,6 +1845,26 @@ const en: TranslationKeys = {
   settingsTitle: "Settings",
   settingsBasic: "General",
   settingsTheme: "Theme",
+  settingsStorage: "Storage",
+  storageCurrent: "Data directory",
+  storageBadgeDefault: "Default (install folder)",
+  storageBadgeCustom: "Custom",
+  storageUsage: "{files} files · {size}",
+  storageChangeDir: "Change directory",
+  storageRestoreDefault: "Restore default",
+  storageUnavailable: "The data directory is unavailable (drive disconnected or moved?): {path}",
+  storageMigrateTitle: "Move data directory",
+  storageMigrateBody: "Move every note, image and AI record to:\n{path}\n\nThe target folder must be empty. The app restarts when the move finishes.",
+  storageMigrating: "Moving… {files} / {total} files",
+  storageMigratingStart: "Measuring and preparing the move…",
+  storageMigrateDone: "Moved {files} files ({size}). Restarting.",
+  storageMigrateFailed: "Move failed: {message}",
+  storageRestoreMigrateBody: "Everything in the current data directory will be moved back to:\n{path}\n\nConfig files the app regenerated there are replaced; nothing else is touched. The app restarts when it finishes.",
+  storageAdoptBody: "That folder already holds data ({files} files) and looks like a real data directory.\nSwitching to it moves and deletes nothing; the current directory keeps its files.",
+  storageNotALibrary: "That folder is not empty and does not look like a Qing Notepad data directory (no notes/ or settings.json). Pick an empty folder or an existing data directory.",
+  storageReloading: "Restarting…",
+  dialogConfirm: "OK",
+  dialogCancel: "Cancel",
   themeColor: "Theme",
   darkTheme: "Dark",
   blueTheme: "Blue",
@@ -1688,7 +1885,7 @@ const en: TranslationKeys = {
   glassBaseGroup: "Base (always)",
   glassBgGroup: "Only with a wallpaper",
   glassBlur: "Blur",
-  glassTint: "Tint opacity",
+  glassTint: "Side panel tint opacity",
   glassSaturate: "Saturation",
   savePreset: "Save Preset",
   selectPreset: "Select Preset",
@@ -1762,9 +1959,8 @@ const en: TranslationKeys = {
   undo: "Undo",
   redo: "Redo",
   insertTable: "Insert table (Ctrl+Alt+T)",
-  tools: "Tools",
-  portal: "Portal",
-  help: "Help",
+  insertImage: "Insert image",
+  insertImageFailed: "Could not insert the image: {message}",
   about: "About",
   aboutTitle: "About Qing Notepad",
   version: "Version",
@@ -1828,6 +2024,7 @@ const en: TranslationKeys = {
   pinSticky: "Pin as Sticky",
   unpinSticky: "Unpin",
   stickyNote: "Sticky Note",
+  stickyEmptyHint: "Double-click to start writing…",
   pinNote: "Pin Note",
   unpinNote: "Unpin Note",
   tileNoNote: "No note selected",
@@ -1856,7 +2053,6 @@ const en: TranslationKeys = {
   aiKeyCleared: "API key cleared",
   aiKeyMissing: "No API key configured",
   aiVerifySuccess: "Connection OK",
-  aiVerifySuccessSearch: "Connection OK - web search works with the same key",
   aiPrivacyNoticeTitle: "Privacy notice",
   aiPrivacyNoticeBody:
     "When you use AI features, the passage you select, retrieved note excerpts and your questions are sent to DeepSeek to generate replies. With web search enabled, your question is also sent to DeepSeek's search service. Knowledge base search runs locally. Your API key is encrypted by the system and stored on this machine only.",
@@ -1869,16 +2065,13 @@ const en: TranslationKeys = {
   aiErrorBadResponse: "Unexpected response. Please retry.",
   aiErrorMissingKey: "Configure an API key first",
   aiErrorAborted: "Generation stopped",
-  aiSearchFailed: "Web search failed for this turn — the answer used the local knowledge base only.",
   aiSidebarHint: "I'm XiaoQing. Ask anything about using Qing Notepad. Answers come from the built-in user manual.",
   aiInputPlaceholder: "e.g. How do I export a note to PDF?",
   aiSend: "Send",
   aiStop: "Stop",
   aiClearChat: "Clear chat",
-  aiSources: "Sources",
   aiThinking: "Thinking…",
   aiPhaseRetrieving: "Searching the local knowledge base…",
-  aiPhaseSearching: "Searching the web…",
   aiPhaseWriting: "Working on the note…",
   aiTruncated: "The answer hit the length limit and may be cut off.",
   aiViewDiff: "View changes",
@@ -1889,10 +2082,64 @@ const en: TranslationKeys = {
   aiNoKeyHint: "No API key configured — XiaoQing answers offline with streamed retrieval results. Add your DeepSeek key in Settings → AI Settings for generated answers.",
   aiModelLabel: "Chat model",
   aiModelLocal: "XiaoQing",
+  aiModelLocalSub: "Local retrieval, offline",
+  aiModelSection: "Model",
+  aiModelAdd: "Manage endpoints and models",
+  aiModelNoEndpoint:
+    "No model available yet. Add an endpoint in Settings → AI Settings and tick the models you want.",
+  aiThinkingTitle: "Reasoning effort",
+  aiThinkingOff: "Off",
+  aiThinkingLow: "Low",
+  aiThinkingHigh: "High",
+  aiThinkingEffectOff: "Send no thinking fields",
+  aiThinkingEffectLow: "Low reasoning effort",
+  aiThinkingEffectHigh: "High reasoning effort",
+  aiEndpointTitle: "API endpoints",
+  aiEndpointHint: "Your own base URL and key — whatever you configure is what runs",
+  aiEndpointEmpty:
+    "No endpoint configured. Add one below: pick a common service to pre-fill the address, then paste your key.",
+  aiEndpointUntitled: "Untitled endpoint",
+  aiEndpointNoUrl: "No address yet",
+  aiEndpointModelCount: "{on}/{total} models",
+  aiEndpointName: "Name",
+  aiEndpointNamePlaceholder: "e.g. Kimi",
+  aiEndpointBaseUrl: "Base URL",
+  aiEndpointKey: "API key",
+  aiEndpointKeySet: "Saved — type a new value to replace it",
+  aiEndpointKeyPlaceholder: "sk-...",
+  aiEndpointModels: "Models",
+  aiEndpointSearch: "Search models",
+  aiEndpointSearching: "Searching…",
+  aiEndpointNoModels: 'No models yet. Fill in the URL and key, then press "Search models".',
+  aiEndpointThinkingHint:
+    "Whether this model supports deep thinking (no thinking fields are sent when off)",
+  aiEndpointModelsHint: "Only ticked models appear in the chat bar's model list.",
+  aiEndpointDelete: "Delete endpoint",
+  aiEndpointDeleteConfirm: "Confirm delete",
+  aiEndpointCancel: "Cancel",
+  aiEndpointAdd: "Add endpoint",
+  aiEndpointCustom: "Custom",
+  aiActPolish: "Polish",
+  aiActRewrite: "Rewrite",
+  aiActContinue: "Continue",
+  aiActSummarize: "Summarize",
+  aiActTranslate: "Translate",
+  aiActChecklist: "To-do list",
+  aiActCardHint: "Read-only result — the passage is never overwritten",
+  aiCardTitle: "Result",
+  aiCardCopy: "Copy",
+  aiCardCopied: "Copied",
+  aiCardPoints: "Key points",
+  aiCardTags: "Tags",
+  aiSmallTalkGreeting:
+    "Hi, I'm XiaoQing, an offline retrieval model — I can't chat. But ask me anything about using Qing Notepad and I'll dig it out of the manual.",
+  aiSmallTalkIdentity:
+    "I'm XiaoQing, Qing Notepad's built-in offline retrieval model. I don't chat and I don't generate text, but I can search the built-in manual, your notes, todos and canvas content locally to answer questions about the app.",
+  panelCrashTitle: "This panel failed to render",
+  panelCrashBody:
+    "Something threw while rendering. The rest of the app is unaffected — retry, or restart the app.",
+  panelCrashRetry: "Retry",
   aiPolishModelLabel: "Polish model",
-  aiSearchTitle: "Real-time web search (DeepSeek)",
-  aiSearchToggleLabel: "Search the web",
-  aiSearchToggleHint: "Reuses the same DeepSeek key and is billed per successful request (about ¥5 / 1000 requests). When enabled, DeepSeek-mode answers run a real-time web search and cite sources inline.",
   aiAnswerSteps: "Steps",
   aiAnswerHowto: "Do this",
   aiAnswerWhere: "Where to find it",
@@ -1959,6 +2206,27 @@ const en: TranslationKeys = {
   aiEditApplied: "Edited note",
   aiUndoEdit: "Undo this edit",
   aiEditUndone: "Undone",
+  helpMenu: "Help",
+  helpManual: "User Manual",
+  helpFaq: "FAQ",
+  helpShortcuts: "Keyboard Shortcuts",
+  helpReportIssue: "Report an Issue",
+  helpShortcutsNote: "These shortcuts are fixed and cannot be customised (except show/hide window).",
+  shortcutGroupGlobal: "Global",
+  shortcutGroupNote: "Note editing",
+  shortcutGroupTabs: "Tabs",
+  shortcutGroupCanvas: "Canvas",
+  shortcutSaveNote: "Save current note",
+  shortcutCloseTab: "Close current tab",
+  shortcutInsertTable: "Insert table",
+  shortcutUndoRedo: "Undo / redo",
+  retry: "Retry",
+  quitConfirmTitle: "Quit Qing Notepad?",
+  quitConfirmMessage: "All sticky and tile windows will close. Unsaved edits are written to disk first.",
+  updateCheckErrorDetail: "Reason: {detail}",
+  importFailed: "Import failed: {message}",
+  loading: "Loading…",
+  authSignedOut: "Not signed in",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

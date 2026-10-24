@@ -269,7 +269,7 @@ export default function PublicationDateTimePicker({
                 }).format(day.date)}
                 className={`relative h-8 rounded-lg text-xs tabular-nums transition-colors
                   ${isSelected
-                    ? "bg-accent font-semibold text-white shadow-sm shadow-accent/20"
+                    ? "bg-accent font-semibold text-on-accent shadow-sm shadow-accent/20"
                     : isToday
                       ? "bg-accent-light font-semibold text-accent"
                       : day.isCurrentMonth

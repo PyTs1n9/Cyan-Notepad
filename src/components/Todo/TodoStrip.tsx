@@ -135,7 +135,7 @@ const TodoStrip: React.FC = () => {
                 aria-pressed={filter === option.value}
                 className={`h-full px-2 text-[11px] font-medium transition-colors cursor-pointer ${
                   filter === option.value
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-on-accent"
                     : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                 }`}
               >
@@ -275,7 +275,7 @@ const TodoStrip: React.FC = () => {
             title={t(lang, "add")}
             aria-label={t(lang, "add")}
             className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded bg-accent
-              text-white transition-colors cursor-pointer hover:bg-accent-hover"
+              text-on-accent transition-colors cursor-pointer hover:bg-accent-hover"
           >
             <Check size={11} strokeWidth={3} />
           </button>

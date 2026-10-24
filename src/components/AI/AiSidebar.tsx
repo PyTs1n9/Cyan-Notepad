@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Brain,
@@ -27,16 +28,18 @@ import {
 } from "@/stores/aiStore";
 import { useAuthStore } from "@/stores/authStore";
 import { t } from "@/utils/i18n";
-import { listChatProviders } from "@/utils/ai/chat";
+import { parseSelection } from "@/utils/ai/chat/endpoints";
 import { aiErrorText } from "@/utils/ai/errorText";
 import { computeLineDiff, type DiffLine } from "@/utils/ai/diff";
 import type { AiNoteEdit } from "@/utils/ai/noteWrite";
 import { loadNoteContent, loadNoteSnapshot } from "@/utils/storage";
-import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { useStreamScroll } from "@/hooks/useStreamScroll";
 import { renderMarkdown } from "@/utils/markdown";
+import { brandByKey, resolveModelBrand, type ModelBrand } from "@/utils/ai/modelBrand";
 import UserAvatar from "@/components/UserAvatar";
+import ModelBrandIcon from "@/components/AI/ModelBrandIcon";
 import AiPolishPanel from "@/components/AI/AiPolishPanel";
+import ModelPicker from "@/components/AI/ModelPicker";
 
 interface AiSidebarProps {
   onOpenSettings: () => void;
@@ -57,23 +60,12 @@ const STREAM_RENDER_DEBOUNCE_MS = 160;
  */
 const PHASE_LABEL_KEY: Record<
   AiTurnPhase,
-  "aiThinking" | "aiPhaseRetrieving" | "aiPhaseSearching" | "aiPhaseWriting"
+  "aiThinking" | "aiPhaseRetrieving" | "aiPhaseWriting"
 > = {
   retrieving: "aiPhaseRetrieving",
-  searching: "aiPhaseSearching",
   thinking: "aiThinking",
   writing: "aiPhaseWriting",
 };
-
-/** Compact source label: site name when present, host otherwise. */
-function sourceLabel(source: { url: string; siteName?: string }): string {
-  if (source.siteName) return source.siteName;
-  try {
-    return new URL(source.url).hostname.replace(/^www\./, "");
-  } catch {
-    return source.url;
-  }
-}
 
 const AssistantBubbleImpl: React.FC<{ content: string; streaming?: boolean }> = ({
   content,
@@ -108,7 +100,7 @@ const AssistantBubbleImpl: React.FC<{ content: string; streaming?: boolean }> = 
 
   if (html === null) {
     return (
-      <div className="whitespace-pre-wrap rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm leading-relaxed text-text-primary shadow-sm">
+      <div className="ai-bubble whitespace-pre-wrap rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 leading-relaxed text-text-primary shadow-sm">
         {content}
         {cursor}
       </div>
@@ -117,7 +109,7 @@ const AssistantBubbleImpl: React.FC<{ content: string; streaming?: boolean }> = 
 
   return (
     <div
-      className="rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-primary shadow-sm
+      className="ai-bubble rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 text-text-primary shadow-sm
         [&_a]:text-accent [&_a]:underline [&_code]:rounded [&_code]:bg-bg-primary [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs
         [&_h1]:mb-1.5 [&_h1]:mt-1 [&_h1]:text-base [&_h1]:font-semibold
         [&_h2]:mb-1.5 [&_h2]:mt-1 [&_h2]:text-sm [&_h2]:font-semibold
@@ -190,13 +182,30 @@ const ReasoningBlockImpl: React.FC<{ reasoning: string; active: boolean }> = ({
 
 const ReasoningBlock = React.memo(ReasoningBlockImpl);
 
-/** Assistant avatar tile, shared by the header, bubbles and the empty state. */
-const AssistantAvatar: React.FC<{ size?: number }> = ({ size = 26 }) => (
+/**
+ * Tile beside every answer, and in the header and empty state.
+ *
+ * With a `brand` it carries the vendor mark on a bare tile: the logo brings its
+ * own colour, and an accent disc behind it would read as a second brand. Without
+ * one (小青, or a vendor missing from the table) it keeps the Sparkles mark on
+ * the accent tile, which is what the assistant looks like on its own.
+ */
+const AssistantAvatar: React.FC<{ size?: number; brand?: ModelBrand | null }> = ({
+  size,
+  brand,
+}) => (
   <div
-    className="flex flex-shrink-0 items-center justify-center rounded-full bg-accent-light text-accent ring-1 ring-accent/20"
-    style={{ width: size, height: size }}
+    className={`ai-avatar flex flex-shrink-0 items-center justify-center rounded-full ${
+      brand
+        ? "ai-avatar--brand text-text-primary"
+        : "bg-accent-light text-accent ring-1 ring-accent/20"
+    }`}
+    // One variable drives both the tile and the glyph it holds, so an inline
+    // size override (header 28, empty state 44) scales both together.
+    style={size ? ({ "--ai-avatar-size": `${size}px` } as React.CSSProperties) : undefined}
+    title={brand?.label}
   >
-    <Sparkles size={Math.round(size * 0.54)} />
+    {brand ? <ModelBrandIcon brand={brand} /> : <Sparkles />}
   </div>
 );
 
@@ -269,10 +278,14 @@ const NoteWritePermission: React.FC<NoteWritePermissionProps> = ({
       <AnimatePresence>
         {confirming && (
           <>
-            <div
-              className="fixed inset-0 z-10"
-              onClick={() => setConfirming(false)}
-            />
+            {/* Portaled to the body: the AI panel is a CSS query container
+                (`container-type` establishes a containing block for fixed
+                descendants), so an in-tree overlay would only cover the panel
+                and clicking anywhere else would leave the confirm open. */}
+            {createPortal(
+              <div className="fixed inset-0 z-10" onClick={() => setConfirming(false)} />,
+              document.body,
+            )}
             <motion.div
               initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.97 }}
               animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
@@ -403,10 +416,10 @@ const MessageRowImpl: React.FC<{
         animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
         exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
         transition={enter}
-        className="group flex items-start justify-end gap-2"
+        className="ai-msg-row group flex items-start justify-end"
       >
-        <div className="flex max-w-[85%] flex-col items-end">
-          <div className="whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent-light px-3.5 py-2.5 text-sm leading-relaxed text-text-primary shadow-sm">
+        <div className="ai-msg-col ai-msg-col--user flex flex-col items-end">
+          <div className="ai-bubble whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent-light leading-relaxed text-text-primary shadow-sm">
             {message.content}
           </div>
           <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
@@ -427,7 +440,7 @@ const MessageRowImpl: React.FC<{
         <UserAvatar
           name={userDisplayName}
           avatarUrl={userAvatarUrl}
-          className="h-[26px] w-[26px] bg-accent-light text-[11px] font-semibold text-accent ring-1 ring-accent/20"
+          className="ai-avatar bg-accent-light font-semibold text-accent ring-1 ring-accent/20"
         />
       </motion.div>
     );
@@ -439,10 +452,10 @@ const MessageRowImpl: React.FC<{
       animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
       transition={enter}
-      className="group flex items-start gap-2"
+      className="ai-msg-row group flex items-start"
     >
-      <AssistantAvatar />
-      <div className="flex min-w-0 max-w-[85%] flex-col">
+      <AssistantAvatar brand={brandByKey(message.brandKey)} />
+      <div className="ai-msg-col flex min-w-0 flex-col">
         {message.reasoning ? (
           <ReasoningBlock
             reasoning={message.reasoning}
@@ -453,7 +466,7 @@ const MessageRowImpl: React.FC<{
           <AssistantBubble content={message.content} streaming={message.streaming} />
         ) : message.streaming ? (
           message.reasoning ? null : (
-            <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-muted shadow-sm">
+            <div className="ai-bubble flex items-center gap-2 rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 text-text-muted shadow-sm">
               <span className="ai-typing-dots" aria-hidden="true">
                 <span />
                 <span />
@@ -463,7 +476,7 @@ const MessageRowImpl: React.FC<{
             </div>
           )
         ) : message.hits.length === 0 ? (
-          <div className="rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 px-3.5 py-2.5 text-sm text-text-muted shadow-sm">
+          <div className="ai-bubble rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 text-text-muted shadow-sm">
             {t(lang, "aiNoResult")}
           </div>
         ) : null}
@@ -472,30 +485,9 @@ const MessageRowImpl: React.FC<{
             {aiErrorText(message.errorCode, lang)}
           </div>
         )}
-        {message.searchError && !message.streaming && (
-          <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
-            {t(lang, "aiSearchFailed")}
-          </div>
-        )}
         {message.truncated && !message.streaming && (
           <div className="mt-1 text-[11px] leading-relaxed text-amber-500">
             {t(lang, "aiTruncated")}
-          </div>
-        )}
-        {message.sources && message.sources.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className="text-[10px] text-text-muted/80">{t(lang, "aiSources")}</span>
-            {message.sources.map((source) => (
-              <button
-                key={source.url}
-                type="button"
-                onClick={() => void openInDefaultBrowser(source.url)}
-                title={source.title}
-                className="max-w-[150px] cursor-pointer truncate rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:border-accent/40 hover:text-accent"
-              >
-                {sourceLabel(source)}
-              </button>
-            ))}
           </div>
         )}
         {message.edits && message.edits.length > 0 && (
@@ -703,7 +695,7 @@ const EditUndoBar: React.FC = () => {
 
   const titles = pendingEdits.map((edit) => edit.noteTitle).join("、");
   return (
-    <div className="mx-3 mb-1 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-600">
+    <div className="ai-edit-bar mb-1 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-600">
       <Pencil size={11} className="flex-shrink-0" />
       <span className="min-w-0 flex-1 truncate">
         {t(lang, "aiEditApplied")}
@@ -772,7 +764,8 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   // this panel — header, history popover and input capsule included — on every
   // streamed token, because `messages` is a new array per delta.
   const sending = useAiStore((s) => s.sending);
-  const hasKey = useAiStore((s) => s.hasKey);
+  const endpointKeys = useAiStore((s) => s.endpointKeys);
+  const endpoints = useAiStore((s) => s.endpoints);
   const polish = useAiStore((s) => s.polish);
   const chatModel = useAiStore((s) => s.chatModel);
   const noteWriteMode = useAiStore((s) => s.noteWriteMode);
@@ -783,7 +776,6 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   const hasMessages = useAiStore((s) => s.messages.length > 0);
   // Actions never change identity, so they are read once rather than subscribed.
   const {
-    setChatModel,
     setNoteWriteMode,
     hydrate,
     sendMessage,
@@ -799,7 +791,6 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   const authUser = useAuthStore((s) => s.user);
   const reduceMotion = useReducedMotion();
   const [draft, setDraft] = useState("");
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -824,17 +815,34 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
       ? authMetadata.display_name.trim()
       : (authUser?.email?.split("@")[0] ?? "?");
 
-  // Model picker options: 小青 (local retrieval) + every registered provider.
-  // Labels are model names ("小青", "deepseek-flash"); the sub carries the vendor.
-  const modelOptions = [
-    { id: LOCAL_MODEL_ID, label: t(lang, "aiModelLocal"), sub: "" },
-    ...listChatProviders().map((p) => ({ id: p.id, label: p.model, sub: p.label })),
-  ];
-  const activeModel = modelOptions.find((o) => o.id === chatModel) ?? modelOptions[0];
+  // Header label mirrors what the picker chip shows: the model that will answer.
+  // The selection names both the endpoint and the model, so it is rendered
+  // straight from the stored value instead of asking a provider to resolve it.
+  const selectedModel = parseSelection(chatModel);
+  const headerModelLabel =
+    chatModel === LOCAL_MODEL_ID ? t(lang, "aiModelLocal") : (selectedModel?.modelId ?? chatModel);
+  // The header tile names the vendor that will answer, so it is resolved live
+  // from the current selection — unlike the per-message tiles, which keep the
+  // brand snapshotted at the time the answer was produced.
+  const selectedEndpoint = selectedModel
+    ? endpoints.find((endpoint) => endpoint.id === selectedModel.endpointId)
+    : undefined;
+  const headerBrand =
+    chatModel === LOCAL_MODEL_ID
+      ? null
+      : resolveModelBrand({
+          modelId: selectedModel?.modelId ?? chatModel,
+          baseUrl: selectedEndpoint?.baseUrl,
+          endpointName: selectedEndpoint?.name,
+        });
   // 小青 answers by local retrieval only — note writing needs a generative API
   // model, so the permission switch is locked while it is selected.
   const localModelSelected = chatModel === LOCAL_MODEL_ID;
-
+  // The banner is about *this* selection: another endpoint having a key does
+  // not make the current one usable.
+  const missingKeyForSelection = Boolean(
+    selectedModel && !endpointKeys[selectedModel.endpointId],
+  );
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
@@ -874,28 +882,28 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   return (
     <aside
       style={{ width: "var(--ai-sidebar-width)" }}
-      className="flex h-full flex-shrink-0 flex-col"
+      className="ai-panel flex h-full flex-shrink-0 flex-col"
     >
       {/* Header: assistant identity + status, session controls, clear (with confirm), close */}
       {/* h-9 matches the note tab bar height so this border lands on the same
           line as the tab strip's border across the window. */}
-      <div className="flex h-9 flex-shrink-0 items-center gap-2.5 border-b border-border px-3.5">
-        <AssistantAvatar size={28} />
+      <div className="ai-head flex h-9 flex-shrink-0 items-center gap-2.5 border-b border-border">
+        <AssistantAvatar size={28} brand={headerBrand} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium leading-tight text-text-primary">
-            {activeModel.label}
+            {headerModelLabel}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5">
             <span
               className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-                chatModel === LOCAL_MODEL_ID || hasKey ? "bg-green-500" : "bg-text-muted/50"
+                missingKeyForSelection ? "bg-text-muted/50" : "bg-green-500"
               }`}
               aria-hidden="true"
             />
             <span className="truncate text-[10px] leading-none text-text-muted">
-              {chatModel === LOCAL_MODEL_ID || hasKey
-                ? t(lang, "aiStatusReady")
-                : t(lang, "aiStatusNoKey")}
+              {missingKeyForSelection
+                ? t(lang, "aiStatusNoKey")
+                : t(lang, "aiStatusReady")}
             </span>
           </div>
         </div>
@@ -976,7 +984,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                       clearChat();
                       setConfirmingClear(false);
                     }}
-                    className="cursor-pointer rounded-lg bg-danger/90 px-2.5 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-90"
+                    className="cursor-pointer rounded-lg bg-danger/90 px-2.5 py-1 text-[11px] font-medium text-on-danger transition-opacity hover:opacity-90"
                   >
                     {t(lang, "aiClearConfirmOk")}
                   </button>
@@ -1039,7 +1047,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                                 deleteConversation(conversation.id);
                                 setConfirmingDeleteId(null);
                               }}
-                              className="flex-shrink-0 cursor-pointer rounded-md bg-danger/90 px-2 py-0.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90"
+                              className="flex-shrink-0 cursor-pointer rounded-md bg-danger/90 px-2 py-0.5 text-[11px] font-medium text-on-danger transition-opacity hover:opacity-90"
                             >
                               {t(lang, "aiClearConfirmOk")}
                             </button>
@@ -1105,7 +1113,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
       ) : (
         <>
           {/* Messages */}
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          <div ref={scrollRef} className="ai-msg-list min-h-0 flex-1 overflow-y-auto py-3">
             {!hasMessages ? (
               <motion.div
                 initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
@@ -1113,7 +1121,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                 transition={enter}
                 className="flex h-full flex-col items-center justify-center gap-3 px-2 text-center"
               >
-                <AssistantAvatar size={44} />
+                <AssistantAvatar size={44} brand={headerBrand} />
                 <p className="max-w-[240px] text-xs leading-relaxed text-text-muted">
                   {t(lang, "aiGreeting")}
                 </p>
@@ -1163,8 +1171,8 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
 
           {/* Input: one capsule containing the auto-growing textarea with the
               send/stop button embedded at the bottom-right. */}
-          <div className="flex-shrink-0 px-3 pb-3 pt-1">
-            {!hasKey && chatModel !== LOCAL_MODEL_ID && (
+          <div className="ai-composer flex-shrink-0 pb-3 pt-1">
+            {missingKeyForSelection && (
               <div className="mb-2 flex items-start gap-1.5 px-1 text-[11px] leading-relaxed text-text-muted">
                 <span className="min-w-0 flex-1">{t(lang, "aiNoKeyHint")}</span>
                 <button
@@ -1189,62 +1197,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
               {/* Capsule footer: model chip (left) + send/stop (right) */}
               <div className="mt-1 flex items-center justify-between gap-1.5">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <div className="relative min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => setModelMenuOpen((open) => !open)}
-                      title={t(lang, "aiModelLabel")}
-                      className="flex max-w-[160px] cursor-pointer items-center gap-1 rounded-full border border-border/60 bg-bg-secondary/50 px-2 py-1 text-[11px] text-text-muted transition-all hover:border-accent/40 hover:text-text-primary active:scale-95"
-                    >
-                      <Sparkles size={11} className="flex-shrink-0 text-accent" />
-                      <span className="truncate">{activeModel.label}</span>
-                      <ChevronDown
-                        size={11}
-                        className={`flex-shrink-0 transition-transform ${modelMenuOpen ? "rotate-180" : ""}`}
-                      />
-                    </button>
-                    <AnimatePresence>
-                      {modelMenuOpen && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-10"
-                            onClick={() => setModelMenuOpen(false)}
-                          />
-                          <motion.div
-                            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.97 }}
-                            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-                            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.97 }}
-                            transition={enter}
-                            className="absolute bottom-full left-0 z-20 mb-1.5 w-60 overflow-hidden rounded-xl border border-border bg-bg-primary py-1 shadow-lg"
-                          >
-                            {modelOptions.map((option) => (
-                              <button
-                                key={option.id}
-                                type="button"
-                                onClick={() => {
-                                  setChatModel(option.id);
-                                  setModelMenuOpen(false);
-                                }}
-                                className={`flex w-full cursor-pointer flex-col items-start gap-0.5 px-3 py-1.5 text-left transition-colors hover:bg-bg-hover ${
-                                  option.id === chatModel ? "bg-accent-light/50" : ""
-                                }`}
-                              >
-                                <span className="w-full truncate text-xs font-medium text-text-primary">
-                                  {option.label}
-                                </span>
-                                {option.sub && (
-                                  <span className="w-full truncate text-[10px] text-text-muted">
-                                    {option.sub}
-                                  </span>
-                                )}
-                              </button>
-                            ))}
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  {/* Note-write permission switch, right of the model picker */}
+                  <ModelPicker onManageModels={onOpenSettings} />
                   <NoteWritePermission
                     mode={noteWriteMode}
                     disabled={localModelSelected}

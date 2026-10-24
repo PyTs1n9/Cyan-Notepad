@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { t, tWithParams } from "@/utils/i18n";
-import { X, ExternalLink, RefreshCw, Download, CheckCircle, AlertCircle, Loader2, QrCode, Copy, Check } from "lucide-react";
+import { t } from "@/utils/i18n";
+import { X, ExternalLink, QrCode, Copy, Check } from "lucide-react";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
-import { APP_VERSION, fetchLatestRelease, GITHUB_RELEASES_URL, GITHUB_URL, isVersionNewer } from "@/utils/updateChecker";
+import { APP_VERSION, GITHUB_URL } from "@/utils/updateChecker";
 
 const BLOG_URL = "https://qing.dreamisle.top/";
 const BLOG_LABEL = new URL(BLOG_URL).host;
@@ -26,57 +26,33 @@ const SPONSOR_IMAGES = Object.entries(
   }))
   .sort((a, b) => a.label.localeCompare(b.label));
 
-type UpdateStatus = "checking" | "upToDate" | "newVersion" | "error";
-
 interface AboutModalProps {
   open: boolean;
   onClose: () => void;
 }
 
+/**
+ * Identity card only: icon, name, version, author, source, blog, QQ group and
+ * sponsors.
+ *
+ * Update checking deliberately does not live here anymore — it is a first-class
+ * entry in the Help menu (`Help → 检查更新`), and one action keeps one entry.
+ */
 export default function AboutModal({ open, onClose }: AboutModalProps) {
   const lang = useSettingsStore((s) => s.lang);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("checking");
-  const [latestVersion, setLatestVersion] = useState("");
-  const [releaseUrl, setReleaseUrl] = useState(GITHUB_RELEASES_URL);
   const [sponsorOpen, setSponsorOpen] = useState(false);
   const [qqCopied, setQqCopied] = useState(false);
-  const updateRequestId = useRef(0);
-
-  const checkUpdate = useCallback(async () => {
-    const requestId = ++updateRequestId.current;
-    setUpdateStatus("checking");
-    try {
-      const release = await fetchLatestRelease();
-      if (requestId !== updateRequestId.current) return;
-      setLatestVersion(release.version);
-      setReleaseUrl(release.url);
-      setUpdateStatus(isVersionNewer(release.version, APP_VERSION) ? "newVersion" : "upToDate");
-    } catch {
-      if (requestId !== updateRequestId.current) return;
-      setUpdateStatus("error");
-    }
-  }, []);
 
   useEffect(() => {
-    if (open) {
-      void checkUpdate();
-      return;
-    }
-
-    updateRequestId.current += 1;
-    setUpdateStatus("checking");
+    if (open) return;
     setQqCopied(false);
-  }, [open, checkUpdate]);
+  }, [open]);
 
   useEffect(() => {
     if (!qqCopied) return;
     const timeoutId = window.setTimeout(() => setQqCopied(false), 1600);
     return () => window.clearTimeout(timeoutId);
   }, [qqCopied]);
-
-  const openReleasePage = useCallback(() => {
-    openInDefaultBrowser(releaseUrl);
-  }, [releaseUrl]);
 
   const openGitHubPage = useCallback(() => {
     openInDefaultBrowser(GITHUB_URL);
@@ -103,7 +79,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* Dialog */}
-      <div className="isolate surface-glass surface-glass--editor relative bg-bg-secondary border border-border rounded-xl shadow-2xl w-[360px] p-6 animate-in">
+      <div className="isolate surface-glass surface-glass--dialog relative bg-bg-secondary border border-border rounded-xl shadow-2xl w-[360px] p-6 animate-in">
         {/* Close button */}
         <button
           className="absolute top-3 right-3 p-1 rounded-md hover:bg-bg-hover transition-colors text-text-muted"
@@ -136,50 +112,8 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           </p>
         </div>
 
-        {/* Update check area */}
-        <div className="mt-4 px-3 py-2.5 rounded-lg bg-bg-primary">
-          {updateStatus === "checking" && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-text-muted">{t(lang, "checkingUpdate")}</span>
-              <Loader2 size={14} className="text-accent animate-spin" />
-            </div>
-          )}
-          {updateStatus === "upToDate" && (
-            <div className="flex items-center gap-2 text-sm text-green-500">
-              <CheckCircle size={14} />
-              <span>{t(lang, "upToDate")}</span>
-            </div>
-          )}
-          {updateStatus === "newVersion" && (
-            <button
-              onClick={openReleasePage}
-              className="w-full flex items-center justify-between text-sm hover:opacity-80 transition-opacity"
-            >
-              <span className="text-blue-500">
-                {tWithParams(lang, "newVersion", { version: latestVersion })}
-              </span>
-              <span className="text-blue-500 flex items-center gap-1 text-xs">
-                <Download size={12} />
-                {t(lang, "downloadUpdate")}
-              </span>
-            </button>
-          )}
-          {updateStatus === "error" && (
-            <button
-              onClick={checkUpdate}
-              className="w-full flex items-center justify-between text-sm hover:opacity-80 transition-opacity"
-            >
-              <span className="text-red-500 flex items-center gap-1.5">
-                <AlertCircle size={14} />
-                {t(lang, "checkUpdateFailed")}
-              </span>
-              <RefreshCw size={14} className="text-red-500" />
-            </button>
-          )}
-        </div>
-
         {/* Info rows */}
-        <div className="mt-3 space-y-2.5">
+        <div className="mt-4 space-y-2.5">
           <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary">
             <span className="text-text-muted">{t(lang, "author")}</span>
             <span className="font-medium">PyTs1N9</span>
@@ -237,7 +171,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-5">
           <div className="absolute inset-0 bg-black/45" onClick={() => setSponsorOpen(false)} />
 
-          <div className="isolate surface-glass surface-glass--editor relative w-[min(92vw,760px)] max-h-[88vh] overflow-auto rounded-xl border border-border bg-bg-secondary p-5 shadow-2xl animate-in">
+          <div className="isolate surface-glass surface-glass--dialog relative w-[min(92vw,760px)] max-h-[88vh] overflow-auto rounded-xl border border-border bg-bg-secondary p-5 shadow-2xl animate-in">
             <button
               className="absolute top-3 right-3 p-1 rounded-md hover:bg-bg-hover transition-colors text-text-muted"
               onClick={() => setSponsorOpen(false)}

@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="./src-tauri/icons/Square150x150Logo.png" width="155" alt="QingNotepad 图标">
+<img src="https://s41.ax1x.com/2026/10/24/pnD66aV.png" alt="pnD66aV.png" border="0" width="155" alt="QingNotepad 图标">
 
 # QingNotepad 青记
 

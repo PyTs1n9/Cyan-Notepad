@@ -24,7 +24,7 @@ import NoteEditor from "@/components/Editor/NoteEditor";
 import CanvasView from "@/components/Canvas/CanvasView";
 import AiSidebar from "@/components/AI/AiSidebar";
 import { useAiStore } from "@/stores/aiStore";
-import SettingsModal from "@/components/Settings/SettingsModal";
+import SettingsModal, { type SettingsSection } from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
 import UpdateModal from "@/components/Settings/UpdateModal";
 import AuthModal from "@/components/Auth/AuthModal";
@@ -35,7 +35,7 @@ import { useTodoStore } from "@/stores/todoStore";
 import { useNoteStore } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useFontStore } from "@/stores/fontStore";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useSettingsStore, deriveGlassEditorTint, GLASS_RAIL_DARKEN } from "@/stores/settingsStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { CustomColors, AppShortcuts, AutoSaveInterval } from "@/stores/settingsStore";
 import {
@@ -57,17 +57,23 @@ import {
   purgeExpiredNoteTrash,
   loadUiState,
   saveUiState,
+  getStorageLocation,
+  cleanupUnusedImageAttachments,
 } from "@/utils/storage";
-import { applyTheme } from "@/utils/theme";
+import { applyTheme, resolvedBackgroundHex } from "@/utils/theme";
+import { noteIndexFingerprint } from "@/utils/noteIndexFingerprint";
+import AppDialog from "@/components/AppDialog";
+import { alertDialog } from "@/stores/dialogStore";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
 import type { LatestRelease } from "@/utils/updateChecker";
-import { renderStoredNoteContent } from "@/utils/markdown";
+import { renderStoredNoteContentForExport } from "@/utils/markdown";
 import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t, tWithParams } from "@/utils/i18n";
-import { open, message, save } from "@tauri-apps/plugin-dialog";
+import { flushActiveNote } from "@/utils/noteFlush";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
@@ -168,6 +174,12 @@ async function waitForPrintLayout(sheet: HTMLElement): Promise<void> {
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("note");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Section the settings modal should land on; `openSettings` sets it. */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("basic");
+  const openSettings = (section: SettingsSection = "basic") => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  };
   const [aboutOpen, setAboutOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<LatestRelease | null>(null);
@@ -293,6 +305,18 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       try {
+        // A relocated data directory can be missing (unplugged drive). Say so
+        // instead of showing a convincing empty notebook.
+        const storage = await getStorageLocation();
+        if (!storage.available) {
+          const uiLang = useSettingsStore.getState().lang;
+          void alertDialog({
+            title: t(uiLang, "settingsStorage"),
+            body: tWithParams(uiLang, "storageUnavailable", { path: storage.path }),
+            confirmLabel: t(uiLang, "dialogConfirm"),
+            tone: "danger",
+          });
+        }
         await getImageNeedDirectory().catch((error) => {
           console.warn("Failed to prepare img-need directory:", error);
           return null;
@@ -431,9 +455,25 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [tabs, activeNoteId, tabsHydrated]);
 
+  // Last colour handed to the native window. A ref, not state: it has to survive
+  // re-renders without ever scheduling one.
+  const windowBgRef = useRef<string | null>(null);
+
   // Apply theme class to document
   useEffect(() => {
     applyTheme(theme, customColors);
+
+    // The undecorated window is painted by Tauri itself before any CSS runs, so
+    // it needs this theme's background in order to stop flashing white on the
+    // *next* launch. One IPC per committed change; the ref is what keeps an
+    // ordinary re-render, or a drag of the same palette, from repeating it.
+    if (!isTauri()) return;
+    const hex = resolvedBackgroundHex();
+    if (!hex || hex === windowBgRef.current) return;
+    windowBgRef.current = hex;
+    void invoke("set_window_background", { hex }).catch((error) => {
+      console.error("Failed to persist window background:", error);
+    });
   }, [theme, customColors]);
 
   // Track the shell breakpoint. One frame per resize burst is enough: the only
@@ -539,6 +579,30 @@ export default function App() {
     if (initialized) void purgeExpiredNoteTrash();
   }, [trashRetentionDays, initialized]);
 
+  // Orphaned image attachments are collected once, when the app is idle.
+  //
+  // This used to run after every autosave, which meant reading every note body
+  // and stat-ing every image on an autosave timer (cost grew with the library).
+  // Startup-only is enough: an image that becomes unused mid-session is collected
+  // on the next launch, and the delete paths (`deleteNoteFile`, `moveNoteToTrash`)
+  // still clean up their own note's images immediately.
+  useEffect(() => {
+    if (!initialized) return;
+    const cleanup = () => {
+      void cleanupUnusedImageAttachments();
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (idleWindow.requestIdleCallback) {
+      const handle = idleWindow.requestIdleCallback(cleanup, { timeout: 20_000 });
+      return () => idleWindow.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(cleanup, 5_000);
+    return () => window.clearTimeout(timer);
+  }, [initialized]);
+
   // Auto-save todos
   useEffect(() => {
     if (initialized) saveTodos(todos);
@@ -548,14 +612,28 @@ export default function App() {
     if (initialized) saveTodoLists({ lists: todoLists, activeListId: activeTodoListId });
   }, [todoLists, activeTodoListId, initialized]);
 
-  // Auto-save note index
+  // Auto-save note index — metadata only.
+  //
+  // The editor writes `content` into the note store on every keystroke, so this
+  // effect runs per character. Saving each time meant ~7 file operations per
+  // key. The fingerprint covers exactly what the index stores, minus `updatedAt`
+  // (updateNote bumps it on every keystroke, so including it would disable the
+  // check entirely). The timestamp therefore lags until the next metadata edit,
+  // which no reader depends on.
+  const noteIndexFingerprintRef = useRef<string | null>(null);
   useEffect(() => {
-    if (initialized) {
-      const index = notes.map(({ id, title, tags, categoryId, pinned, order, createdAt, updatedAt }) => ({
-        id, title, tags, categoryId, pinned, order, createdAt, updatedAt,
-      }));
-      saveNoteIndex(index, categories);
-    }
+    if (!initialized) return;
+    const fingerprint = noteIndexFingerprint(notes, categories);
+    if (noteIndexFingerprintRef.current === fingerprint) return;
+    noteIndexFingerprintRef.current = fingerprint;
+
+    const index = notes.map(({ id, title, tags, categoryId, pinned, order, createdAt, updatedAt }) => ({
+      id, title, tags, categoryId, pinned, order, createdAt, updatedAt,
+    }));
+    // Was a bare call: a rejected write turned into an unhandled rejection.
+    void saveNoteIndex(index, categories).catch((error) => {
+      console.warn("Failed to save the note index:", error);
+    });
   }, [notes, categories, initialized]);
 
   // Auto-save fonts
@@ -634,6 +712,16 @@ export default function App() {
       emit("sticky:appearance-updated", { theme, customColors, stickyOpacity });
     }
   }, [theme, customColors, stickyOpacity, initialized]);
+
+  // Keep the native tray menu wording in step with the UI language. Runs on
+  // startup (lang is restored from settings) and on every language change, so
+  // the tray never keeps labels from a previous language.
+  useEffect(() => {
+    if (!isTauri()) return;
+    void invoke("set_tray_language", { lang }).catch(() => {
+      // A missing tray (e.g. a stripped build) must never break the UI.
+    });
+  }, [lang]);
 
   // Keep every sidebar above the shared minimum without overriding a wider user-set width.
   useEffect(() => {
@@ -848,6 +936,7 @@ export default function App() {
       });
       if (!selected) return;
       const files = Array.isArray(selected) ? selected : [selected];
+      let imported = 0;
       for (const filePath of files) {
         const content = await readTextFile(filePath);
         const isTextFile = /\.txt$/i.test(filePath);
@@ -858,20 +947,36 @@ export default function App() {
             .join("\n")
           : content;
         await createImportedNote(filePath, content, savedContent);
+        imported += 1;
       }
-      setCurrentView("note");
+      // Only follow the files that actually landed: an empty switch to the note
+      // view looks like the import silently failed.
+      if (imported > 0) setCurrentView("note");
     } catch (e) {
       console.error("Failed to import text notes:", e);
+      const detail = e instanceof Error ? e.message : String(e);
+      void alertDialog({
+        title: t(lang, "importNote"),
+        body: tWithParams(lang, "importFailed", { message: detail }),
+        confirmLabel: t(lang, "dialogConfirm"),
+        tone: "danger",
+      });
     }
-  }, [createImportedNote]);
+  }, [createImportedNote, lang]);
 
-  const handleExportActiveNote = useCallback(async () => {
-    if (!activeNoteId) return;
-    const activeNote = notes.find((note) => note.id === activeNoteId);
-    if (!activeNote) return;
+  /**
+   * Export a note as a file. `noteId` lets a caller export a specific note — the
+   * tab strip's context menu can target a tab that is not the active one — and
+   * falls back to the active note for the editor toolbar button.
+   */
+  const handleExportNote = useCallback(async (noteId?: string) => {
+    const targetNoteId = noteId ?? activeNoteId;
+    if (!targetNoteId) return;
+    const targetNote = notes.find((note) => note.id === targetNoteId);
+    if (!targetNote) return;
 
     try {
-      const defaultPath = `${activeNote.title || t(lang, "untitled")}.md`;
+      const defaultPath = `${targetNote.title || t(lang, "untitled")}.md`;
       const savePath = await save({
         filters: [
           { name: t(lang, "exportFilterMarkdown"), extensions: ["md"] },
@@ -888,35 +993,49 @@ export default function App() {
       const hasExtension = /\.[^./\\]+$/.test(savePath);
       const exportPath = hasExtension ? savePath : `${savePath}.md`;
 
-      const storedContent = Object.prototype.hasOwnProperty.call(activeNote, "content")
-        ? activeNote.content
-        : await loadNoteContent(activeNote.id);
+      // Exporting the note that is open right now must export what is on screen,
+      // not the last autosaved revision: flush first, then read back from disk.
+      // Other notes are already persisted (switching tabs saves the outgoing one),
+      // so their in-memory copy is safe to use.
+      const isActiveNote = targetNoteId === activeNoteId;
+      if (isActiveNote) await flushActiveNote(targetNoteId);
+
+      let storedContent: string;
+      if (isActiveNote) {
+        storedContent = await loadNoteContent(targetNoteId);
+      } else {
+        storedContent = Object.prototype.hasOwnProperty.call(targetNote, "content")
+          ? targetNote.content
+          : await loadNoteContent(targetNoteId);
+      }
       const target = exportPath.toLowerCase();
 
-      // Word and PDF both need the rendered form: images resolved to data URLs,
-      // code blocks highlighted, Markdown already parsed.
+      // Word and PDF both need the rendered form: images inlined as data URLs
+      // (both loaders drop asset URLs), code blocks highlighted, Markdown parsed.
       if (target.endsWith(".docx") || target.endsWith(".pdf")) {
-        const html = await renderStoredNoteContent(storedContent);
+        const html = await renderStoredNoteContentForExport(storedContent);
 
         if (target.endsWith(".docx")) {
           // The DOCX writer is only pulled in when someone actually exports
           // Word, which keeps it out of the startup bundle.
           const { buildNoteDocx } = await import("@/utils/exportDocx");
           const { data, droppedImages } = await buildNoteDocx({
-            title: activeNote.title,
+            title: targetNote.title,
             html,
           });
           await writeFile(exportPath, data);
           if (droppedImages > 0) {
-            await message(tWithParams(lang, "exportImagesDropped", { count: droppedImages }), {
+            await alertDialog({
               title: t(lang, "exportFile"),
-              kind: "warning",
+              body: tWithParams(lang, "exportImagesDropped", { count: droppedImages }),
+              confirmLabel: t(lang, "dialogConfirm"),
+              tone: "warning",
             });
           }
           return;
         }
 
-        const sheet = mountPrintSheet(activeNote.title || t(lang, "untitled"), html);
+        const sheet = mountPrintSheet(targetNote.title || t(lang, "untitled"), html);
         try {
           await waitForPrintLayout(sheet);
           await invoke("export_pdf", { path: exportPath });
@@ -933,12 +1052,35 @@ export default function App() {
     } catch (e) {
       console.error("Export file failed:", e);
       const detail = e instanceof Error ? e.message : String(e);
-      void message(tWithParams(lang, "exportFailed", { message: detail }), {
+      void alertDialog({
         title: t(lang, "exportFile"),
-        kind: "error",
-      }).catch(() => undefined);
+        body: tWithParams(lang, "exportFailed", { message: detail }),
+        confirmLabel: t(lang, "dialogConfirm"),
+        tone: "danger",
+      });
     }
   }, [activeNoteId, lang, notes]);
+
+  /**
+   * Quit path. Flushes the active note first — the confirmation dialog promises
+   * that pending edits reach disk, so the promise has to be real, not aspirational.
+   */
+  const handleQuit = useCallback(async () => {
+    const noteId = useNoteStore.getState().activeNoteId;
+    if (noteId) await flushActiveNote(noteId);
+    try {
+      await invoke("quit_app");
+    } catch (error) {
+      console.error("Failed to quit the app:", error);
+      const detail = error instanceof Error ? error.message : String(error);
+      void alertDialog({
+        title: t(lang, "quitApp"),
+        body: detail,
+        confirmLabel: t(lang, "dialogConfirm"),
+        tone: "danger",
+      });
+    }
+  }, [lang]);
 
   // One left column for every view: the same width and the same collapsed flag
   // follow you from notes to todos to the workspace. Only the canvas has no
@@ -969,18 +1111,30 @@ export default function App() {
   // to branch on "is there a wallpaper?" — that keeps every glass rule at one
   // specificity level.
   const hasBackground = Boolean(customBackgroundUrl);
+  // Wallpaper mode splits the shell into two depths: the rails go a notch more
+  // solid and a notch darker, the main card one step lighter so the wallpaper
+  // reads through the middle. Everything is derived from the rail tint, so the
+  // split survives a slider drag instead of living in two separate settings.
+  const sideTint = hasBackground ? glassTintBg : glassTint;
+  const editorTint = hasBackground ? deriveGlassEditorTint(sideTint) : Math.max(glassTint, 92);
+  const dialogTint = Math.max(hasBackground ? glassTintBg : glassTint, 88);
   const appStyle = {
     "--left-sidebar-width": `${sidebarWidth}px`,
     "--ai-sidebar-width": `${aiSidebarWidth}px`,
     "--glass-blur": String(hasBackground ? glassBlurBg : glassBlur),
     "--glass-saturate": String(hasBackground ? glassSaturateBg : glassSaturate),
-    "--glass-tint-side": String(hasBackground ? glassTintBg : glassTint),
-    // The editor keeps a floor so long-form text never loses contrast against a
-    // busy wallpaper.
-    "--glass-tint-editor": String(hasBackground ? Math.max(glassTintBg, 88) : Math.max(glassTint, 92)),
+    "--glass-tint-side": String(sideTint),
+    "--glass-tint-editor": String(editorTint),
+    // Dialogs keep their near-opaque floor regardless of the rail tint: they are
+    // transient surfaces stacked over the app, not part of the depth ladder.
+    "--glass-tint-dialog": String(dialogTint),
+    "--glass-panel-side": hasBackground
+      ? `color-mix(in srgb, var(--color-bg-sidebar) ${100 - GLASS_RAIL_DARKEN}%, #000)`
+      : "var(--color-bg-sidebar)",
     "--glass-tint-light": "60",
     "--shell-pad": `${shell.pad}px`,
     "--shell-gutter": `${shell.gutter}px`,
+    "--shell-top-gap": `${shell.topGap}px`,
     backgroundColor: "var(--color-bg-shell)",
     ...(customBackgroundUrl ? {
       backgroundImage: `linear-gradient(color-mix(in srgb, var(--color-bg-primary) 15%, transparent), color-mix(in srgb, var(--color-bg-primary) 15%, transparent)), url(${JSON.stringify(customBackgroundUrl)})`,
@@ -997,22 +1151,20 @@ export default function App() {
       style={appStyle}
       data-glass={glassEnabled ? "on" : "off"}
     >
-      {/* Custom Title Bar */}
+      {/* Custom Title Bar — one help menu only; views live in the activity bar. */}
       <TitleBar
-        currentView={currentView}
-        onViewChange={setCurrentView}
-        onNewNote={handleNewNote}
-        onImportTextNotes={handleImportTextNotes}
-        onExportActiveNote={handleExportActiveNote}
         onOpenAuth={() => setAuthOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
+        onQuit={handleQuit}
       />
 
       {/* Main Content — three floating cards over the shell gutter. The sashes
           between them *are* the gutters, so a card that closes takes its own
-          gutter with it. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden px-[var(--shell-pad)] pb-[var(--shell-pad)] pt-[var(--shell-gutter)]">
+          gutter with it. The top edge uses its own `--shell-top-gap` (equal to
+          `--shell-pad`) rather than the gutter, so the cards float with the
+          same margin on all four sides while the sash width stays untouched. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden px-[var(--shell-pad)] pb-[var(--shell-pad)] pt-[var(--shell-top-gap)]">
         {/* ① Left card: the icon rail, plus the explorer column of whichever
             view is open. One surface, no divider - the rail is distinguished by
             hover and selection only. Only the canvas has no explorer yet; the
@@ -1053,6 +1205,8 @@ export default function App() {
                     currentView={currentView}
                     onViewChange={setCurrentView}
                     onNewNote={handleNewNote}
+                    onImportTextNotes={handleImportTextNotes}
+                    onExportNote={(noteId) => void handleExportNote(noteId)}
                     collapsed={sidebarCollapsed}
                     onToggleCollapse={toggleActiveSidebar}
                     onOpenSettings={() => setSettingsOpen(true)}
@@ -1089,11 +1243,11 @@ export default function App() {
                 ? <CanvasView />
                 : (
                   <>
-                    <NoteTabBar />
+                    <NoteTabBar onExportNote={(noteId) => void handleExportNote(noteId)} />
                     {/* The editor keeps a `h-full` root, so it needs a sized
                         parent once the tab strip shares the column with it. */}
                     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                      <NoteEditor />
+                      <NoteEditor onExportNote={() => void handleExportNote()} />
                     </div>
                   </>
                 )}
@@ -1117,7 +1271,7 @@ export default function App() {
           className={`sidebar-width-shell h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out${collapseAnimating ? " sidebar-collapse-anim" : ""}`}
         >
           <div className="shell-box surface-glass h-full w-[var(--ai-sidebar-width)]">
-            <AiSidebar onOpenSettings={() => setSettingsOpen(true)} />
+            <AiSidebar onOpenSettings={() => openSettings("ai")} />
           </div>
         </div>
       </div>
@@ -1126,6 +1280,7 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onOpenAuth={() => setAuthOpen(true)}
+        initialSection={settingsSection}
       />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       {availableUpdate && (
@@ -1139,6 +1294,7 @@ export default function App() {
       )}
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <PasswordRecoveryModal />
+      <AppDialog />
       <WorkspaceRemovalNotifier />
       {autoLoginLoading && (
         <div className="pointer-events-none fixed inset-x-0 top-12 z-[100] flex justify-center px-4">

@@ -24,11 +24,11 @@
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
+      "description": "Only app-owned paths. The two \"open folder\" buttons no longer use this permission (the data directory can be moved anywhere), they call the `open_data_path` command, which validates the path against the live data root.",
       "allow": [
         { "path": "$APPDATA/**" },
         { "path": "$EXE/**" },
-        { "path": "$RESOURCE/**" },
-        { "path": "**" }
+        { "path": "$RESOURCE/**" }
       ]
     },
     "fs:default",
@@ -45,13 +45,11 @@
     "fs:allow-stat",
     {
       "identifier": "fs:scope",
+      "description": "Data lives in <resource>/data (installed) or <repo>/data (dev); both are registered at runtime by `storage::register_startup_roots`, as is a user-relocated directory. User files that are only imported or exported are reachable because tauri-plugin-dialog adds every picked path to this scope (dialog/src/commands.rs). No wildcard: a compromised renderer must not be able to read the whole disk.",
       "allow": [
-        { "path": "$APPDATA/**" },
+        { "path": "$RESOURCE/**" },
         { "path": "$EXE/**" },
-        { "path": "$HOME/Desktop/**" },
-        { "path": "$HOME/Documents/**" },
-        { "path": "$HOME/Downloads/**" },
-        { "path": "**" }
+        { "path": "$APPDATA/**" }
       ]
     },
     "dialog:default",
@@ -69,8 +67,30 @@
     "deep-link:default",
     {
       "identifier": "http:default",
+      "description": "AI endpoints are user-configured, so hosts cannot be fixed at build time. HTTPS is allowed for any host; plaintext HTTP is limited to loopback and RFC 1918 ranges, because the only caller is the AI transport and its key material must never cross the public internet in clear text. Two URLPattern facts drive the shape of this list: (1) the port is its own component, so `https://**` does NOT match `https://host:8443` — both the bare and the `:*` form are required; (2) a wildcard in the host crosses dots, so `http://192.168.*:*` also matches a DNS name such as `192.168.1.5.example.com`. The residual DNS-name case is accepted: it still blocks every public HTTP IP and every ordinary hostname. IPv6 literals cannot be expressed (`http://[::1]:*` fails to construct), so IPv6 loopback endpoints are unsupported.",
       "allow": [
-        { "url": "https://api.deepseek.com/*" }
+        { "url": "https://**" },
+        { "url": "https://**:*" },
+        { "url": "http://localhost:*" },
+        { "url": "http://127.0.0.1:*" },
+        { "url": "http://10.*:*" },
+        { "url": "http://192.168.*:*" },
+        { "url": "http://172.16.*:*" },
+        { "url": "http://172.17.*:*" },
+        { "url": "http://172.18.*:*" },
+        { "url": "http://172.19.*:*" },
+        { "url": "http://172.20.*:*" },
+        { "url": "http://172.21.*:*" },
+        { "url": "http://172.22.*:*" },
+        { "url": "http://172.23.*:*" },
+        { "url": "http://172.24.*:*" },
+        { "url": "http://172.25.*:*" },
+        { "url": "http://172.26.*:*" },
+        { "url": "http://172.27.*:*" },
+        { "url": "http://172.28.*:*" },
+        { "url": "http://172.29.*:*" },
+        { "url": "http://172.30.*:*" },
+        { "url": "http://172.31.*:*" }
       ]
     }
   ]

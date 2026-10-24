@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import {
-  deleteAiCredentialCipher,
   loadAiCredentialCipher,
+  loadAiEndpointKeyCiphers,
+  loadAiEndpoints,
   loadAiPreferences,
-  saveAiCredentialCipher,
+  saveAiEndpointKeyCiphers,
+  saveAiEndpoints,
   saveAiPreferences,
   loadAiConversations,
   deleteAiConversation,
@@ -18,15 +20,24 @@ import {
   type AiErrorCode,
   type ChatMessage,
   type ChatProvider,
+  type ThinkingLevel,
 } from "@/utils/ai/provider";
-import { getChatProvider } from "@/utils/ai/chat";
+import { getChatProvider, syncChatProviders } from "@/utils/ai/chat";
 import {
-  getSearchProvider,
-  DEFAULT_SEARCH_PROVIDER_ID,
-  type WebSearchResult,
-} from "@/utils/ai/search";
+  guessSupportsThinking,
+  LOCAL_SELECTION,
+  makeSelection,
+  normalizeBaseUrl,
+  parseSelection,
+  type AiEndpoint,
+  type EndpointModel,
+} from "@/utils/ai/chat/endpoints";
+import { fetchRemoteModels } from "@/utils/ai/chat/modelsApi";
+import { resolveModelBrand } from "@/utils/ai/modelBrand";
 import { searchKnowledge, type ManualHit } from "@/utils/ai/knowledgeRetrieval";
 import { composeLocalAnswerFromHit } from "@/utils/ai/answerComposer";
+import { detectSmallTalk } from "@/utils/ai/smallTalk";
+import { t } from "@/utils/i18n";
 import {
   buildNoteDirectory,
   executeNoteTool,
@@ -37,13 +48,19 @@ import {
 import type { ChatToolCall } from "@/utils/ai/chat/types";
 import { withTimeout } from "@/utils/ai/http";
 import { warmUpVectorIndex } from "@/utils/ai/vectorIndex";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useSettingsStore, type LangType } from "@/stores/settingsStore";
 
-/** Chat routing: "local" = 小青 knowledge-base mode, any other value = provider id. */
-export const LOCAL_MODEL_ID = "local";
-const DEFAULT_POLISH_MODEL_ID = "deepseek";
-/** Deadline for the one-shot key checks in 设置 → AI 设置. */
+/** Chat routing: "local" = 小青 knowledge-base mode, else "<endpointId>::<modelId>". */
+export const LOCAL_MODEL_ID = LOCAL_SELECTION;
+/** Deadline for one "模型搜索" round trip in 设置 → AI 接口. */
 const KEY_TEST_TIMEOUT_MS = 15_000;
+/**
+ * Seed model for the one-time migration off the old built-in DeepSeek preset:
+ * before endpoints existed, the app hard-coded this id, so an existing install
+ * keeps answering after the upgrade without re-searching its model list.
+ */
+const LEGACY_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const LEGACY_DEEPSEEK_MODEL = "deepseek-flash";
 /**
  * Output budget per turn. 2048 was routinely eaten by reasoning tokens on
  * thinking models, truncating the visible answer without any signal; 4096
@@ -53,14 +70,7 @@ const KEY_TEST_TIMEOUT_MS = 15_000;
 const MAX_ANSWER_TOKENS = 4_096;
 
 /** Coarse stage of a turn, shown while the answer text is still empty. */
-export type AiTurnPhase = "retrieving" | "searching" | "thinking" | "writing";
-
-/** One web result the answer was built from; rendered as a clickable source. */
-export interface AiMessageSource {
-  title: string;
-  url: string;
-  siteName?: string;
-}
+export type AiTurnPhase = "retrieving" | "thinking" | "writing";
 
 export interface AiChatMessage {
   id: string;
@@ -73,20 +83,19 @@ export interface AiChatMessage {
   streaming?: boolean;
   /** Set when the turn failed; `content` may hold partial output. */
   errorCode?: AiErrorCode;
-  /**
-   * Set when 联网搜索 was on but the request failed. The turn still answers
-   * from the local knowledge base; the flag only drives a hint, so the failure
-   * is never silent.
-   */
-  searchError?: boolean;
   /** Note writes this turn performed (full-permission mode); undo targets. */
   edits?: AiNoteEdit[];
-  /** Web results the turn was answered from (empty when search was off/failed). */
-  sources?: AiMessageSource[];
   /** The turn hit `max_tokens`: the answer shown is cut off. */
   truncated?: boolean;
   /** Current stage of a streaming turn; cleared once text starts arriving. */
   phase?: AiTurnPhase;
+  /**
+   * Vendor mark of the model that produced this answer, snapshotted when the
+   * turn starts. Stored rather than re-derived on render: the user can switch
+   * models mid-conversation, and an old answer must keep the logo of the model
+   * that actually wrote it.
+   */
+  brandKey?: string;
   /** Creation time (ms since epoch), shown on hover in the sidebar. */
   createdAt: number;
 }
@@ -117,7 +126,13 @@ export interface PolishSession {
   undo: () => void;
 }
 
-export type AiKeyStatus = "idle" | "loading" | "saving" | "testing";
+export type AiKeyStatus = "idle" | "saving" | "fetching";
+
+/** A failed "模型搜索" (or key save) for one endpoint, shown inline in settings. */
+export interface AiEndpointError {
+  code: AiErrorCode;
+  detail: string | null;
+}
 
 let abortController: AbortController | null = null;
 
@@ -127,12 +142,39 @@ function newId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Vendor mark behind the current selection, snapshotted onto a new assistant
+ * message. Resolved once when the turn starts, never on render — switching
+ * models mid-conversation must not repaint older answers with the new logo.
+ */
+function brandKeyForSelection(
+  chatModel: string,
+  endpoints: AiEndpoint[],
+): string | undefined {
+  const selected = parseSelection(chatModel);
+  if (!selected) return undefined;
+  const endpoint = endpoints.find((item) => item.id === selected.endpointId);
+  return resolveModelBrand({
+    modelId: selected.modelId,
+    baseUrl: endpoint?.baseUrl,
+    endpointName: endpoint?.name,
+  })?.key;
+}
+
 interface AiState {
-  /** Plain-text key held in memory only; never persisted as-is. */
-  apiKey: string | null;
-  hasKey: boolean;
+  /**
+   * User-owned chat endpoints (设置 → AI 接口). Empty on a fresh install: the
+   * app ships no vendor preset, so nothing can answer until one is added.
+   */
+  endpoints: AiEndpoint[];
+  /**
+   * endpointId → plain key. Memory only, never persisted as-is; each key is
+   * encrypted into `data/ai/endpoint-keys.json` separately.
+   */
+  endpointKeys: Record<string, string>;
+  endpointStatus: Record<string, AiKeyStatus>;
+  endpointError: Record<string, AiEndpointError | undefined>;
   loaded: boolean;
-  status: AiKeyStatus;
   sidebarOpen: boolean;
   lastErrorCode: AiErrorCode | null;
   lastErrorDetail: string | null;
@@ -140,25 +182,36 @@ interface AiState {
   sending: boolean;
   polish: PolishSession | null;
   polishApplied: boolean;
-  /** Selected chat model: `LOCAL_MODEL_ID` or a `ChatProvider` id. */
+  /** Selected chat target: `LOCAL_MODEL_ID` or `"<endpointId>::<modelId>"`. */
   chatModel: string;
-  /** Selected 润色 model: a generative `ChatProvider` id. */
+  /** Selected 润色 target, same shape as `chatModel` (never local). */
   polishModel: string;
-  /** Whether DeepSeek-mode turns run a real-time web search. */
-  searchEnabled: boolean;
   /** Saved conversations (snapshot copies; the live view is `messages`). */
   conversations: AiConversation[];
   /** Conversation the live `messages` belong to; null = unsaved fresh chat. */
   activeConversationId: string | null;
   /** Note-write permission: "readonly" (assistant only) or "full" (may edit). */
   noteWriteMode: NoteWriteMode;
+  /** Reasoning depth sent with every generative request (default "low"). */
+  thinkingLevel: ThinkingLevel;
 
   hydrate: () => Promise<void>;
-  saveKey: (plain: string) => Promise<boolean>;
-  clearKey: () => Promise<void>;
-  verifyKey: (plain?: string) => Promise<boolean>;
-  setSearchEnabled: (enabled: boolean) => void;
+  /** Add an endpoint (optionally seeded from a preset) and return its id. */
+  addEndpoint: (preset?: { name: string; baseUrl: string }) => string;
+  updateEndpoint: (id: string, patch: { name?: string; baseUrl?: string }) => void;
+  removeEndpoint: (id: string) => Promise<void>;
+  saveEndpointKey: (id: string, plain: string) => Promise<boolean>;
+  clearEndpointKey: (id: string) => Promise<void>;
+  /**
+   * Fetch `GET {baseUrl}/models` and merge the result into the endpoint's model
+   * list. Newly discovered models arrive **unticked** — the user decides what
+   * shows up in the chat bar (that is the whole point of 允许使用).
+   */
+  fetchEndpointModels: (id: string) => Promise<boolean>;
+  toggleEndpointModel: (id: string, modelId: string) => void;
+  setEndpointModelThinking: (id: string, modelId: string, value: boolean) => void;
   setNoteWriteMode: (mode: NoteWriteMode) => void;
+  setThinkingLevel: (level: ThinkingLevel) => void;
   /** Roll back the note writes recorded on an assistant message (reverse order). */
   undoMessageEdits: (messageId: string) => Promise<void>;
   recordError: (error: unknown) => void;
@@ -193,12 +246,91 @@ function toAiError(error: unknown): AiError {
   return new AiError("network", String(error));
 }
 
-/** Persisted ids are validated against the provider registry on restore. */
-function normalizeChatModel(value: unknown): string {
-  if (typeof value === "string" && value !== LOCAL_MODEL_ID && getChatProvider(value)) {
-    return value;
+/** A selection that resolved to a live provider, endpoint, model and key. */
+export interface ResolvedSelection {
+  provider: ChatProvider;
+  endpoint: AiEndpoint;
+  model: string;
+  apiKey: string;
+  supportsThinking: boolean;
+}
+
+/**
+ * Turn a stored `"<endpointId>::<modelId>"` into everything a request needs.
+ * Returns null for 小青 (`"local"`) and for a selection whose endpoint or model
+ * disappeared, so callers never hand a phantom model to the API.
+ */
+function resolveSelection(
+  state: Pick<AiState, "endpoints" | "endpointKeys">,
+  selection: string,
+): ResolvedSelection | null {
+  const parsed = parseSelection(selection);
+  if (!parsed) return null;
+  const endpoint = state.endpoints.find((item) => item.id === parsed.endpointId);
+  if (!endpoint) return null;
+  const model = endpoint.models.find(
+    (item) => item.id === parsed.modelId && item.enabled,
+  );
+  if (!model) return null;
+  const provider = getChatProvider(parsed.endpointId);
+  if (!provider) return null;
+  return {
+    provider,
+    endpoint,
+    model: model.id,
+    apiKey: state.endpointKeys[endpoint.id] ?? "",
+    supportsThinking: model.supportsThinking,
+  };
+}
+
+/** First enabled model of the first endpoint that has one (null when none). */
+function firstEnabledModel(endpoints: AiEndpoint[]): string | null {
+  for (const endpoint of endpoints) {
+    const model = endpoint.models.find((item) => item.enabled);
+    if (model) return makeSelection(endpoint.id, model.id);
   }
-  return LOCAL_MODEL_ID;
+  return null;
+}
+
+/**
+ * Validate a persisted selection against the configured endpoints.
+ *
+ * Pre-endpoint builds stored a bare provider id (`"deepseek"`) or `"local"`;
+ * the former is remapped to that endpoint's first enabled model so an upgrade
+ * does not silently drop the user back to 小青. A selection whose model was
+ * later unticked falls back to the same endpoint's first enabled model rather
+ * than a different service entirely.
+ */
+function normalizeChatModel(value: unknown, endpoints: AiEndpoint[]): string {
+  if (value === LOCAL_MODEL_ID) return LOCAL_MODEL_ID;
+  if (typeof value === "string" && value) {
+    const parsed = parseSelection(value);
+    if (parsed) {
+      const endpoint = endpoints.find((item) => item.id === parsed.endpointId);
+      if (endpoint) {
+        const model = endpoint.models.find(
+          (item) => item.id === parsed.modelId && item.enabled,
+        );
+        if (model) return value;
+        const fallback = endpoint.models.find((item) => item.enabled);
+        if (fallback) return makeSelection(endpoint.id, fallback.id);
+      }
+    } else {
+      // Legacy provider id or an endpoint name.
+      const legacy = endpoints.find(
+        (item) => item.id === value || item.name === value,
+      );
+      const model = legacy?.models.find((item) => item.enabled);
+      if (legacy && model) return makeSelection(legacy.id, model.id);
+    }
+  }
+  return firstEnabledModel(endpoints) ?? LOCAL_MODEL_ID;
+}
+
+/** Same validation for 润色, which has no local option: "" means "not chosen". */
+function normalizePolishModel(value: unknown, endpoints: AiEndpoint[]): string {
+  const resolved = normalizeChatModel(value, endpoints);
+  return resolved === LOCAL_MODEL_ID ? (firstEnabledModel(endpoints) ?? "") : resolved;
 }
 
 /** Snapshot of the AI preference bag; kept whole so partial sets never drop fields. */
@@ -206,9 +338,20 @@ function persistPreferences(state: AiState): Promise<void> {
   return saveAiPreferences({
     chatModel: state.chatModel,
     polishModel: state.polishModel,
-    searchEnabled: state.searchEnabled,
     noteWriteMode: state.noteWriteMode,
+    thinkingLevel: state.thinkingLevel,
   } satisfies StoredAiPreferences);
+}
+
+/** Persist endpoints and rebuild the provider registry from them. */
+function commitEndpoints(
+  set: StoreSet,
+  endpoints: AiEndpoint[],
+  extra: Partial<AiState> = {},
+): void {
+  syncChatProviders(endpoints);
+  set({ endpoints, ...extra } as Partial<AiState>);
+  void saveAiEndpoints(endpoints);
 }
 
 /** Persisted mode is validated; anything unknown falls back to read-only. */
@@ -217,17 +360,12 @@ function normalizeNoteWriteMode(value: unknown): NoteWriteMode {
 }
 
 /**
- * 联网搜索 follows the recorded decision (docs/decisions-ai-integration.md #3:
- * 默认开启、可关闭), so an absent preference means enabled. It reuses the chat
- * key, so a configured chat key is all it needs.
+ * Reasoning depth defaults to "low": the API's own default is enabled/high,
+ * which spent most of the 4096-token budget on CoT and truncated answers.
+ * An unknown persisted value falls back to that same safe default.
  */
-function normalizeSearchEnabled(value: unknown): boolean {
-  return value === undefined || value === null ? true : Boolean(value);
-}
-
-function normalizePolishModel(value: unknown): string {
-  if (typeof value === "string" && getChatProvider(value)) return value;
-  return DEFAULT_POLISH_MODEL_ID;
+function normalizeThinkingLevel(value: unknown): ThinkingLevel {
+  return value === "off" || value === "high" ? value : "low";
 }
 
 /**
@@ -238,8 +376,15 @@ function normalizePolishModel(value: unknown): string {
  * The hit is assembled by `answerComposer`, which reshapes the same excerpt
  * according to what was asked (steps / location / verdict / definition) so two
  * different questions about one section no longer produce identical text.
+ *
+ * 寒暄与身份询问没有可检索的对象，先由 `detectSmallTalk` 接走，用固定话术说明
+ * 「离线检索、不会闲聊」，而不是把某段手册正文当成自我介绍。
  */
-function composeLocalAnswer(hits: ManualHit[], question: string): string {
+function composeLocalAnswer(hits: ManualHit[], question: string, lang: LangType): string {
+  const smallTalk = detectSmallTalk(question);
+  if (smallTalk) {
+    return t(lang, smallTalk === "identity" ? "aiSmallTalkIdentity" : "aiSmallTalkGreeting");
+  }
   return composeLocalAnswerFromHit(hits, question);
 }
 
@@ -404,21 +549,25 @@ async function runGeneration(
     .map((m) => ({
       role: m.role === "user" ? ("user" as const) : ("assistant" as const),
       content: m.content,
+      // Replayed because DeepSeek requires every earlier turn's CoT once the
+      // request carries `tools`; harmless when it does not.
+      ...(m.reasoning ? { reasoning: m.reasoning } : {}),
     }));
 
-  const apiKey = get().apiKey;
   abortController = controller;
+  const lang = useSettingsStore.getState().lang;
 
-  // Route by the sidebar model picker. An unknown persisted id falls back
-  // to 小青 so a stale preference can never dead-end the input box.
+  // Route by the chat-bar picker. The selection names both the endpoint and the
+  // model, so an endpoint that was deleted (or a model that was unticked) falls
+  // back to 小青 instead of dead-ending a request against a phantom model.
   const selected = get().chatModel;
-  const provider: ChatProvider | null =
-    selected === LOCAL_MODEL_ID ? null : (getChatProvider(selected) ?? null);
+  const resolved = selected === LOCAL_MODEL_ID ? null : resolveSelection(get(), selected);
+  const provider = resolved?.provider ?? null;
 
   // "小青" local mode. Stream the best retrieval hit as typed text
   // through the same message pipeline a model reply uses — no cards.
-  if (!provider) {
-    const answer = composeLocalAnswer(hits, question);
+  if (!provider || !resolved) {
+    const answer = composeLocalAnswer(hits, question, lang);
     try {
       await pacedStreamText(answer, controller.signal, (delta) =>
         set((state) => ({
@@ -440,7 +589,9 @@ async function runGeneration(
     return;
   }
 
-  // API model selected but no key configured yet: fail the turn with the
+  const { apiKey } = resolved;
+
+  // API model selected but this endpoint has no key yet: fail the turn with the
   // missing-key code so the UI can point at 设置.
   if (!apiKey) {
     set((state) => ({
@@ -455,62 +606,21 @@ async function runGeneration(
     return;
   }
 
-  const lang = useSettingsStore.getState().lang;
-
-  // Real-time web search (DeepSeek mode): best-effort — a failed or disabled
-  // search degrades to knowledge-base RAG and never blocks the turn. The
-  // failure is surfaced on the message (`searchError`) so an expired key or a
-  // blocked host is visible instead of silently answering without sources.
-  let webResults: WebSearchResult[] = [];
-  let searchFailed = false;
-  const { searchEnabled } = get();
-  const searchProvider = getSearchProvider(DEFAULT_SEARCH_PROVIDER_ID);
-  // The search adapter shares the already-validated chat key: 联网搜索 adds no
-  // second credential, so its failure modes are the same as the chat call.
-  if (searchEnabled && searchProvider) {
-    setPhase(set, assistantId, "searching");
-    try {
-      webResults = await searchProvider.search({
-        apiKey,
-        query: question,
-        oriQuestion: question,
-        count: 5,
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (controller.signal.aborted) {
-        webResults = [];
-      } else {
-        webResults = [];
-        searchFailed = true;
-        console.warn("ai: web search failed", error);
-      }
-    }
-    if (controller.signal.aborted) {
-      if (abortController === controller) abortController = null;
-      set((state) => ({
-        sending: false,
-        messages: state.messages.map((m) =>
-          m.id === assistantId ? { ...m, streaming: false, phase: undefined } : m,
-        ),
-      }));
-      return;
-    }
-  }
-
-  // Note-write permission: "full" hands the model editing tools (see
-  // docs/decisions-ai-note-write.md); "readonly" keeps it answering only.
-  const writeMode = get().noteWriteMode === "full" && provider.supportsTools;
+  // Note-write permission: `noteWriteMode` is the **only** gate. There is no
+  // per-endpoint tool switch on purpose — the permission layer owns this
+  // decision (docs/decisions-ai-note-write.md), and an endpoint that cannot
+  // honour `tools` will say so in its own error instead of being pre-judged.
+  const writeMode = get().noteWriteMode === "full";
 
   const systemContent =
     lang === "zh"
-      ? "你是「小青」，桌面应用「青记」的内置助手。回答软件使用问题时优先依据【知识库】参考片段，不要编造界面中不存在的功能；片段未覆盖时如实说明。知识库片段包含用户笔记、待办与画布内容，可据此回答「我记过什么」这类问题。若提供了【网页】搜索结果，可回答一般性问题，并在使用了结果的句子末尾标注（来源：站点名）。回答用中文，简洁、分步骤。" +
+      ? "你是「小青」，桌面应用「青记」的内置助手。回答软件使用问题时优先依据【知识库】参考片段，不要编造界面中不存在的功能；片段未覆盖时如实说明。知识库片段包含用户笔记、待办与画布内容，可据此回答「我记过什么」这类问题。回答用中文，简洁、分步骤。" +
         (writeMode
-          ? `\n\n用户已开启「完全开放」笔记权限：你可以用工具直接读取并修改笔记正文与标题，修改立即生效、用户可撤销。修改前必须先用 read_note 读取原文，在原文基础上改动后用 update_note_content 输出完整正文，绝不丢失原有内容；用 rename_note 改标题。不要删除笔记，也不要新建笔记。\n\n【笔记目录】\n${buildNoteDirectory()}`
+          ? `\n\n用户已开启「完全开放」笔记权限：你可以用工具直接读取并修改笔记正文与标题，修改立即生效、用户可撤销。修改前必须先用 read_note 读取原文，在原文基础上改动后用 update_note_content 输出完整正文，绝不丢失原有内容；用 rename_note 改标题。不要删除笔记，也不要新建笔记。\n\n笔记目录（id：标题）附在本轮问题之后。`
           : "\n\n你不能修改用户笔记。当用户要求修改时，说明需要在编辑器中手动改，并把建议的文本用代码块给出方便复制。")
-      : "You are XiaoQing, the built-in assistant of the Qing Notepad desktop app. For usage questions, answer from the 【知识库】 excerpts (they include the user's notes, todos and canvas text) and never invent UI that does not exist. When 【网页】 web search results are provided you may answer general questions; end sentences that use a result with (Source: site name). Be concise and step-by-step." +
+      : "You are XiaoQing, the built-in assistant of the Qing Notepad desktop app. For usage questions, answer from the 【知识库】 excerpts (they include the user's notes, todos and canvas text) and never invent UI that does not exist. Be concise and step-by-step." +
         (writeMode
-          ? `\n\nThe user has granted full note permission: you may read and edit note bodies and titles through tools; edits take effect immediately and can be undone by the user. Always call read_note first and rewrite the complete body with update_note_content so nothing is lost; use rename_note for titles. Never delete or create notes.\n\n【Notes directory】\n${buildNoteDirectory()}`
+          ? `\n\nThe user has granted full note permission: you may read and edit note bodies and titles through tools; edits take effect immediately and can be undone by the user. Always call read_note first and rewrite the complete body with update_note_content so nothing is lost; use rename_note for titles. Never delete or create notes.\n\nThe note directory (id: title) follows this turn's question.`
           : "\n\nYou cannot modify the user's notes. When asked to edit one, say the change has to be made in the editor and give the suggested text in a code block for copying.");
   const system: ChatMessage = {
     role: "system",
@@ -519,23 +629,19 @@ async function runGeneration(
   const kbBlock = hits
     .map((hit) => `【${hit.chunk.heading || "概述"}】\n${hit.chunk.text}`)
     .join("\n\n");
-  const webBlock = webResults
-    .map(
-      (result, i) =>
-        `【${i + 1}. ${result.title}】${result.siteName ? `（${result.siteName}）` : ""}\n${
-          result.summary || result.snippet
-        }\n${result.url}`,
-    )
-    .join("\n\n");
-  const references = [
-    kbBlock ? `知识库片段：\n${kbBlock}` : "",
-    webBlock ? `网页搜索结果：\n${webBlock}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const references = kbBlock ? `知识库片段：\n${kbBlock}` : "";
+  // Volatile data goes last on purpose. The note directory changes whenever a
+  // title changes, and the retrieved block changes every turn; keeping both out
+  // of the system prompt leaves that prefix byte-stable so the disk cache can
+  // hit it (deepseek caches prefixes, not arbitrary spans).
+  const directoryBlock = writeMode
+    ? `\n\n【笔记目录】\n${buildNoteDirectory()}`
+    : "";
   const user: ChatMessage = {
     role: "user",
-    content: references ? `${references}\n\n问题：${question}` : `问题：${question}`,
+    content:
+      (references ? `${references}\n\n问题：${question}` : `问题：${question}`) +
+      directoryBlock,
   };
 
   // Agent loop: at most MAX_TOOL_ROUNDS tool round trips, then the turn ends
@@ -543,12 +649,18 @@ async function runGeneration(
   const MAX_TOOL_ROUNDS = 3;
   const turnMessages: ChatMessage[] = [system, ...history, user];
   const tools = writeMode ? NOTE_WRITE_TOOLS : undefined;
+  // One control decides this turn: the level resolves to the selected model plus
+  // its reasoning wire fields (none at all for a model that cannot think).
+  const target = provider.resolveTarget(get().thinkingLevel, resolved.model);
   const edits: AiNoteEdit[] = [];
   let truncated = false;
 
   try {
     for (let round = 0; ; round++) {
       let turnCalls: ChatToolCall[] = [];
+      // Kept per round: the assistant message for *this* sub-request must carry
+      // exactly the CoT it produced, not the accumulated message text.
+      let roundReasoning = "";
       setPhase(set, assistantId, "thinking");
       const turnText = await provider.stream({
         apiKey,
@@ -558,6 +670,9 @@ async function runGeneration(
         maxTokens: MAX_ANSWER_TOKENS,
         signal: controller.signal,
         tools,
+        model: target.model,
+        thinking: target.thinking,
+        reasoningEffort: target.reasoningEffort,
         onFinish: (reason) => {
           if (reason === "length") truncated = true;
         },
@@ -570,17 +685,24 @@ async function runGeneration(
               m.id === assistantId ? { ...m, content: m.content + delta } : m,
             ),
           })),
-        onReasoning: (delta) =>
+        onReasoning: (delta) => {
+          roundReasoning += delta;
           set((state) => ({
             messages: state.messages.map((m) =>
               m.id === assistantId
                 ? { ...m, reasoning: (m.reasoning ?? "") + delta }
                 : m,
             ),
-          })),
+          }));
+        },
       });
       if (!turnCalls.length || !tools || round >= MAX_TOOL_ROUNDS) break;
-      turnMessages.push({ role: "assistant", content: turnText, toolCalls: turnCalls });
+      turnMessages.push({
+        role: "assistant",
+        content: turnText,
+        toolCalls: turnCalls,
+        ...(roundReasoning ? { reasoning: roundReasoning } : {}),
+      });
       setPhase(set, assistantId, "writing");
       for (const call of turnCalls) {
         if (controller.signal.aborted) break;
@@ -594,16 +716,6 @@ async function runGeneration(
       }
       if (controller.signal.aborted) break;
     }
-    const sources: AiMessageSource[] | undefined = webResults.length
-      ? webResults
-          .filter((result) => /^https?:\/\//i.test(result.url))
-          .slice(0, 4)
-          .map((result) => ({
-            title: result.title || result.url,
-            url: result.url,
-            ...(result.siteName ? { siteName: result.siteName } : {}),
-          }))
-      : undefined;
     set((state) => ({
       messages: state.messages.map((m) =>
         m.id === assistantId
@@ -612,9 +724,7 @@ async function runGeneration(
               streaming: false,
               phase: undefined,
               edits: edits.length ? edits : undefined,
-              sources,
               truncated: truncated || undefined,
-              searchError: searchFailed || undefined,
             }
           : m,
       ),
@@ -631,7 +741,6 @@ async function runGeneration(
               streaming: false,
               phase: undefined,
               errorCode: aiError.code,
-              searchError: searchFailed || undefined,
             }
           : m,
       ),
@@ -644,10 +753,11 @@ async function runGeneration(
 }
 
 export const useAiStore = create<AiState>((set, get) => ({
-  apiKey: null,
-  hasKey: false,
+  endpoints: [],
+  endpointKeys: {},
+  endpointStatus: {},
+  endpointError: {},
   loaded: false,
-  status: "idle",
   // Mirrors the left sidebar's default: the panel starts expanded. Only the
   // toggle hides it; a fresh launch always shows it again.
   sidebarOpen: true,
@@ -658,23 +768,84 @@ export const useAiStore = create<AiState>((set, get) => ({
   polish: null,
   polishApplied: false,
   chatModel: LOCAL_MODEL_ID,
-  polishModel: DEFAULT_POLISH_MODEL_ID,
-  searchEnabled: true,
+  polishModel: "",
   noteWriteMode: "readonly",
+  thinkingLevel: "low",
   conversations: [],
   activeConversationId: null,
 
   hydrate: async () => {
-    if (get().loaded || get().status === "loading") return;
-    set({ status: "loading" });
+    if (get().loaded) return;
     // Start loading the embedding model in the background so the first
     // question already benefits from the semantic channel (progressive).
-    warmUpVectorIndex();
-    const [cipher, prefs, savedConversations] = await Promise.all([
-      loadAiCredentialCipher(),
-      loadAiPreferences(),
-      loadAiConversations(),
-    ]);
+    // Never let it take the panel down with it: a missing/blocked model only
+    // costs the semantic channel, which already falls back to BM25.
+    try {
+      warmUpVectorIndex();
+    } catch (error) {
+      console.warn("ai: vector warm-up failed", error);
+    }
+    // A failed read must not leave the store half-initialised — the guard above
+    // would then refuse every later attempt and the settings panel would look
+    // like it never loaded. Degrade to defaults instead, so the form stays
+    // usable.
+    let endpoints: AiEndpoint[] = [];
+    let keyCiphers: Record<string, string> = {};
+    let prefs: StoredAiPreferences = {};
+    let savedConversations: AiConversation[] = [];
+    try {
+      [endpoints, keyCiphers, prefs, savedConversations] = await Promise.all([
+        loadAiEndpoints(),
+        loadAiEndpointKeyCiphers(),
+        loadAiPreferences(),
+        loadAiConversations(),
+      ]);
+    } catch (error) {
+      console.warn("ai: preferences load failed, using defaults", error);
+    }
+
+    // One-time migration off the old single-key builds: the app used to hard-code
+    // the DeepSeek endpoint, so an existing install becomes one endpoint instead
+    // of an empty settings page. The legacy blob is left on disk untouched —
+    // deleting it would break a downgrade for no benefit.
+    if (!endpoints.length) {
+      const legacyCipher = await loadAiCredentialCipher();
+      if (legacyCipher) {
+        const id = newId();
+        endpoints = [
+          {
+            id,
+            name: "DeepSeek",
+            baseUrl: LEGACY_DEEPSEEK_BASE_URL,
+            createdAt: Date.now(),
+            models: [
+              {
+                id: LEGACY_DEEPSEEK_MODEL,
+                enabled: true,
+                supportsThinking: guessSupportsThinking(LEGACY_DEEPSEEK_MODEL),
+              },
+            ],
+          },
+        ];
+        keyCiphers = { [id]: legacyCipher };
+        await saveAiEndpoints(endpoints);
+        await saveAiEndpointKeyCiphers(keyCiphers);
+      }
+    }
+
+    // Decrypt per endpoint: one unreadable blob (user or machine change) must
+    // cost exactly that endpoint's key, not the whole configuration.
+    const keys: Record<string, string> = {};
+    for (const [id, cipher] of Object.entries(keyCiphers)) {
+      try {
+        keys[id] = await decryptSecret(cipher);
+      } catch (error) {
+        console.warn("ai: endpoint key unreadable, dropped", id, error);
+      }
+    }
+
+    syncChatProviders(endpoints);
+
     // Re-open the most recently active conversation so a relaunch continues
     // where the user left off.
     const last = savedConversations.reduce<AiConversation | null>(
@@ -689,120 +860,199 @@ export const useAiStore = create<AiState>((set, get) => ({
           ),
         }
       : { activeConversationId: null, messages: [] as AiChatMessage[] };
-    const restored = {
-      chatModel: normalizeChatModel(prefs.chatModel),
-      polishModel: normalizePolishModel(prefs.polishModel),
-      searchEnabled: normalizeSearchEnabled(prefs.searchEnabled),
+
+    set({
+      endpoints,
+      endpointKeys: keys,
+      loaded: true,
+      chatModel: normalizeChatModel(prefs.chatModel, endpoints),
+      polishModel: normalizePolishModel(prefs.polishModel, endpoints),
       noteWriteMode: normalizeNoteWriteMode(prefs.noteWriteMode),
+      thinkingLevel: normalizeThinkingLevel(prefs.thinkingLevel),
       conversations: savedConversations,
       ...restoredConv,
-    };
-    if (!cipher) {
-      set({
-        apiKey: null,
-        hasKey: false,
-        loaded: true,
-        status: "idle",
-        ...restored,
-      });
-      return;
-    }
-    try {
-      const plain = await decryptSecret(cipher);
-      set({
-        apiKey: plain,
-        hasKey: true,
-        loaded: true,
-        status: "idle",
-        ...restored,
-      });
-    } catch (error) {
-      // A DPAPI blob can become unreadable after a user or machine change.
-      // Drop it so the UI asks for the key again instead of failing silently.
-      const aiError = toAiError(error);
-      set({
-        apiKey: null,
-        hasKey: false,
-        loaded: true,
-        status: "idle",
-        lastErrorCode: aiError.code,
-        lastErrorDetail: aiError.detail ?? null,
-        ...restored,
-      });
-    }
-  },
-
-  saveKey: async (plain) => {
-    const trimmed = plain.trim();
-    if (!trimmed) {
-      set({ lastErrorCode: "missing-key", lastErrorDetail: null });
-      return false;
-    }
-    set({ status: "saving" });
-    try {
-      const cipher = await encryptSecret(trimmed);
-      await saveAiCredentialCipher(cipher);
-      set({
-        apiKey: trimmed,
-        hasKey: true,
-        loaded: true,
-        status: "idle",
-        lastErrorCode: null,
-        lastErrorDetail: null,
-      });
-      return true;
-    } catch (error) {
-      const aiError = toAiError(error);
-      set({
-        status: "idle",
-        lastErrorCode: aiError.code,
-        lastErrorDetail: aiError.detail ?? null,
-      });
-      return false;
-    }
-  },
-
-  clearKey: async () => {
-    await deleteAiCredentialCipher();
-    set({
-      apiKey: null,
-      hasKey: false,
-      loaded: true,
-      lastErrorCode: null,
-      lastErrorDetail: null,
     });
   },
 
-  verifyKey: async (plain) => {
-    const key = plain?.trim() || get().apiKey;
-    if (!key) {
-      set({ lastErrorCode: "missing-key", lastErrorDetail: null });
+  addEndpoint: (preset) => {
+    const id = newId();
+    const endpoint: AiEndpoint = {
+      id,
+      name: preset?.name?.trim() || "新接口",
+      baseUrl: normalizeBaseUrl(preset?.baseUrl ?? ""),
+      createdAt: Date.now(),
+      models: [],
+    };
+    commitEndpoints(set, [...get().endpoints, endpoint]);
+    return id;
+  },
+
+  updateEndpoint: (id, patch) => {
+    const endpoints = get().endpoints.map((endpoint) => {
+      if (endpoint.id !== id) return endpoint;
+      const next: AiEndpoint = { ...endpoint };
+      if (patch.name !== undefined) next.name = patch.name.trim() || endpoint.name;
+      if (patch.baseUrl !== undefined) next.baseUrl = normalizeBaseUrl(patch.baseUrl);
+      return next;
+    });
+    commitEndpoints(set, endpoints);
+  },
+
+  removeEndpoint: async (id) => {
+    const endpoints = get().endpoints.filter((endpoint) => endpoint.id !== id);
+    const keys = { ...get().endpointKeys };
+    delete keys[id];
+    // Persist the trimmed key map *before* the store reflects it: a crash in
+    // between must not leave an orphaned secret on disk for a row that is gone.
+    await saveAiEndpointKeyCiphers(
+      Object.fromEntries(
+        await Promise.all(
+          Object.entries(get().endpointKeys)
+            .filter(([key]) => key !== id)
+            .map(async ([key, plain]) => [key, await encryptSecret(plain)] as const),
+        ),
+      ),
+    );
+    commitEndpoints(set, endpoints, {
+      endpointKeys: keys,
+      // A selection pointing at the deleted endpoint must not survive: it would
+      // render a chip for a model that can never answer.
+      chatModel: normalizeChatModel(get().chatModel, endpoints),
+      polishModel: normalizePolishModel(get().polishModel, endpoints),
+    });
+    void persistPreferences(get());
+  },
+
+  saveEndpointKey: async (id, plain) => {
+    const trimmed = plain.trim();
+    if (!trimmed) {
+      set((state) => ({
+        endpointError: { ...state.endpointError, [id]: { code: "missing-key", detail: null } },
+      }));
       return false;
     }
-    set({ status: "testing" });
+    set((state) => ({
+      endpointStatus: { ...state.endpointStatus, [id]: "saving" },
+      endpointError: { ...state.endpointError, [id]: undefined },
+    }));
     try {
-      // Validate against the provider the picker actually points at. A hardcoded
-      // preset reported 401 for every other vendor's key, which made the
-      // extension slot in decisions #11 unusable; 小青 is local, so fall back to
-      // the polish model's provider in that case.
-      const selected = get().chatModel;
-      const provider =
-        (selected === LOCAL_MODEL_ID ? undefined : getChatProvider(selected)) ??
-        getChatProvider(get().polishModel) ??
-        getChatProvider(DEFAULT_POLISH_MODEL_ID);
-      if (!provider) throw new AiError("bad-response", "no chat provider registered");
-      await withTimeout((signal) => provider.testKey(key, signal), KEY_TEST_TIMEOUT_MS);
-      set({ status: "idle", lastErrorCode: null, lastErrorDetail: null });
+      const cipher = await encryptSecret(trimmed);
+      const ciphers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(get().endpointKeys)) {
+        ciphers[key] = key === id ? cipher : await encryptSecret(value);
+      }
+      ciphers[id] = cipher;
+      await saveAiEndpointKeyCiphers(ciphers);
+      const keys = { ...get().endpointKeys, [id]: trimmed };
+      set((state) => ({
+        endpointKeys: keys,
+        endpointStatus: { ...state.endpointStatus, [id]: "idle" },
+        loaded: true,
+      }));
       return true;
     } catch (error) {
       const aiError = toAiError(error);
-      set({
-        status: "idle",
-        lastErrorCode: aiError.code,
-        lastErrorDetail: aiError.detail ?? null,
-      });
+      set((state) => ({
+        endpointStatus: { ...state.endpointStatus, [id]: "idle" },
+        endpointError: {
+          ...state.endpointError,
+          [id]: { code: aiError.code, detail: aiError.detail ?? null },
+        },
+      }));
       return false;
     }
+  },
+
+  clearEndpointKey: async (id) => {
+    const keys = { ...get().endpointKeys };
+    delete keys[id];
+    set({ endpointKeys: keys });
+    const ciphers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(keys)) {
+      ciphers[key] = await encryptSecret(value);
+    }
+    await saveAiEndpointKeyCiphers(ciphers);
+  },
+
+  fetchEndpointModels: async (id) => {
+    const endpoint = get().endpoints.find((item) => item.id === id);
+    if (!endpoint) return false;
+    const key = get().endpointKeys[id] ?? "";
+    set((state) => ({
+      endpointStatus: { ...state.endpointStatus, [id]: "fetching" },
+      endpointError: { ...state.endpointError, [id]: undefined },
+    }));
+    try {
+      const ids = await withTimeout(
+        (signal) => fetchRemoteModels(endpoint.baseUrl, key, signal),
+        KEY_TEST_TIMEOUT_MS,
+      );
+      const previous = new Map(endpoint.models.map((model) => [model.id, model]));
+      const models: EndpointModel[] = ids.map(
+        (modelId) =>
+          previous.get(modelId) ?? {
+            id: modelId,
+            // Discovered models start unticked: the chat bar must reflect the
+            // user's choices, never whatever the endpoint happens to serve.
+            enabled: false,
+            supportsThinking: guessSupportsThinking(modelId),
+          },
+      );
+      const endpoints = get().endpoints.map((item) =>
+        item.id === id ? { ...item, models } : item,
+      );
+      set((state) => ({
+        endpointStatus: { ...state.endpointStatus, [id]: "idle" },
+      }));
+      commitEndpoints(set, endpoints, {
+        chatModel: normalizeChatModel(get().chatModel, endpoints),
+        polishModel: normalizePolishModel(get().polishModel, endpoints),
+      });
+      void persistPreferences(get());
+      return true;
+    } catch (error) {
+      const aiError = toAiError(error);
+      set((state) => ({
+        endpointStatus: { ...state.endpointStatus, [id]: "idle" },
+        endpointError: {
+          ...state.endpointError,
+          [id]: { code: aiError.code, detail: aiError.detail ?? null },
+        },
+      }));
+      return false;
+    }
+  },
+
+  toggleEndpointModel: (id, modelId) => {
+    const endpoints = get().endpoints.map((endpoint) =>
+      endpoint.id === id
+        ? {
+            ...endpoint,
+            models: endpoint.models.map((model) =>
+              model.id === modelId ? { ...model, enabled: !model.enabled } : model,
+            ),
+          }
+        : endpoint,
+    );
+    commitEndpoints(set, endpoints, {
+      chatModel: normalizeChatModel(get().chatModel, endpoints),
+      polishModel: normalizePolishModel(get().polishModel, endpoints),
+    });
+    void persistPreferences(get());
+  },
+
+  setEndpointModelThinking: (id, modelId, value) => {
+    const endpoints = get().endpoints.map((endpoint) =>
+      endpoint.id === id
+        ? {
+            ...endpoint,
+            models: endpoint.models.map((model) =>
+              model.id === modelId ? { ...model, supportsThinking: value } : model,
+            ),
+          }
+        : endpoint,
+    );
+    commitEndpoints(set, endpoints);
   },
 
   recordError: (error) => {
@@ -815,24 +1065,24 @@ export const useAiStore = create<AiState>((set, get) => ({
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
   setChatModel: (modelId) => {
-    const chatModel = normalizeChatModel(modelId);
+    const chatModel = normalizeChatModel(modelId, get().endpoints);
     set({ chatModel });
     void persistPreferences(get());
   },
 
   setPolishModel: (modelId) => {
-    const polishModel = normalizePolishModel(modelId);
+    const polishModel = normalizePolishModel(modelId, get().endpoints);
     set({ polishModel });
-    void persistPreferences(get());
-  },
-
-  setSearchEnabled: (enabled) => {
-    set({ searchEnabled: enabled });
     void persistPreferences(get());
   },
 
   setNoteWriteMode: (mode) => {
     set({ noteWriteMode: normalizeNoteWriteMode(mode) });
+    void persistPreferences(get());
+  },
+
+  setThinkingLevel: (level) => {
+    set({ thinkingLevel: normalizeThinkingLevel(level) });
     void persistPreferences(get());
   },
 
@@ -888,6 +1138,7 @@ export const useAiStore = create<AiState>((set, get) => ({
           streaming: true,
           phase: "retrieving" as AiTurnPhase,
           createdAt: now,
+          brandKey: brandKeyForSelection(state.chatModel, state.endpoints),
         },
       ],
       sending: true,
@@ -911,11 +1162,16 @@ export const useAiStore = create<AiState>((set, get) => ({
     // draft on submit, so a slow or failing index must never make the question
     // vanish without a trace. Failure degrades to "no context", not to a lost
     // turn.
+    //
+    // 寒暄/身份询问没有可检索的对象：小青模式下整轮跳过索引（固定话术已足够，
+    // 冷启动时还省掉一次向量等待），API 模型照常检索，多一段上下文没有坏处。
     let hits: ManualHit[] = [];
-    try {
-      hits = await searchKnowledge(trimmed, 4);
-    } catch (error) {
-      console.warn("ai: knowledge retrieval failed", error);
+    if (!(get().chatModel === LOCAL_MODEL_ID && detectSmallTalk(trimmed))) {
+      try {
+        hits = await searchKnowledge(trimmed, 4);
+      } catch (error) {
+        console.warn("ai: knowledge retrieval failed", error);
+      }
     }
     set((state) => ({
       messages: state.messages.map((m) => (m.id === assistantId ? { ...m, hits } : m)),
@@ -968,15 +1224,18 @@ export const useAiStore = create<AiState>((set, get) => ({
         streaming: true,
         phase: "retrieving",
         createdAt: Date.now(),
+        brandKey: brandKeyForSelection(state.chatModel, state.endpoints),
       });
       return { messages: next, sending: true };
     });
 
     let hits: ManualHit[] = [];
-    try {
-      hits = await searchKnowledge(question.content, 4);
-    } catch (error) {
-      console.warn("ai: knowledge retrieval failed", error);
+    if (!(get().chatModel === LOCAL_MODEL_ID && detectSmallTalk(question.content))) {
+      try {
+        hits = await searchKnowledge(question.content, 4);
+      } catch (error) {
+        console.warn("ai: knowledge retrieval failed", error);
+      }
     }
     set((state) => ({
       messages: state.messages.map((m) => (m.id === newAssistantId ? { ...m, hits } : m)),
@@ -1090,3 +1349,12 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   cancelPolish: () => set({ polish: null, polishApplied: false }),
 }));
+
+/**
+ * Resolve a persisted `"<endpointId>::<modelId>"` against the **current** store,
+ * for callers outside the store (润色 panel, selection actions). Reading through
+ * the store keeps one definition of "which endpoint, which key, which model".
+ */
+export function resolveAiSelection(selection: string): ResolvedSelection | null {
+  return resolveSelection(useAiStore.getState(), selection);
+}

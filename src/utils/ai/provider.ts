@@ -1,36 +1,21 @@
 /**
  * Backward-compatible facade over the provider layer.
  *
- * The real seams live in `./chat` (ChatProvider registry, OpenAI-compatible
- * adapter, presets) and `./search` (SearchProvider registry). Existing
- * callers keep importing from here; new code should prefer
- * `getChatProvider(id)` / `getSearchProvider(id)` so multi-model routing
- * stays in one place.
+ * The real seam lives in `./chat`: a dynamic ChatProvider registry built from
+ * the user's endpoints, all through the OpenAI-compatible adapter. Callers that
+ * need a provider use `getChatProvider(id)`; this file only re-exports the
+ * shared types plus the DPAPI helpers used by the store.
+ *
+ * The old DeepSeek preset exports (`DEEPSEEK_MODEL`, `deepseekProvider`) are
+ * gone on purpose: the app ships no vendor preset, so anything that used to
+ * read them must go through the configured endpoints instead.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { deepseekProvider, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL } from "./chat/deepseek";
 
-export { DEEPSEEK_BASE_URL, DEEPSEEK_MODEL };
-export { deepseekProvider };
-
-export type { ChatMessage, ChatProvider, ChatRequest, ChatRole } from "./chat/types";
+export type { ChatMessage, ChatProvider, ChatRequest, ChatRole, ThinkingLevel } from "./chat/types";
+export type { AiEndpoint, EndpointModel } from "./chat/endpoints";
 export { AiError } from "./errors";
 export type { AiErrorCode } from "./errors";
-
-/** DeepSeek-preset chat call. Prefer `getChatProvider(id).stream(…)`. */
-export async function streamChat(
-  request: Parameters<typeof deepseekProvider.stream>[0],
-): Promise<string> {
-  return deepseekProvider.stream(request);
-}
-
-/** DeepSeek-preset key check. Prefer `getChatProvider(id).testKey(…)`. */
-export async function testApiKey(
-  apiKey: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  return deepseekProvider.testKey(apiKey, signal);
-}
 
 export async function encryptSecret(plain: string): Promise<string> {
   return invoke<string>("encrypt_secret", { plain });

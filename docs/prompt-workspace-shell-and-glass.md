@@ -75,8 +75,12 @@
   `todo` / `workspace` / `canvas` 用它们自己的头部，**不要**给它们塞 `NoteTabBar`。
 - **D9 磨砂范围**：三盒 + 顶栏 + 模态框面板（设置 / 关于 / 登录 / 更新）。
   盒内部的子面板**一律不叠 `backdrop-filter`**（原因见 §4.5）。
-- **D10 编辑器可读性优先**：编辑盒的 tint 有下限——无背景图时 `92%`，有背景图时 `88%`；
-  其余面板走用户参数。
+- **D10 主卡片比侧栏更透，且永不低于可读下限**：主卡片的 tint 不设固定高下限，而是由侧栏 tint
+  **派生**——无背景图时 `max(tint, 92)`（没有东西可透，保持近不透明）；有背景图时
+  `clamp(tintBg − 20, 40, 76)`，再取 `min(结果, tintBg − 6)` 保证关系永不反转。
+  同时侧栏在背景图模式下把基色压暗 15%（`--glass-panel-side`）：深色主题的
+  `--color-bg-sidebar` 比 `--color-bg-primary` **更亮**，只提高 tint 会让侧栏反而变浅。
+  弹窗**不跟随**这条派生，走自己的 `--glass-tint-dialog`（`max(tint, 88)`）。
 - **D11 总开关关闭**：保留圆角、边框、沟槽、外边距，只把面板变完全不透明并去掉 blur。
   **不做整体回滚分支**。
 - **D12 性能降级**：拖拽 resize 期间降级（blur → 4px、saturate → 100%），松手恢复。
@@ -116,16 +120,21 @@
 | 基础 tint | `--glass-tint-side` | 80 % | 0–100 | 用户 |
 | 基础 saturate | `--glass-saturate` | 120 % | 0–200 | 用户 |
 | 背景图 blur | `--glass-blur`（覆盖） | 20 px | 0–40 | 用户 |
-| 背景图 tint | `--glass-tint-side`（覆盖） | 72 % | 0–100 | 用户 |
+| 背景图 tint（侧栏） | `--glass-tint-side`（覆盖） | 83 % | 0–100 | 用户 |
 | 背景图 saturate | `--glass-saturate`（覆盖） | 140 % | 0–200 | 用户 |
-| 编辑盒 tint | `--glass-tint-editor` | `max(tint, 92)` | 派生 | 不可调 |
-| 编辑盒 tint（有背景图） | `--glass-tint-editor` | `max(tintBg, 88)` | 派生 | 不可调 |
+| 主卡片 tint | `--glass-tint-editor` | `max(tint, 92)` | 派生 | 不可调 |
+| 主卡片 tint（有背景图） | `--glass-tint-editor` | `clamp(tintBg − 20, 40, 76)`，且 `≤ tintBg − 6` | 派生 | 不可调 |
+| 弹窗 tint | `--glass-tint-dialog` | `max(tint, 88)` | 派生 | 不可调 |
+| 侧栏基色（有背景图） | `--glass-panel-side` | `color-mix(in srgb, var(--color-bg-sidebar) 85%, #000)` | 派生 | 不可调 |
 | 顶栏/轻磨砂 tint | `--glass-tint-light` | 60 % | 固定 | 不可调 |
 | 总开关 | `data-glass="on" \| "off"` | on | — | 用户 |
 
+**深层阶梯（背景图模式）**：侧栏 83% × 压暗基色 → 主卡片 63% → 顶栏 60%（shell 基色）→ 弹窗 88%。
+即三盒里**两边实、中间透**；弹窗不在这条阶梯上，它要压住下面的所有面板。
+
 **关键设计**：JS 只写"当前生效值"，CSS 不判断是否有背景图。
 即 App.tsx 计算 `hasBg = !!customBackgroundUrl`，直接把生效值写进 `--glass-blur` / `--glass-saturate` /
-`--glass-tint-side` / `--glass-tint-editor` / `--glass-tint-light`。
+`--glass-tint-side` / `--glass-tint-editor` / `--glass-tint-dialog` / `--glass-panel-side` / `--glass-tint-light`。
 这样 CSS 里没有任何 `.app-has-custom-background` 分支，就不会出现选择器特异性互相覆盖的坑。
 
 ### 4.2 CSS 变量（`:root` 兜底默认）
@@ -139,7 +148,9 @@
   --glass-blur: 12;          /* 无单位数字，用时 ×1px */
   --glass-saturate: 120;     /* 无单位数字，用时 ×1% */
   --glass-tint-side: 80;     /* 无单位数字，用时 ×1% */
-  --glass-tint-editor: 92;
+  --glass-tint-editor: 92;   /* 派生值，此处只是无 JS 兜底 */
+  --glass-tint-dialog: 92;
+  --glass-panel-side: var(--color-bg-sidebar);
   --glass-tint-light: 60;
 }
 
@@ -158,17 +169,23 @@
 
 ```css
 .surface-glass {
-  --glass-panel: var(--color-bg-sidebar);
+  --glass-panel: var(--glass-panel-side);
   --glass-tint-here: var(--glass-tint-side);
   background-color: color-mix(in srgb, var(--glass-panel) calc(var(--glass-tint-here) * 1%), transparent);
   backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
 }
 
-/* 编辑盒：近不透明，保证长文对比度 */
+/* 主卡片：背景图模式下比侧栏更透，是三个盒里最轻的一个 */
 .surface-glass--editor {
   --glass-panel: var(--color-bg-primary);
   --glass-tint-here: var(--glass-tint-editor);
+}
+
+/* 弹窗（设置 / 关于 / 登录 / 更新）：临时面，不在深度阶梯上，保持近不透明 */
+.surface-glass--dialog {
+  --glass-panel: var(--color-bg-primary);
+  --glass-tint-here: var(--glass-tint-dialog);
 }
 
 /* 顶栏：更轻，blur 取基础的一半 */
@@ -208,12 +225,16 @@
 - 深色主题下黑影几乎不可见，靠 border 的 `color-mix` 提亮边缘；若仍看不出层次，把 shadow 第二档
   加到 `0 2px 8px` 并只在亮色主题生效（`.theme-dark` 下收窄为 `0 1px 2px`）。
 
-### 4.4 编辑器专属规则
+### 4.4 主卡片专属规则
 
-- 编辑盒 tint = `max(用户 tint, 92)`；有背景图时 `max(用户 tintBg, 88)`。
-  **在 JS 里算**，不要试图在 CSS 的 `color-mix()` 里写 `max()`（不同 WebView 版本支持度不一）。
-- 编辑盒仍保留 `backdrop-filter`：即使只剩 8% 透光，也要它是"模糊的透"，不是"清晰的透"。
-- 编辑盒内部的 `NoteTabBar`、工具栏、正文容器**不得**再叠 `backdrop-filter`，只做半透明染色。
+- 主卡片 tint：无背景图 `max(用户 tint, 92)`；有背景图 `deriveGlassEditorTint(tintBg)` =
+  `min(clamp(tintBg − 20, 40, 76), max(tintBg − 6, 0))`。
+  **在 JS 里算**（`settingsStore.ts` 导出），不要试图在 CSS 的 `color-mix()` 里写 `max()`／`clamp()`
+  （不同 WebView 版本支持度不一）。
+- 主卡片**与侧栏共用同一个 blur**：用户把背景图模糊调低就是为了看清壁纸，给主卡片单独提模糊
+  与这个意图直接冲突，可读性靠 tint 差值来控，不靠额外模糊。
+- 主卡片仍保留 `backdrop-filter`：即使只剩 37% 透光，也要它是"模糊的透"，不是"清晰的透"。
+- 主卡片内部的 `NoteTabBar`、工具栏、正文容器**不得**再叠 `backdrop-filter`，只做半透明染色。
 
 ### 4.5 嵌套禁令（最容易做错的一条）
 
@@ -265,7 +286,7 @@
 
 ### 5.2 工具类
 
-把 §4.3 的三个 `surface-glass` 变体、关闭态、降级规则、`.shell-box` 写进 `index.css`。
+把 §4.3 的四个 `surface-glass` 变体（side / editor / dialog / light）、关闭态、降级规则、`.shell-box` 写进 `index.css`。
 不要新增 `!important`；若被 Tailwind 工具类压住，优先调选择器特异性。
 
 ### 5.3 `theme.ts`：自定义主题派生沟槽色
@@ -352,11 +373,16 @@ app-root 保持 `ref`、`className` 上的 `app-has-custom-background`、`style`
 
 ```ts
 const hasBg = Boolean(customBackgroundUrl);
+const sideTint = hasBg ? glassTintBg : glassTint;
 const glassVars = {
   "--glass-blur": String(hasBg ? glassBlurBg : glassBlur),
   "--glass-saturate": String(hasBg ? glassSaturateBg : glassSaturate),
-  "--glass-tint-side": String(hasBg ? glassTintBg : glassTint),
-  "--glass-tint-editor": String(hasBg ? Math.max(glassTintBg, 88) : Math.max(glassTint, 92)),
+  "--glass-tint-side": String(sideTint),
+  "--glass-tint-editor": String(hasBg ? deriveGlassEditorTint(sideTint) : Math.max(glassTint, 92)),
+  "--glass-tint-dialog": String(Math.max(sideTint, 88)),
+  "--glass-panel-side": hasBg
+    ? `color-mix(in srgb, var(--color-bg-sidebar) ${100 - GLASS_RAIL_DARKEN}%, #000)`
+    : "var(--color-bg-sidebar)",
   "--glass-tint-light": "60",
   "--shell-pad": `${shell.pad}px`,
   "--shell-gutter": `${shell.gutter}px`,
@@ -476,8 +502,12 @@ glassSaturate         饱和度 / Saturation
 - [ ] 四套预设主题 + 自定义主题下，沟槽色都明显深于/浅于面板一档，自定义主题切换回预设后沟槽色不残留。
 - [ ] 设置 → 毛玻璃：开关与六个滑块可用，拖动滑块看板即时变化；关闭开关后所有面板变完全不透明、
       圆角与沟槽仍在。
-- [ ] 设置一张背景图后：左盒、编辑盒、AI 盒都透出壁纸且是"模糊的透"；编辑盒透光明显少于左右盒
-      （tint 下限 92/88 生效）；背景图遮罩为 15%，壁纸仍可辨识。
+- [ ] 设置一张背景图后：左盒、编辑盒、AI 盒都透出壁纸且是"模糊的透"；**中间编辑盒比左右两盒更透**
+      （`clamp(tintBg − 20, 40, 76)` 生效），左右两盒基色被压暗 15%，三盒能看出"两边实、中间透"；
+      背景图遮罩为 15%，壁纸仍可辨识。
+- [ ] 设置 / 关于 / 更新 / 登录四个弹窗在有背景图时**仍然接近不透明**（`--glass-tint-dialog`），
+      不会跟着主卡片一起变透。
+- [ ] 把侧栏底色滑块拖到 20 / 60 / 95 三档：主卡片始终比侧栏透，且不会低于 40，也不会高于 76。
 - [ ] 拖拽左/右栏宽度时：面板跟随指针，**偏差 ≤ 2px**；拖到阈值处按原动画折叠；松手后模糊恢复全值。
 - [ ] 折叠左栏 → 左盒为 48px 窄盒，圆角与边框完整；关闭 AI 栏 → 无残留间隙、无残留边框线、编辑器贴到右侧沟槽。
 - [ ] 树节点右键菜单、拖拽移动、`MoveToFolderDialog`、标签栏溢出菜单、画布缩放浮层均未被圆角裁切。
@@ -504,7 +534,7 @@ glassSaturate         饱和度 / Saturation
 
 ## 附录 A：一次改完的检查清单
 
-1. `index.css`：5 处 `--color-bg-shell`、`:root` 变量、三个 `surface-glass` 变体、关闭态、降级规则、`.shell-box`。
+1. `index.css`：5 处 `--color-bg-shell`、`:root` 变量、四个 `surface-glass` 变体（side / editor / dialog / light）、关闭态、降级规则、`.shell-box`。
 2. `theme.ts`：`CUSTOM_PROPS` + 一行派生。
 3. `shellLayout.ts`：新建，导出常量与两个换算函数。
 4. `App.tsx`：import 常量、`glassVars`/`shell` 写入 style、`data-glass`、主内容重构、pointer 数学三处、

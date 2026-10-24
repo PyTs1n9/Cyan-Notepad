@@ -160,7 +160,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 px-4">
       <section
-        className="isolate surface-glass surface-glass--editor w-full max-w-[390px] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
+        className="isolate surface-glass surface-glass--dialog w-full max-w-[390px] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-title"
@@ -357,7 +357,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                 <button
                   type="submit"
                   disabled={loading || !email.trim() || !password}
-                  className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {mode === "signUp" && !loading ? <UserPlus size={15} /> : <LogIn size={15} />}
                   {loading

@@ -112,7 +112,7 @@ export function CanvasToolbarMenu({
         type="button"
         className={`inline-flex h-8 flex-shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
           active
-            ? "bg-accent text-white hover:bg-accent-hover"
+            ? "bg-accent text-on-accent hover:bg-accent-hover"
             : open
               ? "bg-bg-hover text-text-primary"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
@@ -164,7 +164,7 @@ export function CanvasToolbarMenuItem({
       role="menuitem"
       className={`flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         active
-          ? "bg-accent text-white"
+          ? "bg-accent text-on-accent"
           : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
       } ${className}`}
       onClick={() => {

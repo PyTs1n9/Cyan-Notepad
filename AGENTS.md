@@ -159,6 +159,21 @@ the single source of truth so portable data remains attached to the app folder.
 Do not bundle `data` as an installer resource because reinstalling would overwrite
 the user's live files. Existing install-directory data must remain external.
 
+The user may relocate the whole directory from Settings → 存储. The rules that
+keep that safe:
+
+- The pointer file lives in the OS config directory (`%APPDATA%/com.qing-notepad.app/storage.json`)
+  and is read/written only by `src-tauri/src/storage.rs`; it must stay outside the
+  data directory, otherwise the location would be unknown after a move.
+- A custom root is registered into the fs scope **and** the asset-protocol scope at
+  startup, otherwise note images fail to load there. Never add a command that
+  registers an arbitrary path — that would undo the scope tightening.
+- `storage_migrate` moves same-volume entries with `rename`, copies cross-volume
+  entries, verifies file/byte counts per entry, and only then rewrites the pointer.
+  Do not write the pointer before the move completes.
+- A missing custom root must throw (`DATA_DIRECTORY_UNAVAILABLE`) instead of being
+  recreated: an unplugged drive must not look like an empty notebook.
+
 Important details:
 - `notes/index.json` stores metadata only: `id`, `title`, `tags`, `createdAt`, `updatedAt`.
 - Note content files use `.md` extension but may contain either raw Markdown or TipTap HTML.

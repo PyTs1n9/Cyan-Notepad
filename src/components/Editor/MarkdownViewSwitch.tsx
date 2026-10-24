@@ -64,7 +64,7 @@ const MarkdownViewSwitch = ({
             aria-pressed={active}
             className={`relative z-10 flex h-7 w-9 cursor-pointer items-center justify-center rounded-full leading-none transition-colors duration-150 ${
               active
-                ? "text-white"
+                ? "text-on-accent"
                 : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             }`}
           >

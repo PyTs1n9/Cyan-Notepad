@@ -46,8 +46,26 @@ export const DEFAULT_GLASS_BLUR = 12;
 export const DEFAULT_GLASS_TINT = 80;
 export const DEFAULT_GLASS_SATURATE = 120;
 export const DEFAULT_GLASS_BLUR_BG = 20;
-export const DEFAULT_GLASS_TINT_BG = 72;
+/**
+ * Rails are the depth anchor of the shell, so behind a wallpaper they sit a
+ * notch more solid than the base profile (83 instead of 80) and their base
+ * colour is pushed towards black by `GLASS_RAIL_DARKEN`.
+ */
+export const DEFAULT_GLASS_TINT_BG = 83;
 export const DEFAULT_GLASS_SATURATE_BG = 140;
+
+/**
+ * The main card is deliberately *lighter* than the rails behind a wallpaper:
+ * the wallpaper has to read through the middle of the window. It is derived
+ * from the rail tint instead of being its own slider, so dragging the rail
+ * keeps the "rails deep, middle light" relationship intact.
+ */
+export const GLASS_EDITOR_TINT_DROP = 20;
+export const MIN_GLASS_EDITOR_TINT = 40;
+export const MAX_GLASS_EDITOR_TINT = 76;
+
+/** How far the rail base colour moves towards black behind a wallpaper, in %. */
+export const GLASS_RAIL_DARKEN = 15;
 
 export const MIN_GLASS_BLUR = 0;
 export const MAX_GLASS_BLUR = 40;
@@ -59,6 +77,24 @@ export const MAX_GLASS_SATURATE = 200;
 function normalizeGlassNumber(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * Wallpaper-mode tint for the editor / main card, derived from the rail tint.
+ *
+ * Two clamps, both load-bearing:
+ * - the hard bounds keep long-form text legible (40) and keep the card from
+ *   going opaque (76);
+ * - the `side - 6` cap guarantees the relationship never inverts when the rail
+ *   slider is dragged far down, which would otherwise make the middle card the
+ *   deepest surface in the shell.
+ */
+export function deriveGlassEditorTint(sideTint: number): number {
+  const derived = Math.min(
+    MAX_GLASS_EDITOR_TINT,
+    Math.max(MIN_GLASS_EDITOR_TINT, sideTint - GLASS_EDITOR_TINT_DROP),
+  );
+  return Math.min(derived, Math.max(sideTint - 6, 0));
 }
 
 export interface CustomColors {

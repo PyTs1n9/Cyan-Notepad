@@ -74,7 +74,6 @@ import { t, tWithParams } from "@/utils/i18n";
 import { getCanvasRichTextHtml, plainTextToCanvasHtml } from "@/utils/canvasRichText";
 import { appendCanvasDoodlePoint, canvasDoodlePath, getCanvasDoodleBounds } from "@/utils/canvasDoodle";
 import { openCanvasTileWindow } from "@/utils/canvasTile";
-import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import { CanvasDoodleDefinitions, CanvasDoodleStroke } from "@/components/Canvas/CanvasDoodleLayer";
 import CanvasRichTextEditor from "@/components/Canvas/CanvasRichTextEditor";
 import CanvasTextToolbar from "@/components/Canvas/CanvasTextToolbar";
@@ -1148,40 +1147,6 @@ export default function CanvasView() {
     await openCanvasTileWindow(activeCanvasId);
   }, [activeCanvasId, editingTextId, finishEditingText]);
 
-  useEffect(() => {
-    const handlePortalAction = (event: Event) => {
-      const action = (event as CustomEvent<PortalAction>).detail;
-      if (action === "new-canvas") {
-        if (switchingCanvas || !canvasListLoaded || !loaded) return;
-        setCanvasMenuOpen(true);
-        setCreatingCanvas(true);
-        setNewCanvasName("");
-      } else if (action === "add-canvas-image") {
-        void handleChooseImage();
-      } else if (action === "add-canvas-text") {
-        addTextAt(getViewportCenter());
-      } else if (action === "fit-canvas") {
-        fitCanvas();
-      } else if (action === "open-canvas-tile") {
-        void handleOpenCanvasTile();
-      } else if (action === "export-canvas") {
-        void handleExport();
-      }
-    };
-    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, [
-    addTextAt,
-    canvasListLoaded,
-    fitCanvas,
-    getViewportCenter,
-    handleChooseImage,
-    handleExport,
-    handleOpenCanvasTile,
-    loaded,
-    switchingCanvas,
-  ]);
-
   const handlePaste = useCallback(async (event: ClipboardEvent) => {
     const active = document.activeElement;
     if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement || (active instanceof HTMLElement && active.isContentEditable)) return;
@@ -1797,10 +1762,10 @@ export default function CanvasView() {
           <span>{activeCanvas?.name || t(lang, "canvas")}</span>
         </div>
         <div className="h-5 w-px bg-border" />
-        <button type="button" className={`${toolbarButton} ${tool === "select" ? "bg-accent text-white hover:bg-accent-hover hover:text-white" : ""}`} onClick={() => setTool("select")} title={toolTitle(t(lang, "canvasSelect"))} aria-label={t(lang, "canvasSelect")}>
+        <button type="button" className={`${toolbarButton} ${tool === "select" ? "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent" : ""}`} onClick={() => setTool("select")} title={toolTitle(t(lang, "canvasSelect"))} aria-label={t(lang, "canvasSelect")}>
           <MousePointer2 size={15} />
         </button>
-        <button type="button" className={`${toolbarButton} ${tool === "pan" ? "bg-accent text-white hover:bg-accent-hover hover:text-white" : ""}`} onClick={() => setTool("pan")} title={toolTitle(t(lang, "canvasPan"))} aria-label={t(lang, "canvasPan")}>
+        <button type="button" className={`${toolbarButton} ${tool === "pan" ? "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent" : ""}`} onClick={() => setTool("pan")} title={toolTitle(t(lang, "canvasPan"))} aria-label={t(lang, "canvasPan")}>
           <Hand size={15} />
         </button>
         <CanvasToolbarMenu
@@ -1848,7 +1813,7 @@ export default function CanvasView() {
                       onClick={() => setEraserShape(shape)}
                       className={`h-7 rounded-md transition-colors ${
                         eraserShape === shape
-                          ? "bg-accent text-white"
+                          ? "bg-accent text-on-accent"
                           : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                       }`}
                     >
@@ -2310,7 +2275,7 @@ export default function CanvasView() {
                       <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-danger">{tWithParams(lang, "canvasDeleteQuestion", { name: canvas.name })}</span>
                       <button
                         type="button"
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-danger text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-danger text-on-danger transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => void removeCanvas(canvas.id)}
                         disabled={switchingCanvas || !canvasListLoaded || !loaded}
                         title={t(lang, "confirmYes")}

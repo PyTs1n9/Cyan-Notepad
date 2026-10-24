@@ -29,6 +29,131 @@ const port = Number(process.env.PORT || 1234);
 const admin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+/**
+ * Client for `auth.getUser` only.
+ *
+ * It used to be created per connection, which meant every handshake — including
+ * ones that never present a token — allocated a Supabase client and hit the Auth
+ * endpoint. `getUser(jwt)` sends the JWT as the Authorization header, so the anon
+ * key here is enough and the service-role client stays out of the auth path.
+ */
+const anon = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+/** A token that just verified is reused for a minute instead of re-checked. */
+const TOKEN_CACHE_TTL_MS = 60_000;
+/** Bounded so a flood of distinct tokens cannot grow the process without limit. */
+const TOKEN_CACHE_LIMIT = 1_000;
+/** Supabase Auth is the scarce resource; cap how many checks are in flight. */
+const MAX_CONCURRENT_VERIFICATIONS = 20;
+/** A rejected token is parked instead of retried: that is what makes a
+ *  credential-stuffing loop a no-op instead of a quota drain. */
+const AUTH_FAILURE_COOLDOWN_MS = 5 * 60_000;
+const AUTH_FAILURE_LIMIT = 5_000;
+const AUTH_SWEEP_INTERVAL_MS = 60_000;
+
+interface VerifiedToken {
+  userId: string;
+  expiresAt: number;
+}
+
+const verifiedTokens = new Map<string, VerifiedToken>();
+const blockedTokens = new Map<string, number>();
+/** Same-token handshakes that arrive together share one Auth round trip. */
+const verifications = new Map<string, Promise<string>>();
+let verificationsInFlight = 0;
+
+function rememberVerifiedToken(token: string, userId: string): void {
+  if (verifiedTokens.size >= TOKEN_CACHE_LIMIT) {
+    // Fixed TTL means insertion order is expiry order, so the first key is the
+    // oldest one and the next to expire.
+    const oldest = verifiedTokens.keys().next();
+    if (!oldest.done) verifiedTokens.delete(oldest.value);
+  }
+  verifiedTokens.set(token, { userId, expiresAt: Date.now() + TOKEN_CACHE_TTL_MS });
+}
+
+function rememberBlockedToken(token: string): void {
+  if (blockedTokens.size >= AUTH_FAILURE_LIMIT) {
+    const oldest = blockedTokens.keys().next();
+    if (!oldest.done) blockedTokens.delete(oldest.value);
+  }
+  blockedTokens.set(token, Date.now() + AUTH_FAILURE_COOLDOWN_MS);
+}
+
+/** An auth service that rejects the token, as opposed to being unreachable. */
+function isRejectedCredential(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 400 || status === 401 || status === 403;
+}
+
+/**
+ * Resolve a session token to a user id, or throw.
+ *
+ * Callers get a fixed message; the Supabase error only goes to the server log,
+ * so an anonymous client cannot tell an expired token from a malformed one.
+ */
+async function verifyAccessToken(token: string): Promise<string> {
+  const now = Date.now();
+
+  const cached = verifiedTokens.get(token);
+  if (cached) {
+    if (cached.expiresAt > now) return cached.userId;
+    verifiedTokens.delete(token);
+  }
+
+  const blockedUntil = blockedTokens.get(token);
+  if (blockedUntil !== undefined) {
+    if (blockedUntil > now) throw new Error("Too many failed sign-in attempts, try again later");
+    blockedTokens.delete(token);
+  }
+
+  // A burst of reconnects for one editor arrives with the same token; without
+  // this they would each take a gate slot and each hit Auth.
+  const shared = verifications.get(token);
+  if (shared) return shared;
+
+  if (verificationsInFlight >= MAX_CONCURRENT_VERIFICATIONS) {
+    throw new Error("Sign-in is busy right now, try again in a moment");
+  }
+
+  verificationsInFlight += 1;
+  const attempt = (async (): Promise<string> => {
+    const { data, error } = await anon.auth.getUser(token);
+    if (error || !data.user) {
+      if (isRejectedCredential(error)) rememberBlockedToken(token);
+      console.error("[auth] token verification failed:", error?.message ?? "no user in response");
+      throw new Error("Invalid or expired session");
+    }
+    rememberVerifiedToken(token, data.user.id);
+    blockedTokens.delete(token);
+    return data.user.id;
+  })();
+  verifications.set(token, attempt);
+  try {
+    return await attempt;
+  } finally {
+    verificationsInFlight -= 1;
+    if (verifications.get(token) === attempt) verifications.delete(token);
+  }
+}
+
+function sweepAuthCaches(): void {
+  const now = Date.now();
+  for (const [token, entry] of verifiedTokens) {
+    if (entry.expiresAt <= now) verifiedTokens.delete(token);
+  }
+  for (const [token, until] of blockedTokens) {
+    if (until <= now) blockedTokens.delete(token);
+  }
+}
+
+const authSweep = setInterval(sweepAuthCaches, AUTH_SWEEP_INTERVAL_MS);
+// The server keeps the process alive on its own; this timer must not.
+authSweep.unref();
+
 interface ScheduledDocumentRow {
   id: string;
   scheduled_publish_at: string;
@@ -204,12 +329,7 @@ const server = new Server<ConnectionContext>({
   async onAuthenticate({ token, documentName, connectionConfig }) {
     if (!token) throw new Error("Authentication required");
     const { workspaceId, documentId } = parseRoom(documentName);
-
-    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data: userData, error: userError } = await authClient.auth.getUser(token);
-    if (userError || !userData.user) throw new Error("Invalid or expired session");
+    const userId = await verifyAccessToken(token);
 
     const [{ data: document, error: documentError }, { data: membership, error: memberError }] =
       await Promise.all([
@@ -222,11 +342,15 @@ const server = new Server<ConnectionContext>({
           .from("workspace_members")
           .select("role")
           .eq("workspace_id", workspaceId)
-          .eq("user_id", userData.user.id)
+          .eq("user_id", userId)
           .maybeSingle(),
       ]);
 
-    if (documentError || memberError) throw documentError || memberError;
+    if (documentError || memberError) {
+      // Supabase errors name tables, policies and columns; keep them server-side.
+      console.error(`[auth] access lookup failed for document ${documentId}:`, documentError ?? memberError);
+      throw new Error("Unable to verify document access");
+    }
     if (!document || document.workspace_id !== workspaceId || !membership) {
       throw new Error("You do not have access to this document");
     }
@@ -236,12 +360,15 @@ const server = new Server<ConnectionContext>({
       throw new Error("You do not have access to this document");
     }
     connectionConfig.readOnly = role === "viewer";
-    return { userId: userData.user.id, workspaceId, documentId, role };
+    return { userId, workspaceId, documentId, role };
   },
 
   async onTokenSync({ token, context, connectionConfig }) {
-    const { data, error } = await admin.auth.getUser(token);
-    if (error || data.user?.id !== context.userId) throw new Error("Invalid refreshed session");
+    if (!token) throw new Error("Invalid refreshed session");
+    const userId = await verifyAccessToken(token);
+    // The cache only proves the token is valid; an entry belonging to a different
+    // user must still be rejected, so the identity assertion stays here.
+    if (userId !== context.userId) throw new Error("Invalid refreshed session");
 
     const [{ data: membership, error: memberError }, { data: document, error: documentError }] =
       await Promise.all([
@@ -257,8 +384,12 @@ const server = new Server<ConnectionContext>({
           .eq("id", context.documentId)
           .maybeSingle(),
       ]);
-    if (memberError || documentError || !membership || !document || document.workspace_id !== context.workspaceId) {
-      throw memberError || documentError || new Error("Workspace access revoked");
+    if (memberError || documentError) {
+      console.error(`[auth] access re-check failed for document ${context.documentId}:`, memberError ?? documentError);
+      throw new Error("Unable to verify document access");
+    }
+    if (!membership || !document || document.workspace_id !== context.workspaceId) {
+      throw new Error("Workspace access revoked");
     }
 
     const role = membership.role as WorkspaceRole;

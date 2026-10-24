@@ -168,7 +168,7 @@ export default function PasswordRecoveryModal() {
               <button
                 type="button"
                 onClick={finishPasswordRecovery}
-                className="h-9 w-full rounded-lg bg-accent text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+                className="h-9 w-full rounded-lg bg-accent text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
               >
                 {t(lang, "authPasswordResetDone")}
               </button>
@@ -199,7 +199,7 @@ export default function PasswordRecoveryModal() {
                 <button
                   type="submit"
                   disabled={loading || !manualLink.trim()}
-                  className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Link2 size={14} />
                   {loading
@@ -220,7 +220,7 @@ export default function PasswordRecoveryModal() {
                   type="button"
                   onClick={() => void requestPasswordReset(passwordRecoveryEmail)}
                   disabled={loading}
-                  className="flex h-9 items-center justify-center rounded-lg bg-accent text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-60"
+                  className="flex h-9 items-center justify-center rounded-lg bg-accent text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-60"
                 >
                   {loading
                     ? <LoadingText label={t(lang, "authResendResetEmail")} variant="bounce" />
@@ -254,7 +254,7 @@ export default function PasswordRecoveryModal() {
               <button
                 type="submit"
                 disabled={loading || !email.trim()}
-                className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send size={15} />
                 {loading
@@ -343,7 +343,7 @@ export default function PasswordRecoveryModal() {
               <button
                 type="submit"
                 disabled={loading || !password || !confirmPassword}
-                className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <KeyRound size={15} />
                 {loading

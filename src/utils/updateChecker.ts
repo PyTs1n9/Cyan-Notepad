@@ -1,4 +1,6 @@
 import packageJson from "../../package.json";
+import { isTauri } from "@tauri-apps/api/core";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 export const APP_VERSION = packageJson.version;
 export const GITHUB_URL = "https://github.com/PyTs1n9/Qing-Notepad";
@@ -63,10 +65,19 @@ export function isVersionNewer(candidate: string, current: string): boolean {
   return comparePrerelease(candidateVersion.prerelease, currentVersion.prerelease) > 0;
 }
 
+/**
+ * Update checks run through the http plugin in the desktop app.
+ *
+ * A webview `fetch` here would force `https://api.github.com` into the CSP
+ * `connect-src` for a request that happens once per launch. The plugin performs
+ * it in Rust (outside the CSP) and its own allowlist already covers `https://**`.
+ * `cache` is not part of the plugin's RequestInit subset, and it never caches.
+ */
+const githubFetch: typeof fetch = isTauri() ? (tauriFetch as unknown as typeof fetch) : fetch;
+
 export async function fetchLatestRelease(): Promise<LatestRelease> {
-  const response = await fetch(GITHUB_API_LATEST, {
+  const response = await githubFetch(GITHUB_API_LATEST, {
     headers: { Accept: "application/vnd.github+json" },
-    cache: "no-store",
   });
   if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
 

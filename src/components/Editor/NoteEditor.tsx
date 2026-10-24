@@ -2,26 +2,27 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 import { emit, listen } from "@tauri-apps/api/event";
+import { message, open } from "@tauri-apps/plugin-dialog";
+import { readFile } from "@tauri-apps/plugin-fs";
 import { useNoteStore } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import {
-  cleanupUnusedImageAttachments,
   saveNoteContent,
   loadNoteContent,
   savePolishSnapshot,
+  saveImageAttachment,
 } from "@/utils/storage";
 import { useAiStore } from "@/stores/aiStore";
 import { NOTE_EXTERNAL_SAVE_EVENT } from "@/utils/ai/noteWrite";
 import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
-import { Save, Pin, Sparkles, Undo2, Redo2, Link2, Unlink2, Table } from "lucide-react";
+import { Save, Pin, Sparkles, Undo2, Redo2, Link2, Unlink2, Table, ImagePlus, FileDown } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
 import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
 import { useEditorZoom } from "@/utils/editorZoom";
-import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import { registerNoteFlusher } from "@/utils/noteFlush";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
 import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
@@ -33,6 +34,12 @@ function isStoredEditorHtml(content: string): boolean {
 }
 
 // Configure marked
+/** Extension for an image selected in the dialog or pasted from the clipboard. */
+function imageExtensionOf(nameOrMime: string): string {
+  if (nameOrMime.includes("/")) return nameOrMime.split("/")[1] || "png";
+  const extension = nameOrMime.split(".").pop();
+  return extension && extension.length <= 5 ? extension : "png";
+}
 
 // Configure turndown for HTML → Markdown
 const turndownService = new TurndownService({
@@ -109,7 +116,15 @@ function deriveTitleFromContent(content: string): string {
     .trim();
 }
 
-const NoteEditor: React.FC = () => {
+interface NoteEditorProps {
+  /**
+   * Export is a note-level action: it used to sit in the title-bar portal, which
+   * was the only way to reach it. The editor toolbar is its owner now.
+   */
+  onExportNote?: () => void;
+}
+
+const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   const { notes, activeNoteId, updateNote } = useNoteStore();
   const lang = useSettingsStore((s) => s.lang);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
@@ -168,15 +183,6 @@ const NoteEditor: React.FC = () => {
     return () => clearInterval(timer);
   }, [activeNoteId]);
 
-  useEffect(() => {
-    const handlePortalAction = (event: Event) => {
-      if ((event as CustomEvent<PortalAction>).detail !== "open-note-sticky" || !activeNoteId) return;
-      void createStickyNote(activeNoteId);
-    };
-    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, [activeNoteId]);
-
   // Keep refs in sync with state
   useEffect(() => {
     activeNoteIdRef.current = activeNoteId;
@@ -195,7 +201,6 @@ const NoteEditor: React.FC = () => {
     setIsSaving(true);
     try {
       await saveNoteContent(noteId, contentToSave);
-      await cleanupUnusedImageAttachments();
       markDirty(noteId, false);
       // Notify open sticky windows to update
       emit("sticky:note-updated", { noteId, content: contentToSave });
@@ -253,7 +258,6 @@ const NoteEditor: React.FC = () => {
       if (!stillExists) return;
       try {
         await saveNoteContent(prevId, pendingContent);
-        await cleanupUnusedImageAttachments();
         // Only clear the flag once the write landed, otherwise a failed save
         // would silently look saved in the tab strip.
         markDirty(prevId, false);
@@ -448,6 +452,97 @@ const NoteEditor: React.FC = () => {
     view.focus();
   }, []);
 
+  /**
+   * Put an attachment reference where the caret is. The note stores only the
+   * generated file name, so moving the data directory never breaks a note.
+   */
+  const insertImageReference = useCallback((filename: string) => {
+    const snippet = `![](attachment://${filename})`;
+    const view = codeMirrorViewRef.current;
+    if (!view) {
+      // Preview-only mode has no caret: append to the end instead of no-oping.
+      const current = mdContentRef.current;
+      const separator = !current || current.endsWith("\n") ? "" : "\n";
+      handleMdChange(`${current}${separator}${snippet}\n`);
+      return;
+    }
+    const { from, to } = view.state.selection.main;
+    const doc = view.state.doc.toString();
+    const prefix = from > 0 && doc[from - 1] !== "\n" ? "\n" : "";
+    view.dispatch({
+      changes: { from, to, insert: `${prefix}${snippet}\n` },
+      selection: { anchor: from + prefix.length + snippet.length + 1 },
+      scrollIntoView: true,
+    });
+    view.focus();
+  }, [handleMdChange]);
+
+  /** Copy the bytes into data/img, then reference the generated file name. */
+  const insertImageBytes = useCallback(async (bytes: Uint8Array, extension: string) => {
+    const filename = await saveImageAttachment(bytes, extension);
+    insertImageReference(filename);
+  }, [insertImageReference]);
+
+  const handleInsertImage = useCallback(async () => {
+    if (!activeNoteIdRef.current) return;
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
+      });
+      if (typeof selected !== "string") return;
+      const bytes = new Uint8Array(await readFile(selected));
+      await insertImageBytes(bytes, imageExtensionOf(selected));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error("Failed to insert an image:", error);
+      void message(tWithParams(lang, "insertImageFailed", { message: detail }), {
+        title: t(lang, "insertImage"),
+        kind: "error",
+      }).catch(() => undefined);
+    }
+  }, [insertImageBytes, lang]);
+
+  // A pasted screenshot or a dropped image file takes the same route as the
+  // toolbar button, so nothing ever lands in the note as an inline base64 blob.
+  useEffect(() => {
+    const container = editorContainerRef.current;
+    if (!container) return;
+
+    const insertFromBrowserFile = (file: File) => {
+      void file.arrayBuffer()
+        .then((buffer) => insertImageBytes(new Uint8Array(buffer), imageExtensionOf(file.name || file.type)))
+        .catch((error) => console.error("Failed to insert an image file:", error));
+    };
+    const pickImageFile = (list: FileList | null | undefined) =>
+      Array.from(list ?? []).find((file) => file.type.startsWith("image/"));
+
+    const handlePaste = (event: ClipboardEvent) => {
+      const file = pickImageFile(event.clipboardData?.files);
+      if (!file) return;
+      event.preventDefault();
+      insertFromBrowserFile(file);
+    };
+    const handleDragOver = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    };
+    const handleDrop = (event: DragEvent) => {
+      const file = pickImageFile(event.dataTransfer?.files);
+      if (!file) return;
+      event.preventDefault();
+      insertFromBrowserFile(file);
+    };
+
+    container.addEventListener("paste", handlePaste, true);
+    container.addEventListener("dragover", handleDragOver);
+    container.addEventListener("drop", handleDrop);
+    return () => {
+      container.removeEventListener("paste", handlePaste, true);
+      container.removeEventListener("dragover", handleDragOver);
+      container.removeEventListener("drop", handleDrop);
+    };
+  }, [insertImageBytes]);
+
   const handleHistoryChange = useCallback((undoAvailable: boolean, redoAvailable: boolean) => {
     setCanUndo(undoAvailable);
     setCanRedo(redoAvailable);
@@ -569,9 +664,15 @@ const NoteEditor: React.FC = () => {
 
   return (
     <div ref={editorContainerRef} className="note-editor-surface flex min-h-0 min-w-0 h-full flex-1 flex-col overflow-hidden">
-      {/* Single-row toolbar: view switch, history, then right-aligned actions.
-          Every action is icon-only with a tooltip so the row stays compact. */}
-      <div className="note-editor-toolbar flex items-center gap-1 px-5 pt-3 pb-1">
+      {/* Toolbar: view switch, history, then the document actions. Actions are
+          icon-only by default, but the row must never clip: every control is
+          `shrink-0`, so without wrapping the right-hand end (save / export) is
+          the first thing a narrow editor card cuts off.
+          Height is locked to the tab strip above it: 2px + 32px (`h-8` controls)
+          + 2px = 36px, the same `h-9` every top strip uses. The padding is split
+          evenly so the controls stay optically centred; `.cm-content` brings its
+          own 16px top padding, so the row needs none below. */}
+      <div className="note-editor-toolbar flex flex-wrap items-center gap-1 gap-y-1 px-5 py-0.5">
         <MarkdownViewSwitch
           value={markdownViewMode}
           onChange={setMarkdownViewMode}
@@ -610,6 +711,16 @@ const NoteEditor: React.FC = () => {
         >
           <Table size={15} />
         </button>
+        <button
+          type="button"
+          onClick={() => void handleInsertImage()}
+          title={t(lang, "insertImage")}
+          aria-label={t(lang, "insertImage")}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
+            hover:bg-bg-hover hover:text-text-primary"
+        >
+          <ImagePlus size={15} />
+        </button>
         <div className="flex-1" />
         <button
           type="button"
@@ -644,7 +755,7 @@ const NoteEditor: React.FC = () => {
           aria-label={t(lang, "save")}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
             isDirty
-              ? "bg-accent text-white hover:bg-accent-hover"
+              ? "bg-accent text-on-accent hover:bg-accent-hover"
               : "text-text-muted cursor-not-allowed opacity-50"
           }`}
         >
@@ -665,11 +776,26 @@ const NoteEditor: React.FC = () => {
           aria-label={t(lang, stickyOpen ? "unpinSticky" : "pinSticky")}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
             stickyOpen
-              ? "bg-accent text-white hover:bg-accent-hover"
+              ? "bg-accent text-on-accent hover:bg-accent-hover"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
           <Pin size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={onExportNote}
+          disabled={!onExportNote}
+          title={t(lang, "exportFile")}
+          aria-label={t(lang, "exportFile")}
+          className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <FileDown size={15} />
+          {/* Export is the only way to turn a note into a file, so it keeps a
+              text label whenever the card is wide enough. Gated on the card's
+              own container width — the left card is resizable, so a viewport
+              media query would show the label at the wrong times. */}
+          <span className="note-export-label">{t(lang, "exportFile")}</span>
         </button>
       </div>
 

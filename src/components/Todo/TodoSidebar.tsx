@@ -18,7 +18,7 @@ import {
 import { useTodoStore } from "@/stores/todoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
-import { dispatchPortalAction, PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
+import { dispatchPortalAction } from "@/utils/portalActions";
 import { requestTodoIntent } from "@/utils/todoIntent";
 import TreeContextMenu, { type TreeMenuItem } from "@/components/Layout/TreeContextMenu";
 import type { Todo, TodoList } from "@/types";
@@ -77,16 +77,6 @@ const TodoSidebar: React.FC = () => {
   const topLevelTodos = todos.filter((todo) => !todo.parentId);
   const completedCount = topLevelTodos.filter((todo) => todo.completed).length;
   const pendingCount = topLevelTodos.length - completedCount;
-
-  useEffect(() => {
-    const handlePortalAction = (event: Event) => {
-      if ((event as CustomEvent<PortalAction>).detail !== "new-todo-list") return;
-      setNewListName("");
-      setCreating(true);
-    };
-    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, []);
 
   useEffect(() => {
     if (creating) createInputRef.current?.focus();
@@ -434,7 +424,7 @@ const TodoSidebar: React.FC = () => {
                   onClick={confirmCreate}
                   disabled={!newListName.trim()}
                   className="flex h-7 items-center gap-1 rounded-md bg-accent px-2.5 text-[11px] font-medium
-                    text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
+                    text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Plus size={11} strokeWidth={2.5} />
                   {t(lang, "add")}
@@ -547,7 +537,7 @@ const TodoSidebar: React.FC = () => {
                     <span
                       className={`absolute right-2 inline-flex h-[17px] min-w-[34px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none tabular-nums tracking-tight ${
                         isActive
-                          ? "bg-accent text-white"
+                          ? "bg-accent text-on-accent"
                           : "text-text-muted"
                       }`}
                     >
@@ -624,7 +614,7 @@ const TodoSidebar: React.FC = () => {
                                     <span
                                       className={`flex h-2.5 w-2.5 items-center justify-center rounded-[2px] border ${
                                         subtask.completed
-                                          ? "border-success bg-success text-white"
+                                          ? "border-success bg-success text-on-success"
                                           : "border-text-muted/60"
                                       }`}
                                     >
@@ -695,7 +685,7 @@ const TodoSidebar: React.FC = () => {
               </button>
               <button
                 onClick={confirmDelete}
-                className="h-8 rounded-lg bg-danger px-3 text-sm text-white transition-colors hover:bg-danger/90"
+                className="h-8 rounded-lg bg-danger px-3 text-sm text-on-danger transition-colors hover:bg-danger/90"
               >
                 {t(lang, "confirmYes")}
               </button>

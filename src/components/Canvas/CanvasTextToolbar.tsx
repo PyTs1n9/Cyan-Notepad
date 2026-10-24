@@ -39,7 +39,7 @@ function ToolbarButton({ active, title, onClick, children }: {
       aria-pressed={active}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className={`inline-flex h-7 min-w-7 items-center justify-center rounded px-1.5 transition-colors ${active ? "bg-accent text-white" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
+      className={`inline-flex h-7 min-w-7 items-center justify-center rounded px-1.5 transition-colors ${active ? "bg-accent text-on-accent" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
     >
       {children}
     </button>
@@ -114,7 +114,7 @@ export default function CanvasTextToolbar({ editor, lang, onDone }: CanvasTextTo
       <ToolbarButton title={t(lang, "undo")} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={14} /></ToolbarButton>
       <ToolbarButton title={t(lang, "redo")} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={14} /></ToolbarButton>
       <div className="flex-1" />
-      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onDone} className="inline-flex h-7 items-center gap-1 rounded bg-accent px-2 text-xs font-medium text-white hover:bg-accent-hover">
+      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onDone} className="inline-flex h-7 items-center gap-1 rounded bg-accent px-2 text-xs font-medium text-on-accent hover:bg-accent-hover">
         <Check size={14} />{t(lang, "canvasDone")}
       </button>
     </div>

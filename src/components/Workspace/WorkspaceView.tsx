@@ -27,7 +27,6 @@ import type {
 } from "@/types/workspace";
 import { supabase } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
-import { PORTAL_ACTION_EVENT, type PortalAction } from "@/utils/portalActions";
 import LoadingText from "@/components/LoadingText";
 import UserAvatar from "@/components/UserAvatar";
 import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
@@ -116,7 +115,6 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
   const setDialogValue = useWorkspaceUiStore((state) => state.setDialogValue);
   const setDialogNotice = useWorkspaceUiStore((state) => state.setDialogNotice);
   const cancelDelete = useWorkspaceUiStore((state) => state.cancelDelete);
-  const openManage = useWorkspaceUiStore((state) => state.openManage);
   const setManageSection = useWorkspaceUiStore((state) => state.setManageSection);
   const closeManage = useWorkspaceUiStore((state) => state.closeManage);
   const clearPublicationDialog = useWorkspaceUiStore((state) => state.clearPublicationDialog);
@@ -285,34 +283,6 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
       document.removeEventListener("visibilitychange", refreshVisibleDocuments);
     };
   }, [activeWorkspaceId, loadDocuments]);
-
-  useEffect(() => {
-    const handlePortalAction = (event: Event) => {
-      const action = (event as CustomEvent<PortalAction>).detail;
-      if (action === "manage-workspace" && activeWorkspace) {
-        openManage("permissions");
-        return;
-      }
-      if (action === "copy-workspace-invite" && activeWorkspace) {
-        void navigator.clipboard.writeText(activeWorkspace.inviteCode).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        });
-        return;
-      }
-      const nextDialog = action === "create-workspace"
-        ? "createWorkspace"
-        : action === "join-workspace"
-          ? "joinWorkspace"
-          : action === "new-cloud-document" && canEdit
-            ? "newDocument"
-            : null;
-      if (!nextDialog) return;
-      openDialog(nextDialog);
-    };
-    window.addEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-    return () => window.removeEventListener(PORTAL_ACTION_EVENT, handlePortalAction);
-  }, [activeWorkspace, canEdit, openDialog, openManage]);
 
   const submitDialog = async () => {
     if (!user || !dialogValue.trim() || submittingDialogRef.current) return;
@@ -513,7 +483,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
           <button
             type="button"
             onClick={onOpenAuth}
-            className="mx-auto mt-5 flex h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-white hover:bg-accent-hover"
+            className="mx-auto mt-5 flex h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent hover:bg-accent-hover"
           >
             <LogIn size={15} />
             {t(lang, "authSignIn")}
@@ -663,7 +633,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                 onClick={() => void submitDialog()}
                 disabled={!dialogValue.trim() || loading || submittingDialog || (dialog === "newDocument" && creatingDocument)}
                 aria-busy={submittingDialog || (dialog === "newDocument" && creatingDocument)}
-                className="h-8 rounded-lg bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 rounded-lg bg-accent px-3 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isDialogSubmitting
                   ? <LoadingText label={dialogTitle} variant="bounce" />
@@ -754,7 +724,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                       type="button"
                       onClick={() => void saveWorkspaceName()}
                       disabled={savingWorkspaceName || !workspaceNameDraft.trim() || workspaceNameDraft.trim() === activeWorkspace.name}
-                      className="flex h-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex h-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent px-3 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {savingWorkspaceName
                         ? <LoadingText label={t(lang, "authWorking")} variant="bounce" />
@@ -777,7 +747,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                     <button
                       type="button"
                       onClick={() => void copyInviteCode()}
-                      className="flex h-9 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent-hover"
+                      className="flex h-9 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover"
                     >
                       <Copy size={13} />
                       <span>{copied ? t(lang, "copied") : t(lang, "copyInvite")}</span>
@@ -1095,7 +1065,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                 onClick={() => void confirmDelete()}
                 disabled={deleting}
                 aria-busy={deleting}
-                className="h-8 cursor-pointer rounded-lg bg-danger px-3 text-sm text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 cursor-pointer rounded-lg bg-danger px-3 text-sm text-on-danger transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {deleting
                   ? <LoadingText label={t(lang, "confirmYes")} variant="bounce" />
@@ -1151,7 +1121,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                 onClick={() => void confirmRemoveMember()}
                 disabled={removingMember}
                 aria-busy={removingMember}
-                className="h-8 cursor-pointer rounded-lg bg-danger px-3 text-sm text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 cursor-pointer rounded-lg bg-danger px-3 text-sm text-on-danger transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {removingMember
                   ? <LoadingText label={t(lang, "confirmYes")} variant="bounce" />

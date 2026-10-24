@@ -22,7 +22,7 @@ export default function UpdateModal({
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-5" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
       <div className="absolute inset-0 bg-black/45" />
-      <div className="isolate surface-glass surface-glass--editor relative w-[min(92vw,410px)] rounded-xl border border-border bg-bg-secondary p-6 shadow-2xl animate-in">
+      <div className="isolate surface-glass surface-glass--dialog relative w-[min(92vw,410px)] rounded-xl border border-border bg-bg-secondary p-6 shadow-2xl animate-in">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
             <Download size={20} />
@@ -52,7 +52,7 @@ export default function UpdateModal({
           <button
             type="button"
             onClick={onUpdateNow}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-on-accent transition-opacity hover:opacity-90"
           >
             <Download size={15} />
             {t(lang, "updateNow")}

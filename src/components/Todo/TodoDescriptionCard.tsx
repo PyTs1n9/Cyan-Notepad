@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef } from "react";
-import { AlignLeft, Check, Pencil, X } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 
@@ -16,11 +15,16 @@ interface TodoDescriptionCardProps {
 /**
  * The body of a task.
  *
- * Two states only: being written (a bordered textarea) and written (a small
- * read-only card you click to edit again). There is deliberately no "empty"
- * state — an always-visible "add a description" line under every row turned a
- * long list into a wall of the same four words, so the entry moved into the
- * row's hover actions instead and this component renders nothing without text.
+ * It reads as the task's own text, not as a card appended to it: no border, no
+ * "DESCRIPTION" micro-label, no pencil badge - just a muted paragraph behind a
+ * hairline rail, hanging off the task the way the subtask list does. The old
+ * framed version announced itself as a separate object, which is exactly what
+ * made a two-line note look like a machine-written appendix.
+ *
+ * Two states only: being written (a bare textarea on the same rail) and written
+ * (the paragraph, click to edit). There is deliberately no "empty" state - an
+ * always-visible "add a description" line under every row turned a long list
+ * into a wall of the same four words, so the entry lives in the row actions.
  */
 const TodoDescriptionCard: React.FC<TodoDescriptionCardProps> = ({
   description,
@@ -73,11 +77,7 @@ const TodoDescriptionCard: React.FC<TodoDescriptionCardProps> = ({
 
   if (editing) {
     return (
-      <div className="rounded-lg border border-accent/35 bg-bg-primary/75 p-2 shadow-sm">
-        <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-accent">
-          <AlignLeft size={10} />
-          {t(lang, "todoDescription")}
-        </div>
+      <div className="border-l-2 border-accent/45 pl-3">
         <textarea
           ref={textareaRef}
           defaultValue={description ?? ""}
@@ -101,36 +101,31 @@ const TodoDescriptionCard: React.FC<TodoDescriptionCardProps> = ({
           className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-text-primary
             outline-none placeholder:text-text-muted"
         />
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <span className="truncate text-[10px] text-text-muted">{t(lang, "descriptionSaveHint")}</span>
-          <div className="flex flex-shrink-0 items-center gap-1">
-            {/* preventDefault keeps focus in the textarea so the blur handler
-                does not fire on the click itself — each button decides. */}
-            <button
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                cancel();
-              }}
-              className="flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-text-secondary
-                transition-colors hover:bg-bg-hover hover:text-text-primary"
-            >
-              <X size={11} />
-              {t(lang, "confirmNo")}
-            </button>
-            <button
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                commit();
-              }}
-              className="flex h-6 items-center gap-1 rounded-md bg-accent px-2 text-[11px] font-medium
-                text-white transition-colors hover:bg-accent-hover"
-            >
-              <Check size={11} />
-              {t(lang, "save")}
-            </button>
-          </div>
+        <div className="mt-1 flex items-center justify-end gap-1">
+          {/* preventDefault keeps focus in the textarea so the blur handler
+              does not fire on the click itself — each button decides. */}
+          <button
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              cancel();
+            }}
+            className="flex h-6 items-center rounded-md px-2 text-[11px] text-text-muted
+              transition-colors hover:bg-bg-hover hover:text-text-primary"
+          >
+            {t(lang, "confirmNo")}
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              commit();
+            }}
+            className="flex h-6 items-center rounded-md px-2 text-[11px] text-accent
+              transition-colors hover:bg-accent-light"
+          >
+            {t(lang, "save")}
+          </button>
         </div>
       </div>
     );
@@ -143,22 +138,13 @@ const TodoDescriptionCard: React.FC<TodoDescriptionCardProps> = ({
       type="button"
       onClick={() => onEditingChange(true)}
       title={t(lang, "editTodoDescription")}
-      className="group/desc block w-full rounded-lg border border-transparent border-l-2 border-l-accent/35
-        bg-bg-secondary/30 px-2.5 py-1.5 text-left transition-colors
-        hover:border-border/60 hover:border-l-accent/60 hover:bg-bg-secondary/55"
+      className="group/desc block w-full cursor-text border-l-2 border-border/45 pl-3 text-left
+        transition-colors hover:border-accent/45"
     >
-      <span className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-text-muted/80">
-        <AlignLeft size={10} className="flex-shrink-0" />
-        <span className="truncate">{t(lang, "todoDescription")}</span>
-        <Pencil
-          size={10}
-          className="ml-auto flex-shrink-0 opacity-0 transition-opacity group-hover/desc:opacity-70"
-        />
-      </span>
       <span
-        className={`block whitespace-pre-wrap break-words text-[13px] leading-relaxed ${
-          completed ? "text-text-muted" : "text-text-secondary"
-        }`}
+        className={`block whitespace-pre-wrap break-words text-[13px] leading-relaxed transition-colors
+          ${completed ? "text-text-muted" : "text-text-secondary"}
+          group-hover/desc:text-text-primary`}
       >
         {description}
       </span>
